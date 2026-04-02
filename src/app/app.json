@@ -1,0 +1,23 @@
+{
+  "name": "Data Quality Pro",
+  "description": "Automatically detect and merge duplicate contacts, standardize data formats, and keep your CRM clean — without upgrading to Operations Hub Pro.",
+  "uid": "data-quality-pro",
+  "scopes": [
+    "crm.objects.contacts.read",
+    "crm.objects.contacts.write",
+    "crm.objects.companies.read",
+    "crm.objects.companies.write",
+    "crm.schemas.contacts.read",
+    "crm.schemas.companies.read"
+  ],
+  "public": false,
+  "extensions": {
+    "crm": {
+      "cards": [
+        {
+          "file": "extensions/dedup-card.json"
+        }
+      ]
+    }
+  }
+}

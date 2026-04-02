@@ -1,0 +1,8 @@
+{
+  "name": "data-quality-card",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@hubspot/ui-extensions": "^0.12.3"
+  }
+}
