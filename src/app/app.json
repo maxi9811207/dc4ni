@@ -1,0 +1,24 @@
+{
+  "name": "Portal Audit",
+  "description": "Scan your HubSpot portal to map all dependencies between Forms, Lists, Workflows, and Emails. Find orphaned assets and visualize your portal structure.",
+  "uid": "portal-audit",
+  "scopes": [
+    "crm.objects.contacts.read",
+    "crm.objects.companies.read",
+    "crm.objects.deals.read",
+    "crm.lists.read",
+    "forms",
+    "automation",
+    "content"
+  ],
+  "public": false,
+  "extensions": {
+    "crm": {
+      "cards": [
+        {
+          "file": "extensions/audit-card.json"
+        }
+      ]
+    }
+  }
+}

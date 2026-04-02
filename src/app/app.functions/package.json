@@ -1,0 +1,9 @@
+{
+  "name": "portal-audit-functions",
+  "version": "0.0.1",
+  "private": true,
+  "dependencies": {
+    "@hubspot/api-client": "^12.0.0",
+    "axios": "^1.7.0"
+  }
+}
