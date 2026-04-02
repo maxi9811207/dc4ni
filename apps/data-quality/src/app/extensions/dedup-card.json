@@ -1,0 +1,15 @@
+{
+  "type": "crm-card",
+  "data": {
+    "title": "Data Quality Pro",
+    "uid": "data-quality-card",
+    "location": "crm.record.tab",
+    "module": {
+      "file": "DedupCard.jsx"
+    },
+    "objectTypes": [
+      { "name": "contacts" },
+      { "name": "companies" }
+    ]
+  }
+}

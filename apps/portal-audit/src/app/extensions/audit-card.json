@@ -1,0 +1,14 @@
+{
+  "type": "crm-card",
+  "data": {
+    "title": "Portal Audit",
+    "uid": "portal-audit-card",
+    "location": "crm.record.tab",
+    "module": {
+      "file": "AuditCard.jsx"
+    },
+    "objectTypes": [
+      { "name": "contacts" }
+    ]
+  }
+}

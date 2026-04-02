@@ -1,0 +1,8 @@
+{
+  "appFunctions": {
+    "runPortalAudit": {
+      "file": "runPortalAudit.js",
+      "secrets": []
+    }
+  }
+}

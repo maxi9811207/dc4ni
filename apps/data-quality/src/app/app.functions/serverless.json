@@ -1,0 +1,20 @@
+{
+  "appFunctions": {
+    "scanDuplicates": {
+      "file": "scanDuplicates.js",
+      "secrets": []
+    },
+    "mergeDuplicates": {
+      "file": "mergeDuplicates.js",
+      "secrets": []
+    },
+    "runDataCleanup": {
+      "file": "runDataCleanup.js",
+      "secrets": []
+    },
+    "calculateHealthScore": {
+      "file": "calculateHealthScore.js",
+      "secrets": []
+    }
+  }
+}
