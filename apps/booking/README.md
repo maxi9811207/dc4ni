@@ -1,11 +1,11 @@
 # 約課系統
 
 仿照 FitBook 約課系統的操作流程，藍色系介面，電腦與手機同一套單欄版面。
-獨立運作、與 DC Tools 程式碼無關，只是部署在同一台主機，網址為 `https://dc-tools.cc/booking/`。
+獨立運作，可掛在任何網域根目錄或子路徑下。
 
 - 後端：Python FastAPI + SQLite（`server/app.py`，資料存在 `data/booking.db`）
 - 前端：React + Vite（`web/`），打包後由後端直接提供
-- 部署：單一 Docker 容器，主機 nginx 以 `/booking/` 轉發到 `127.0.0.1:8100`
+- 部署：`deploy/install.sh` 一鍵安裝（systemd + nginx，不需要 Docker 或 Node.js）
 
 ## 功能
 
@@ -35,6 +35,20 @@
 | 評價 | 查看與隱藏評價 |
 | 場館設定 | 名稱、封面、地址、電話、LINE、介紹、規範、付款說明、課程類別、開放預約天數、顯示人數、候補開關 |
 
+### DUPR 場
+
+- 場主建課時勾選「DUPR 場」，設定依據雙打或單打分數、最低分／最高分，以及是否只限已驗證帳號。
+- 課程列表顯示深藍色「DUPR 3.0–4.0」標籤，當天有 DUPR 場時可用「全部／DUPR 場／一般場」篩選。
+- 學生在會員中心「DUPR」分頁綁定 DUPR ID：
+  - **有 DUPR 合作夥伴金鑰時**（`DUPR_CLIENT_KEY`／`DUPR_CLIENT_SECRET`）：系統向 DUPR 取得姓名與單打、雙打分數，也可隨時「從 DUPR 更新分數」。
+  - **沒有金鑰時**：學生自行填寫 DUPR ID 與分數，標示「待場館核對」。
+- 報名、候補遞補時都會檢查 DUPR 條件；不符合的候補會被跳過並收到通知。
+- 場主在會員資料中可核對並「驗證」DUPR 帳號、代為綁定或修正分數；點名名單會顯示每位學員的 DUPR 分數。
+- 一個 DUPR ID 只能綁定一個帳號；學生自行修改分數後會失去驗證狀態。
+
+> DUPR 金鑰需以場館名義向 DUPR 申請 API 合作夥伴（partner）資格。
+> 系統使用 `POST /api/auth/v1/token` 取得權杖、`GET /api/user/v1/{duprId}` 取得球員資料。
+
 ### 預約規則
 
 - 堂數卡每堂扣 1 堂；點數卡依課程設定扣點；無限卡不扣次數；課程扣點設為 0 則為免費課程，不需課卡。
@@ -60,22 +74,28 @@ npm run dev
 
 API 文件：`http://localhost:8100/api/docs`
 
-## 部署到 dc-tools.cc 主機
+## 部署
 
-1. 把 `apps/booking` 目錄放到主機上，進入該目錄後執行：
+在主機（Ubuntu 22.04／24.04）上執行一行指令：
 
-   ```bash
-   sudo bash deploy/deploy.sh
-   ```
+```bash
+# 有網域（先把網域 A 紀錄指向主機 IP），會自動申請 HTTPS
+curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh \
+  | sudo BOOKING_DOMAIN=booking.example.com bash
 
-   第一次執行會在 `/opt/booking/.env` 建立設定檔，填入場主手機與密碼後再執行一次，就會用 Docker 啟動並只綁定本機 `127.0.0.1:8100`。
+# 沒有網域：用 http://主機IP:8080
+curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh \
+  | sudo bash
+```
 
-2. 把 `deploy/nginx-booking.conf` 的內容加進 dc-tools.cc 既有的 `listen 443` server 區塊，然後：
+第一次執行會詢問場主姓名、手機、密碼。腳本只會新增自己的檔案與 nginx 站台（`/etc/nginx/sites-available/booking`），
+不修改主機上既有的網站；nginx 設定檢查失敗會自動還原。之後要更新版本，再執行同一行指令即可（資料會保留）。
 
-   ```bash
-   sudo nginx -t && sudo systemctl reload nginx
-   ```
+| 項目 | 位置 |
+|---|---|
+| 程式 | `/opt/booking/server` |
+| 資料（SQLite、上傳圖片） | `/opt/booking/data`，請定期備份 |
+| 設定（場主帳號、DUPR 金鑰） | `/etc/booking.env`，修改後 `sudo systemctl restart booking` |
+| 服務記錄 | `journalctl -u booking -f` |
 
-3. 打開 `https://dc-tools.cc/booking/`，用 `.env` 裡的場主手機與密碼登入，就會進入場主後台。
-
-資料都存在 `/opt/booking/data/`（SQLite 資料庫與上傳的圖片），備份這個資料夾即可。
+也可以用 Docker：`cp .env.example .env` 填好後執行 `docker compose up -d --build`。

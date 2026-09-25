@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import { Avatar } from './ui'
+import { duprRange } from '../util'
 
 const BUTTON_CLASS = {
   book: 'btn',
@@ -24,6 +25,7 @@ export default function CourseCard({ course: c, showCount = true, showDate, to }
       <div className="course-main">
         <h2 className="course-name">
           {c.name}
+          {c.dupr_required && <span className="badge badge-dupr">{duprRange(c, true)}</span>}
           {c.beginner && <span className="badge badge-danger">新手友善</span>}
         </h2>
         <p className="course-meta">

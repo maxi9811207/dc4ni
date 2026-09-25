@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import { Badge, Confirm, Empty, Loading, Modal } from '../../components/ui'
-import { showDate } from '../../util'
+import { duprRange, rating, showDate } from '../../util'
 
 const STATUS = { booked: ['已預約', 'brand'], attended: ['出席', 'success'], absent: ['缺席', 'danger'], waitlist: ['候補', 'warn'] }
 
@@ -38,6 +38,7 @@ export default function Roster() {
         </div>
         <h2 className="detail-title">{c.name}</h2>
         <p className="course-meta"><b className="course-time">{showDate(c.date)} {c.start_time}~{c.end_time}</b> · {c.teacher?.name || '未指定老師'}</p>
+        {c.dupr_required && <p className="small"><Badge tone="dupr">DUPR 場</Badge> {duprRange(c)}</p>}
         <div className="stats stats-3">
           <div className="stat"><span>預約</span><b>{c.booked_count}/{c.capacity}</b></div>
           <div className="stat"><span>出席</span><b>{c.roster.filter((r) => r.status === 'attended').length}</b></div>
@@ -56,6 +57,7 @@ export default function Roster() {
               <div className="row between">
                 <div>
                   <b>{i + 1}. {r.name}</b> <Badge tone={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge>
+                  {r.dupr_id && <span className="small dupr-inline"> DUPR {rating(r[`dupr_${c.dupr_format}`])}{r.dupr_verified ? ' ✓' : ''}</span>}
                   <p className="muted small"><a href={`tel:${r.phone}`}>{r.phone}</a> · {r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
                 </div>
               </div>
@@ -76,7 +78,7 @@ export default function Roster() {
             {waiting.map((r, i) => (
               <div key={r.id} className="roster-row">
                 <div className="row between">
-                  <div><b>候補 {i + 1}. {r.name}</b><p className="muted small">{r.phone}</p></div>
+                  <div><b>候補 {i + 1}. {r.name}</b><p className="muted small">{r.phone}{r.dupr_id && ` · DUPR ${rating(r[`dupr_${c.dupr_format}`])}`}</p></div>
                   <div className="admin-actions">
                     <button className="btn btn-small" onClick={() => setStatus(r, 'booked')}>轉為正式</button>
                     <button className="btn btn-small btn-light" onClick={() => setStatus(r, 'cancelled')}>移除</button>

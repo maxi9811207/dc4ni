@@ -9,6 +9,7 @@ const EMPTY = {
   name: '', category: '', teacher_id: '', substitute: false, date: today(), start_time: '19:00', end_time: '21:00',
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
+  dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
 }
 
 export default function CourseForm() {
@@ -33,6 +34,8 @@ export default function CourseForm() {
       ...EMPTY,
       ...Object.fromEntries(Object.keys(EMPTY).filter((k) => k in c).map((k) => [k, c[k]])),
       teacher_id: c.teacher?.id || '',
+      dupr_min: c.dupr_min ?? '',
+      dupr_max: c.dupr_max ?? '',
       ...(id ? {} : { date: params.get('date') || c.date }),
     })).catch(handleError)
   }, [id, params, venue, handleError])
@@ -45,6 +48,7 @@ export default function CourseForm() {
   const submit = async (e) => {
     e.preventDefault()
     if (form.end_time <= form.start_time) return showToast('結束時間需晚於開始時間')
+    if (form.dupr_required && form.dupr_min !== '' && form.dupr_max !== '' && Number(form.dupr_min) > Number(form.dupr_max)) return showToast('DUPR 最低分不能高於最高分')
     setBusy(true)
     try {
       if (id) {
@@ -94,6 +98,28 @@ export default function CourseForm() {
         <Field label="點數卡扣點" hint="堂數卡固定扣 1 堂；填 0 為免費課程"><input className="input" type="number" min="0" value={form.cost} onChange={set('cost', Number)} /></Field>
       </div>
       <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>
+      <div className={`dupr-box ${form.dupr_required ? 'on' : ''}`}>
+        <label className="check strong">
+          <input type="checkbox" checked={form.dupr_required} onChange={(e) => setForm({ ...form, dupr_required: e.target.checked, category: e.target.checked && categories.includes('DUPR 場') ? 'DUPR 場' : form.category })} />
+          DUPR 場（限綁定 DUPR 帳號的學員報名）
+        </label>
+        {form.dupr_required && (
+          <>
+            <div className="grid2">
+              <Field label="依據分數">
+                <select className="input" value={form.dupr_format} onChange={set('dupr_format')}>
+                  <option value="doubles">雙打 Doubles</option>
+                  <option value="singles">單打 Singles</option>
+                </select>
+              </Field>
+              <div />
+              <Field label="最低分" hint="留空＝不限"><input className="input" type="number" step="0.001" min="1" max="8" value={form.dupr_min} onChange={set('dupr_min')} placeholder="3.000" /></Field>
+              <Field label="最高分" hint="留空＝不限"><input className="input" type="number" step="0.001" min="1" max="8" value={form.dupr_max} onChange={set('dupr_max')} placeholder="4.000" /></Field>
+            </div>
+            <label className="check"><input type="checkbox" checked={form.dupr_verified_only} onChange={set('dupr_verified_only')} /> 只限場館已驗證的 DUPR 帳號</label>
+          </>
+        )}
+      </div>
       <Field label="上課地點"><input className="input" value={form.location} onChange={set('location')} /></Field>
       <Field label="課程介紹"><textarea className="input" rows={4} value={form.description} onChange={set('description')} /></Field>
       <div className="grid2">

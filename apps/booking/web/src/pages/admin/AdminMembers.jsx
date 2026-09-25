@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import { Badge, Empty, Field, Loading, Modal } from '../../components/ui'
-import { cardRemain, showDateTime } from '../../util'
+import { cardRemain, rating, showDateTime } from '../../util'
 
 export default function AdminMembers() {
   const { handleError } = useApp()
@@ -27,6 +27,7 @@ export default function AdminMembers() {
             <b>{m.name}</b>
             {m.role === 'owner' && <Badge>場主</Badge>}
             {m.suspended ? <Badge tone="danger">停權</Badge> : null}
+            {m.dupr_id && <Badge tone="dupr">DUPR {rating(m.dupr_doubles)}{m.dupr_verified ? ' ✓' : ''}</Badge>}
             <p className="muted small">{m.phone} · 有效課卡 {m.cards.length} · 預約 {m.bookings} 次{m.absences ? ` · 缺席 ${m.absences}` : ''}</p>
           </div>
           <span className="muted">›</span>
@@ -87,6 +88,9 @@ function MemberDialog({ m, onClose, onChanged }) {
           onClick={() => run(() => api(`admin/members/${m.id}/cards`, { method: 'POST', body: { plan_id: Number(planId) } }), '已開通課卡')}>開通課卡</button>
       </div>
 
+      <h4 className="sub-title">DUPR</h4>
+      <DuprAdmin m={m} run={run} />
+
       <Field label="備註（僅場主可見）">
         <textarea className="input" rows={2} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
@@ -109,5 +113,39 @@ function MemberDialog({ m, onClose, onChanged }) {
         </>
       )}
     </Modal>
+  )
+}
+
+function DuprAdmin({ m, run }) {
+  const [edit, setEdit] = useState(false)
+  const [form, setForm] = useState({ dupr_id: m.dupr_id, doubles: m.dupr_doubles ?? '', singles: m.dupr_singles ?? '' })
+  const update = (body, msg) => run(() => api(`admin/members/${m.id}`, { method: 'PUT', body }), msg)
+  const source = { api: 'DUPR 官方資料', manual: '學員自填', owner: '場主設定' }[m.dupr_source] || ''
+  return (
+    <div className="dupr-box on">
+      {m.dupr_id ? (
+        <>
+          <p><b className="text-brand">{m.dupr_id}</b>{m.dupr_name && ` · ${m.dupr_name}`}</p>
+          <p className="small">雙打 <b>{rating(m.dupr_doubles)}</b> · 單打 <b>{rating(m.dupr_singles)}</b> <span className="muted">（{source}，{showDateTime(m.dupr_synced_at)}）</span></p>
+          <p className="small">{m.dupr_verified ? <span className="text-success">✓ 場館已驗證</span> : <span className="text-warn">尚未驗證</span>}</p>
+        </>
+      ) : <p className="muted small">尚未綁定 DUPR</p>}
+      <div className="admin-actions">
+        {m.dupr_id && (m.dupr_verified
+          ? <button className="btn btn-small btn-light" onClick={() => update({ dupr_verified: false }, '已取消驗證')}>取消驗證</button>
+          : <button className="btn btn-small" onClick={() => update({ dupr_verified: true }, '已驗證 DUPR')}>核對無誤，驗證</button>)}
+        <button className="btn btn-small btn-light" onClick={() => setEdit(!edit)}>{m.dupr_id ? '修改' : '代為綁定'}</button>
+      </div>
+      {edit && (
+        <div className="form">
+          <input className="input" placeholder="DUPR ID" value={form.dupr_id} onChange={(e) => setForm({ ...form, dupr_id: e.target.value.toUpperCase() })} />
+          <div className="grid2">
+            <input className="input" type="number" step="0.001" placeholder="雙打" value={form.doubles} onChange={(e) => setForm({ ...form, doubles: e.target.value })} />
+            <input className="input" type="number" step="0.001" placeholder="單打" value={form.singles} onChange={(e) => setForm({ ...form, singles: e.target.value })} />
+          </div>
+          <button className="btn btn-small" onClick={() => { update({ dupr: form }, '已更新 DUPR'); setEdit(false) }}>儲存（視為已驗證）</button>
+        </div>
+      )}
+    </div>
   )
 }

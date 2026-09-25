@@ -69,3 +69,16 @@ export function hours(min) {
   const h = min / 60
   return Number.isInteger(h) ? `${h} 小時` : `${min} 分鐘`
 }
+
+export function rating(v) {
+  return v === null || v === undefined ? 'NR' : Number(v).toFixed(3)
+}
+
+// 例：DUPR 雙打 3.000–4.000
+export function duprRange(c, short = false) {
+  const fmt = c.dupr_format === 'singles' ? '單打' : '雙打'
+  const lo = c.dupr_min != null ? Number(c.dupr_min).toFixed(short ? 1 : 3) : ''
+  const hi = c.dupr_max != null ? Number(c.dupr_max).toFixed(short ? 1 : 3) : ''
+  const range = lo && hi ? `${lo}–${hi}` : lo ? `${lo}+` : hi ? `≤${hi}` : '不限分數'
+  return short ? `DUPR ${range}` : `DUPR ${fmt} ${range}`
+}

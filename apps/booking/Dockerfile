@@ -11,7 +11,7 @@ FROM python:3.11-slim
 WORKDIR /app
 COPY server/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY server/app.py .
+COPY server/app.py server/dupr.py ./
 COPY --from=web /static ./static
 ENV BOOKING_DATA_DIR=/data
 VOLUME /data

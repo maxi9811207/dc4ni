@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api } from '../api'
 import { Avatar, Badge, Confirm, Loading, Modal, TopBar } from '../components/ui'
-import { cardRemain, hours, showDate } from '../util'
+import { cardRemain, duprRange, hours, rating, showDate } from '../util'
 
 export default function CourseDetail() {
   const { id } = useParams()
@@ -51,6 +51,7 @@ export default function CourseDetail() {
   const onPrimary = () => {
     if (requireLogin()) return
     if (user.suspended) return handleError({ message: 'SUSPENDED' })
+    if (['book', 'waitlist'].includes(c.state) && c.dupr_problem) return setDialog('dupr')
     if (c.state === 'book') {
       if (c.cost > 0 && c.cards.length === 0) return setDialog('nocard')
       return reserve()
@@ -81,6 +82,7 @@ export default function CourseDetail() {
         <section className="card detail-card">
           <div className="row gap-sm wrap">
             {c.category && <Badge>{c.category}</Badge>}
+            {c.dupr_required && c.category !== 'DUPR 場' && <Badge tone="dupr">DUPR 場</Badge>}
             {c.beginner && <Badge tone="danger">新手友善</Badge>}
             {c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}
           </div>
@@ -103,6 +105,25 @@ export default function CourseDetail() {
             </div>
             <span className="muted">›</span>
           </Link>
+        )}
+
+        {c.dupr_required && (
+          <section className="card dupr-card">
+            <h3 className="card-title">DUPR 報名條件</h3>
+            <p className="dupr-range">{duprRange(c)}</p>
+            <ul className="notes">
+              <li>需先在會員中心綁定 DUPR 帳號{c.dupr_verified_only && '，且須經場館驗證'}。</li>
+              <li>以綁定時取得的 DUPR {c.dupr_format === 'singles' ? '單打' : '雙打'}分數判斷資格。</li>
+            </ul>
+            {user && (
+              user.dupr_id
+                ? <p className={`small ${c.dupr_problem ? 'text-danger' : 'text-success'}`}>
+                    您的 DUPR：{c.dupr_format === 'singles' ? '單打' : '雙打'} {rating(user[`dupr_${c.dupr_format}`])}
+                    {c.dupr_problem ? `（${c.dupr_problem}）` : '，符合資格 ✓'}
+                  </p>
+                : <Link className="btn btn-small btn-outline" to="/me?tab=dupr">綁定 DUPR 帳號</Link>
+            )}
+          </section>
         )}
 
         {c.description && (
@@ -180,6 +201,10 @@ export default function CourseDetail() {
         <Confirm title={c.state === 'waiting' ? '取消候補' : '取消預約'} danger okText="確定取消"
           text={c.state === 'waiting' ? '確定要取消這堂課的候補嗎？' : '取消後課卡會退還，確定要取消嗎？'}
           onClose={() => setDialog(null)} onOk={cancel} />
+      )}
+      {dialog === 'dupr' && (
+        <Confirm title="不符合 DUPR 報名條件" text={c.dupr_problem} okText={user?.dupr_id ? '查看我的 DUPR' : '前往綁定'}
+          onClose={() => setDialog(null)} onOk={() => navigate('/me?tab=dupr')} />
       )}
       {dialog === 'nocard' && (
         <Confirm title="沒有可用的課卡" text="這堂課需要使用課卡，請先購買課卡方案。" okText="前往購買"

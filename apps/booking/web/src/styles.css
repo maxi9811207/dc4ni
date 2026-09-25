@@ -203,6 +203,7 @@ a.card:active, button.card:active { transform: scale(0.995); }
 .badge-success { background: var(--success-soft); color: var(--success); }
 .badge-warn { background: var(--warn-soft); color: var(--warn); }
 .badge-gray { background: var(--gray-soft); color: var(--muted); }
+.badge-dupr { background: #0b2a5b; color: #fff; font-weight: 700; letter-spacing: 0.02em; }
 
 .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; padding: 2px 0; }
 .chips::-webkit-scrollbar { display: none; }
@@ -262,6 +263,18 @@ a.card:active, button.card:active { transform: scale(0.995); }
 .price { font-size: 18px; font-weight: 700; color: var(--text); }
 .summary { background: var(--gray-soft); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
 .pay-info { background: var(--brand-soft); color: var(--brand-dark); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+
+/* ---------------------------------------------------------------- DUPR */
+
+.dupr-card { border-top: 4px solid #0b2a5b; display: flex; flex-direction: column; gap: 8px; }
+.dupr-card .card-title { margin-bottom: 0; }
+.dupr-range { font-size: 18px; font-weight: 700; color: #0b2a5b; }
+.dupr-box { border: 1px dashed var(--brand-300); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.dupr-box.on { border-style: solid; background: var(--brand-soft); }
+.dupr-inline { color: #0b2a5b; font-weight: 700; }
+.stats-2 { grid-template-columns: 1fr 1fr; }
+.stats-2 .stat { background: var(--brand-soft); box-shadow: none; }
+.stats-2 .stat b { color: var(--brand); }
 
 /* ---------------------------------------------------------------- about */
 

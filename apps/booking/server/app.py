@@ -18,6 +18,8 @@ from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, Uplo
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+import dupr
+
 DATA_DIR = Path(os.getenv("BOOKING_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "booking.db"
 UPLOAD_DIR = DATA_DIR / "uploads"
@@ -90,6 +92,26 @@ CREATE TABLE IF NOT EXISTS notifications (
   read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
 """
 
+# 既有資料庫升級時補上的欄位
+MIGRATIONS = {
+    "users": {
+        "dupr_id": "TEXT NOT NULL DEFAULT ''",
+        "dupr_name": "TEXT NOT NULL DEFAULT ''",
+        "dupr_doubles": "REAL",
+        "dupr_singles": "REAL",
+        "dupr_source": "TEXT NOT NULL DEFAULT ''",
+        "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
+        "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
+    },
+    "courses": {
+        "dupr_required": "INTEGER NOT NULL DEFAULT 0",
+        "dupr_format": "TEXT NOT NULL DEFAULT 'doubles'",
+        "dupr_min": "REAL",
+        "dupr_max": "REAL",
+        "dupr_verified_only": "INTEGER NOT NULL DEFAULT 0",
+    },
+}
+
 app = FastAPI(title="約課系統 API", docs_url="/api/docs", openapi_url="/api/openapi.json")
 
 
@@ -158,8 +180,12 @@ def course_start(c: dict) -> datetime:
     return datetime.fromisoformat(f"{c['date']}T{c['start_time']}")
 
 
+USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "created_at", "dupr_id", "dupr_name",
+               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at")
+
+
 def public_user(u: dict) -> dict:
-    return {k: u[k] for k in ("id", "name", "phone", "role", "suspended", "suspend_reason", "created_at")}
+    return {k: u[k] for k in USER_FIELDS}
 
 
 def mask_name(name: str) -> str:
@@ -203,6 +229,11 @@ def startup():
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         conn.executescript(SCHEMA)
+        for table, cols in MIGRATIONS.items():
+            have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for col, ddl in cols.items():
+                if col not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
         conn.execute("PRAGMA journal_mode = WAL")
         phone = os.getenv("BOOKING_OWNER_PHONE")
         password = os.getenv("BOOKING_OWNER_PASSWORD")
@@ -219,7 +250,7 @@ def seed_demo(conn):
         ("name", json.dumps("Active Pickleball Club")),
         ("address", json.dumps("新北市中和區自強國小")),
         ("about", json.dumps("新手友善的匹克球俱樂部，提供教學課程與分級球敘。")),
-        ("categories", json.dumps(["教學場次", "球敘（初中階場次）", "球敘（高階場次）"])),
+        ("categories", json.dumps(["教學場次", "球敘（初中階場次）", "球敘（高階場次）", "DUPR 場"])),
     ])
     teachers = [("Mark 教練", "USAPA 認證教練", "專長基礎動作與雙打站位，課程循序漸進。"),
                 ("小昱", "球敘團主", "負責分級球敘與配對，讓每個人都打得開心。")]
@@ -243,6 +274,13 @@ def seed_demo(conn):
                 "INSERT INTO courses (name, category, teacher_id, date, start_time, end_time, capacity, cost,"
                 " beginner, location, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (name, cat, tid, day, s, e, cap, cost, beg, "自強國小體育館", stamp()))
+    for d in range(0, 12, 2):
+        conn.execute(
+            "INSERT INTO courses (name, category, teacher_id, date, start_time, end_time, capacity, cost, location,"
+            " description, dupr_required, dupr_format, dupr_min, dupr_max, created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            ("DUPR 積分雙打團 3.0–4.0", "DUPR 場", 2, (today + timedelta(days=d)).isoformat(), "20:00", "22:00", 16, 5,
+             "自強國小體育館", "上傳 DUPR 計分的雙打團，需綁定 DUPR 帳號，雙打分數 3.000–4.000。",
+             1, "doubles", 3.0, 4.0, stamp()))
     past = rows(conn.execute("SELECT * FROM courses WHERE date<? ORDER BY id", (today.isoformat(),)))
     comments = ["教練講解仔細，非常好理解，會對每個學生給與建議，超讚！", "很適合新手來體驗！",
                 "十分用心教學的老師，推～喜歡上課的氛圍", "分級很清楚，打得很開心"]
@@ -263,6 +301,26 @@ def course_counts(conn, course_id: int) -> tuple[int, int]:
         "SELECT SUM(status IN ('booked','attended','absent')) AS booked, SUM(status='waitlist') AS wait"
         " FROM reservations WHERE course_id=?", (course_id,)).fetchone()
     return r["booked"] or 0, r["wait"] or 0
+
+
+FORMAT_NAMES = {"doubles": "雙打", "singles": "單打"}
+
+
+def dupr_problem(c: dict, u: dict) -> str | None:
+    """DUPR 場的報名資格，符合回傳 None，否則回傳原因。"""
+    if not c["dupr_required"]:
+        return None
+    if not u.get("dupr_id"):
+        return "這是 DUPR 場，請先到會員中心綁定 DUPR 帳號"
+    if c["dupr_verified_only"] and not u.get("dupr_verified"):
+        return "這場限已驗證的 DUPR 帳號，請聯絡場館核對身分"
+    rating = u.get(f"dupr_{c['dupr_format']}")
+    fmt = FORMAT_NAMES.get(c["dupr_format"], "")
+    if c["dupr_min"] is not None and (rating is None or rating < c["dupr_min"]):
+        return f"這場需要 DUPR {fmt} {c['dupr_min']:.2f} 以上（您目前 {rating if rating is not None else '無分數'}）"
+    if c["dupr_max"] is not None and rating is not None and rating > c["dupr_max"]:
+        return f"這場限 DUPR {fmt} {c['dupr_max']:.2f} 以下（您目前 {rating}）"
+    return None
 
 
 def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
@@ -313,6 +371,12 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "waitlist_position": position,
         "can_cancel": bool(mine) and (mine["status"] == "waitlist" or
                                       t < start - timedelta(minutes=c["cancel_deadline_min"])),
+        "dupr_required": bool(c["dupr_required"]),
+        "dupr_format": c["dupr_format"],
+        "dupr_min": c["dupr_min"],
+        "dupr_max": c["dupr_max"],
+        "dupr_verified_only": bool(c["dupr_verified_only"]),
+        "dupr_problem": dupr_problem(c, user) if user and not mine else None,
     }
 
 
@@ -363,6 +427,11 @@ def promote_waitlist(conn, c: dict):
             "SELECT * FROM reservations WHERE course_id=? AND status='waitlist' ORDER BY id", (c["id"],))):
         if booked >= c["capacity"]:
             break
+        u = one(conn.execute("SELECT * FROM users WHERE id=?", (w["user_id"],)))
+        if dupr_problem(c, u):
+            notify(conn, w["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 有名額釋出，"
+                                       "但您的 DUPR 分數不符合這場的條件，未能自動遞補。")
+            continue
         try:
             card_id, charged = charge(conn, w["user_id"], c, None)
         except HTTPException:
@@ -583,6 +652,8 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
         v = course_view(conn, c, user, get_settings(conn))
         if v["state"] not in ("book", "waitlist"):
             fail(400, f"此課程目前無法預約（{v['button']}）")
+        if v["dupr_problem"]:
+            fail(400, v["dupr_problem"])
         if v["state"] == "waitlist":
             if c["cost"] and not eligible_cards(conn, user["id"], c):
                 fail(400, "沒有可用的課卡，請先購買課卡方案")
@@ -650,6 +721,68 @@ async def create_review(request: Request, user=Depends(require_user)):
         return {"ok": True}
 
 
+# ---------------------------------------------------------------- DUPR
+
+def set_dupr(conn, user_id: int, b: dict, source: str):
+    """綁定或更新 DUPR。有 DUPR 金鑰時分數一律向 DUPR 取得；沒有時使用填寫的分數（待場主核對）。"""
+    if not b.get("dupr_id"):
+        conn.execute("UPDATE users SET dupr_id='', dupr_name='', dupr_doubles=NULL, dupr_singles=NULL,"
+                     " dupr_source='', dupr_verified=0, dupr_synced_at='' WHERE id=?", (user_id,))
+        return
+    try:
+        dupr_id = dupr.normalize_id(str(b["dupr_id"]))
+        taken = one(conn.execute("SELECT id FROM users WHERE dupr_id=? AND id!=?", (dupr_id, user_id)))
+        if taken:
+            fail(400, "這個 DUPR ID 已被其他帳號綁定，如有疑問請聯絡場館")
+        if dupr.enabled():
+            info = dupr.fetch_player(dupr_id)
+            data = (dupr_id, info["name"], info["doubles"], info["singles"], "api")
+        else:
+            def rating(k):
+                v = b.get(k)
+                if v in (None, ""):
+                    return None
+                v = float(v)
+                if not 1 <= v <= 8:
+                    fail(400, "DUPR 分數需介於 1.000 與 8.000 之間")
+                return round(v, 3)
+            data = (dupr_id, str(b.get("name", ""))[:60], rating("doubles"), rating("singles"),
+                    "owner" if source == "owner" else "manual")
+    except dupr.DuprError as e:
+        fail(400, str(e))
+    # 場主設定即視為已驗證；同一個 ID 且分數沒被本人改動才保留驗證狀態
+    old = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
+    unchanged = old["dupr_id"] == dupr_id and (data[4] == "api" or
+                                               (old["dupr_doubles"], old["dupr_singles"]) == (data[2], data[3]))
+    verified = 1 if source == "owner" or (unchanged and old["dupr_verified"]) else 0
+    conn.execute("UPDATE users SET dupr_id=?, dupr_name=?, dupr_doubles=?, dupr_singles=?, dupr_source=?,"
+                 " dupr_verified=?, dupr_synced_at=? WHERE id=?", (*data, verified, stamp(), user_id))
+
+
+@app.get("/api/dupr/config")
+def dupr_config():
+    return {"api_enabled": dupr.enabled()}
+
+
+@app.put("/api/me/dupr")
+async def link_dupr(request: Request, user=Depends(require_user)):
+    b = await request.json()
+    with db() as conn:
+        set_dupr(conn, user["id"], b, source="self")
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+
+
+@app.post("/api/me/dupr/refresh")
+def refresh_dupr(user=Depends(require_user)):
+    if not user["dupr_id"]:
+        fail(400, "尚未綁定 DUPR")
+    if not dupr.enabled():
+        fail(400, "場館尚未開通 DUPR 自動同步，請直接修改分數")
+    with db() as conn:
+        set_dupr(conn, user["id"], {"dupr_id": user["dupr_id"]}, source="self")
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+
+
 # ---------------------------------------------------------------- owner API
 
 @app.get("/api/admin/dashboard")
@@ -685,12 +818,17 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
-                 "plan_ids")
+                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only")
 
 
 def clean_course(b: dict) -> dict:
     out = {k: b[k] for k in COURSE_FIELDS if k in b}
-    for k in ("substitute", "beginner"):
+    for k in ("dupr_min", "dupr_max"):
+        if k in out:
+            out[k] = round(float(out[k]), 3) if out[k] not in (None, "") else None
+    if out.get("dupr_format") not in (None, "doubles", "singles"):
+        out["dupr_format"] = "doubles"
+    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only"):
         if k in out:
             out[k] = 1 if out[k] else 0
     for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min"):
@@ -771,7 +909,8 @@ def roster(course_id: int, owner=Depends(require_owner)):
         c = get_course(conn, course_id)
         v = course_view(conn, c, None, get_settings(conn))
         v["roster"] = rows(conn.execute(
-            "SELECT r.*, u.name, u.phone, cd.name card_name FROM reservations r JOIN users u ON u.id=r.user_id"
+            "SELECT r.*, u.name, u.phone, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified,"
+            " cd.name card_name FROM reservations r JOIN users u ON u.id=r.user_id"
             " LEFT JOIN cards cd ON cd.id=r.card_id WHERE r.course_id=? AND r.status!='cancelled' ORDER BY r.id",
             (course_id,)))
         return v
@@ -928,6 +1067,10 @@ async def update_member(user_id: int, request: Request, owner=Depends(require_ow
                 fail(400, "不能停權自己")
             conn.execute("UPDATE users SET suspended=?, suspend_reason=? WHERE id=?",
                          (1 if b["suspended"] else 0, str(b.get("suspend_reason", ""))[:200], user_id))
+        if "dupr_verified" in b:
+            conn.execute("UPDATE users SET dupr_verified=? WHERE id=?", (1 if b["dupr_verified"] else 0, user_id))
+        if "dupr" in b:
+            set_dupr(conn, user_id, b["dupr"], source="owner")
         if "note" in b:
             conn.execute("UPDATE users SET note=? WHERE id=?", (str(b["note"])[:500], user_id))
         if b.get("role") in ("student", "owner") and u["id"] != owner["id"]:
