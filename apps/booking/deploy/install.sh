@@ -7,7 +7,9 @@
 #   BOOKING_DOMAIN=booking.example.com   用網域對外（會另外建立 nginx 站台，並申請 HTTPS 憑證）
 #                                        沒有網域可用 sslip.io，例如 IP 1.2.3.4 → BOOKING_DOMAIN=1-2-3-4.sslip.io
 #   BOOKING_PORT=8080                    沒有網域時，用 http://主機IP:8080 對外（預設 8080）
+#   BOOKING_AUTO_UPDATE=1                安裝自動更新：每 5 分鐘檢查 GitHub 分支，有新版就自動重新部署
 #
+# 網域會記在 /etc/booking.env，之後更新不必再指定。
 # 只會新增 /opt/booking、/etc/booking.env、booking.service 與 nginx 的 booking 站台，
 # 不會修改主機上既有的網站設定；nginx 設定檢查失敗會自動還原。
 set -euo pipefail
@@ -18,6 +20,9 @@ APP=/opt/booking
 ENV_FILE=/etc/booking.env
 PORT=${BOOKING_PORT:-8080}
 DOMAIN=${BOOKING_DOMAIN:-}
+if [ -z "$DOMAIN" ] && [ -f "$ENV_FILE" ]; then
+  DOMAIN=$(sed -n 's/^BOOKING_DOMAIN=//p' "$ENV_FILE" | tail -1)
+fi
 
 [ "$(id -u)" = 0 ] || { echo "請用 sudo 執行"; exit 1; }
 
@@ -29,6 +34,7 @@ apt-get install -y -qq git python3-venv nginx > /dev/null
 echo "==> 下載程式"
 SRC=$(mktemp -d)
 git clone -q --depth 1 -b "$BRANCH" "$REPO" "$SRC"
+COMMIT=$(git -C "$SRC" rev-parse HEAD)
 id booking &>/dev/null || useradd --system --home "$APP" --shell /usr/sbin/nologin booking
 mkdir -p "$APP/data"
 rm -rf "$APP/server.new" && cp -r "$SRC/apps/booking/server" "$APP/server.new"
@@ -61,6 +67,10 @@ DUPR_CLIENT_SECRET=
 DUPR_ENV=production
 CONF
   chmod 600 "$ENV_FILE"
+fi
+if [ -n "$DOMAIN" ]; then
+  sed -i '/^BOOKING_DOMAIN=/d' "$ENV_FILE"
+  echo "BOOKING_DOMAIN=$DOMAIN" >> "$ENV_FILE"
 fi
 
 echo "==> 設定系統服務"
@@ -101,6 +111,10 @@ else
 fi
 BACKUP=$(mktemp)
 [ -f "$SITE" ] && cp "$SITE" "$BACKUP"
+# 已經設定過同一個網域／port 就不動（保留 certbot 加上的 HTTPS 設定）
+if [ -f "$SITE" ] && grep -qF "$NAME" "$SITE" && { [ -n "$DOMAIN" ] || grep -qF "$LISTEN" "$SITE"; }; then
+  echo "nginx 站台已存在，保留現有設定"
+else
 cat > "$SITE" <<NGINX
 server {
     $LISTEN
@@ -124,17 +138,60 @@ if ! nginx -t 2>/dev/null; then
   exit 1
 fi
 systemctl reload nginx
+fi
 
-if [ -n "$DOMAIN" ] && ! command -v certbot > /dev/null; then
+if [ -n "$DOMAIN" ] && [ -d "/etc/letsencrypt/live/$DOMAIN" ] && grep -q "listen 443" "$SITE"; then
+  DOMAIN_HTTPS_DONE=1
+fi
+if [ -n "$DOMAIN" ] && [ -z "${DOMAIN_HTTPS_DONE:-}" ] && ! command -v certbot > /dev/null; then
   apt-get install -y -qq certbot python3-certbot-nginx > /dev/null
 fi
-if [ -n "$DOMAIN" ] && command -v certbot > /dev/null; then
+if [ -n "$DOMAIN" ] && [ -z "${DOMAIN_HTTPS_DONE:-}" ] && command -v certbot > /dev/null; then
   certbot --nginx -d "$DOMAIN" --non-interactive --redirect --agree-tos --register-unsafely-without-email \
     || echo "HTTPS 憑證申請失敗（請確認 $DOMAIN 已指向這台主機），目前先以 http 運作"
 fi
 
 if [ -z "$DOMAIN" ] && command -v ufw > /dev/null && ufw status | grep -q active; then
   ufw allow "$PORT"/tcp > /dev/null
+fi
+
+echo "$COMMIT" > "$APP/.deployed"
+
+if [ "${BOOKING_AUTO_UPDATE:-}" = 1 ]; then
+  echo "==> 設定自動更新（每 5 分鐘檢查一次）"
+  cat > /usr/local/sbin/booking-update <<UPD
+#!/usr/bin/env bash
+# 分支有新 commit 時重新執行安裝腳本；紀錄：journalctl -u booking-update
+set -euo pipefail
+LATEST=\$(git ls-remote $REPO refs/heads/$BRANCH | cut -f1)
+[ -n "\$LATEST" ] || exit 0
+[ "\$LATEST" = "\$(cat $APP/.deployed 2>/dev/null)" ] && exit 0
+echo "更新到 \$LATEST"
+curl -fsSL "https://raw.githubusercontent.com/maxi9811207/dc4ni/\$LATEST/apps/booking/deploy/install.sh" | BOOKING_BRANCH=$BRANCH bash
+UPD
+  chmod 700 /usr/local/sbin/booking-update
+  cat > /etc/systemd/system/booking-update.service <<UNIT
+[Unit]
+Description=Booking system auto update
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/booking-update
+UNIT
+  cat > /etc/systemd/system/booking-update.timer <<UNIT
+[Unit]
+Description=Check for booking system updates every 5 minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+  systemctl daemon-reload
+  systemctl enable -q --now booking-update.timer
 fi
 
 IP=$(curl -fsS -4 https://ifconfig.me 2>/dev/null || hostname -I | awk '{print $1}')
