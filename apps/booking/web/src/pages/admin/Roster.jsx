@@ -58,7 +58,7 @@ export default function Roster() {
                 <div>
                   <b>{i + 1}. {r.name}</b> <Badge tone={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge>
                   {r.dupr_id && <span className="small dupr-inline"> DUPR {rating(r[`dupr_${c.dupr_format}`])}{r.dupr_verified ? ' ✓' : ''}</span>}
-                  <p className="muted small"><a href={`tel:${r.phone}`}>{r.phone}</a> · {r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
+                  <p className="muted small">{r.phone && <><a href={`tel:${r.phone}`}>{r.phone}</a> · </>}{r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
                 </div>
               </div>
               <div className="admin-actions">
@@ -108,7 +108,7 @@ function AddMember({ courseId, onClose, onDone }) {
   const [q, setQ] = useState('')
   const [charge, setCharge] = useState(true)
   useEffect(() => { api('admin/members').then(setMembers).catch(handleError) }, [handleError])
-  const shown = members.filter((m) => m.role === 'student' && (m.name.includes(q) || m.phone.includes(q))).slice(0, 30)
+  const shown = members.filter((m) => m.role === 'student' && (m.name.includes(q) || (m.phone || '').includes(q) || (m.email || '').includes(q))).slice(0, 30)
   const add = (m) => api(`admin/courses/${courseId}/add`, { method: 'POST', body: { user_id: m.id, charge } }).then(onDone).catch(handleError)
   return (
     <Modal onClose={onClose}>
@@ -118,7 +118,7 @@ function AddMember({ courseId, onClose, onDone }) {
       <div className="pick-list">
         {shown.map((m) => (
           <button key={m.id} className="pick-item" onClick={() => add(m)}>
-            <b>{m.name}</b><span className="muted small">{m.phone} · 有效課卡 {m.cards.length}</span>
+            <b>{m.name}</b><span className="muted small">{m.phone || m.email || ''} · 有效課卡 {m.cards.length}</span>
           </button>
         ))}
         {shown.length === 0 && <p className="muted center small">找不到會員</p>}

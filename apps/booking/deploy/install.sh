@@ -68,6 +68,10 @@ DUPR_ENV=production
 CONF
   chmod 600 "$ENV_FILE"
 fi
+# 補上新版本需要的設定欄位（不覆蓋已經填好的值）
+for KEY in DUPR_CLIENT_KEY DUPR_CLIENT_SECRET LINE_CHANNEL_ID LINE_CHANNEL_SECRET LINE_LIFF_ID; do
+  grep -q "^$KEY=" "$ENV_FILE" || echo "$KEY=" >> "$ENV_FILE"
+done
 if [ -n "$DOMAIN" ]; then
   sed -i '/^BOOKING_DOMAIN=/d' "$ENV_FILE"
   echo "BOOKING_DOMAIN=$DOMAIN" >> "$ENV_FILE"

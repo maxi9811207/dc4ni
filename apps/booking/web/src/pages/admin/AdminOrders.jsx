@@ -34,7 +34,7 @@ export default function AdminOrders() {
             <b>{o.plan_name}</b>
             <Badge tone={STATUS[o.status][1]}>{STATUS[o.status][0]}</Badge>
           </div>
-          <p className="small">{o.user_name} · <a href={`tel:${o.phone}`}>{o.phone}</a></p>
+          <p className="small">{o.user_name}{o.phone && <> · <a href={`tel:${o.phone}`}>{o.phone}</a></>}</p>
           <div className="row between">
             <span className="muted small">#{o.id} · {showDateTime(o.created_at)}</span>
             <b className="price">{money(o.amount)}</b>

@@ -8,7 +8,8 @@ import Teachers from './pages/Teachers'
 import TeacherDetail from './pages/TeacherDetail'
 import Plans from './pages/Plans'
 import About from './pages/About'
-import Login from './pages/Login'
+import Login, { LineCallback } from './pages/Login'
+import { liffLogin } from './liff'
 import Member from './pages/Member'
 import AdminLayout from './pages/admin/AdminLayout'
 import Dashboard from './pages/admin/Dashboard'
@@ -32,6 +33,7 @@ export const useApp = () => useContext(AppContext)
 
 export default function App() {
   const [venue, setVenue] = useState(null)
+  const [auth, setAuth] = useState({ line_enabled: false, liff_id: '' })
   const [user, setUser] = useState(null)
   const [ready, setReady] = useState(false)
   const [toast, setToast] = useState('')
@@ -53,7 +55,15 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    Promise.all([loadVenue(), refreshUser()]).finally(() => setReady(true))
+    const cfg = api('auth/config').then((c) => { setAuth(c); return c }).catch(() => ({}))
+    Promise.all([loadVenue(), cfg.then(async (c) => {
+      // 在 LINE 裡開啟（LIFF）且尚未登入：自動用 LINE 身分登入
+      if (c.liff_id && !getToken()) {
+        const r = await liffLogin(c.liff_id).catch(() => null)
+        if (r) setToken(r.token)
+      }
+      return refreshUser()
+    })]).finally(() => setReady(true))
   }, [loadVenue, refreshUser])
 
   useEffect(() => {
@@ -79,7 +89,7 @@ export default function App() {
     else showToast(e.message)
   }, [showToast])
 
-  const ctx = { venue, loadVenue, user, refreshUser, signIn, signOut, showToast, setDialog, handleError }
+  const ctx = { venue, loadVenue, auth, user, refreshUser, signIn, signOut, showToast, setDialog, handleError }
 
   if (!ready) return <div className="boot"><div className="spinner" /></div>
 
@@ -94,6 +104,7 @@ export default function App() {
           <Route path="/plans" element={<Plans />} />
           <Route path="/about" element={<About />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/auth/line" element={<LineCallback />} />
           <Route path="/me" element={<Member />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />

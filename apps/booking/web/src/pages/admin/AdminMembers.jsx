@@ -15,11 +15,11 @@ export default function AdminMembers() {
   }).catch(handleError), [handleError])
   useEffect(() => { load() }, [load])
 
-  const shown = (list || []).filter((m) => m.name.includes(q) || m.phone.includes(q))
+  const shown = (list || []).filter((m) => m.name.includes(q) || (m.phone || '').includes(q) || (m.email || '').includes(q.toLowerCase()))
 
   return (
     <>
-      <input className="input search" placeholder="搜尋姓名或手機" value={q} onChange={(e) => setQ(e.target.value)} />
+      <input className="input search" placeholder="搜尋姓名、信箱或手機" value={q} onChange={(e) => setQ(e.target.value)} />
       {!list ? <Loading /> : shown.length === 0 ? <Empty text="找不到會員" /> : shown.map((m) => (
         <button key={m.id} className="card member-row text-left" onClick={() => setOpen(m)}>
           <Avatar src={m.avatar_url} name={m.name} size={40} />
@@ -28,7 +28,7 @@ export default function AdminMembers() {
             {m.role === 'owner' && <Badge>場主</Badge>}
             {m.suspended ? <Badge tone="danger">停權</Badge> : null}
             {m.dupr_id && <Badge tone="dupr">DUPR {rating(m.dupr_doubles)}{m.dupr_verified ? ' ✓' : ''}</Badge>}
-            <p className="muted small">{m.phone} · 有效課卡 {m.cards.length} · 預約 {m.bookings} 次{m.absences ? ` · 缺席 ${m.absences}` : ''}</p>
+            <p className="muted small">{m.line_linked && <span className="badge badge-line">LINE</span>} {m.email || m.phone || ''} · 有效課卡 {m.cards.length} · 預約 {m.bookings} 次{m.absences ? ` · 缺席 ${m.absences}` : ''}</p>
           </div>
           <span className="muted">›</span>
         </button>
@@ -63,7 +63,7 @@ function MemberDialog({ m, onClose, onChanged }) {
   return (
     <Modal onClose={onClose}>
       <h3 className="dialog-title">{m.name}</h3>
-      <p className="muted center small"><a href={`tel:${m.phone}`}>{m.phone}</a> · 加入於 {showDateTime(m.created_at).slice(0, 10)}</p>
+      <p className="muted center small">{m.line_linked && 'LINE · '}{m.email && <>{m.email} · </>}{m.phone && <><a href={`tel:${m.phone}`}>{m.phone}</a> · </>}加入於 {showDateTime(m.created_at).slice(0, 10)}</p>
       <div className="stats stats-3">
         <div className="stat"><span>預約</span><b>{m.bookings}</b></div>
         <div className="stat"><span>缺席</span><b>{m.absences}</b></div>

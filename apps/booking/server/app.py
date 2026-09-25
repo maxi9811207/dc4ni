@@ -6,8 +6,10 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
+import urllib.parse
 import uuid
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
@@ -15,10 +17,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import dupr
+import line_login
 import reports
 
 DATA_DIR = Path(os.getenv("BOOKING_DATA_DIR", Path(__file__).parent / "data"))
@@ -46,10 +49,13 @@ DEFAULT_SETTINGS = {
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS users (
-  id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT NOT NULL UNIQUE,
-  password_hash TEXT NOT NULL, role TEXT NOT NULL DEFAULT 'student',
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE, email TEXT UNIQUE, line_user_id TEXT UNIQUE,
+  password_hash TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'student',
   suspended INTEGER NOT NULL DEFAULT 0, suspend_reason TEXT NOT NULL DEFAULT '',
   note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state TEXT PRIMARY KEY, nonce TEXT NOT NULL, next TEXT NOT NULL DEFAULT '/', link_user_id INTEGER,
+  created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS tokens (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS teachers (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, title TEXT NOT NULL DEFAULT '',
@@ -118,6 +124,7 @@ MIGRATIONS = {
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
         "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
         "avatar_url": "TEXT NOT NULL DEFAULT ''",
+        "avatar_source": "TEXT NOT NULL DEFAULT ''",
     },
     "courses": {
         "dupr_required": "INTEGER NOT NULL DEFAULT 0",
@@ -177,6 +184,8 @@ def hash_password(password: str, salt: str | None = None) -> str:
 
 
 def check_password(password: str, stored: str) -> bool:
+    if not stored or "$" not in stored:
+        return False  # LINE 註冊、尚未設定密碼
     salt = stored.split("$", 1)[0]
     return secrets.compare_digest(hash_password(password, salt), stored)
 
@@ -212,7 +221,8 @@ USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "cr
 
 
 def public_user(u: dict) -> dict:
-    return {k: u[k] for k in USER_FIELDS}
+    return {**{k: u[k] for k in USER_FIELDS}, "email": u["email"], "avatar_source": u["avatar_source"], "line_linked": bool(u["line_user_id"]),
+            "has_password": bool(u["password_hash"])}
 
 
 def mask_name(name: str) -> str:
@@ -250,12 +260,34 @@ def issue_token(conn, user_id: int) -> str:
 
 # ---------------------------------------------------------------- startup
 
+def rebuild_users(conn):
+    """舊版 users 表（手機必填、沒有信箱／LINE 欄位）改成新結構，保留所有資料。"""
+    info = {r["name"]: r for r in conn.execute("PRAGMA table_info(users)")}
+    if "email" in info and not info["phone"]["notnull"]:
+        return
+    extra = ",\n".join(f"  {col} {ddl}" for col, ddl in MIGRATIONS["users"].items())
+    conn.executescript(f"""
+CREATE TABLE users_new (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, phone TEXT UNIQUE, email TEXT UNIQUE, line_user_id TEXT UNIQUE,
+  password_hash TEXT NOT NULL DEFAULT '', role TEXT NOT NULL DEFAULT 'student',
+  suspended INTEGER NOT NULL DEFAULT 0, suspend_reason TEXT NOT NULL DEFAULT '',
+  note TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL,
+{extra});""")
+    new_cols = {r["name"] for r in conn.execute("PRAGMA table_info(users_new)")}
+    cols = ",".join(c for c in info if c in new_cols)
+    conn.execute(f"INSERT INTO users_new ({cols}) SELECT {cols} FROM users")
+    conn.execute("UPDATE users_new SET phone=NULL WHERE phone=''")
+    conn.execute("DROP TABLE users")
+    conn.execute("ALTER TABLE users_new RENAME TO users")
+
+
 @app.on_event("startup")
 def startup():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     with db() as conn:
         conn.executescript(SCHEMA)
+        rebuild_users(conn)
         for table, cols in MIGRATIONS.items():
             have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             for col, ddl in cols.items():
@@ -581,30 +613,174 @@ def reviews():
 
 # ---------------------------------------------------------------- auth API
 
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
+
+def clean_email(v) -> str | None:
+    v = str(v or "").strip().lower()
+    if not v:
+        return None
+    if not EMAIL_RE.match(v) or len(v) > 120:
+        fail(400, "信箱格式不正確")
+    return v
+
+
+def clean_phone(v) -> str | None:
+    v = re.sub(r"[\s-]", "", str(v or ""))
+    return v[:20] or None
+
+
+def create_user(conn, name: str, **fields) -> dict:
+    row = {"name": name[:40], "created_at": stamp(), **fields}
+    cur = conn.execute(f"INSERT INTO users ({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
+    u = one(conn.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)))
+    admin_notify(conn, "member", f"新會員 {u['name']} 註冊" + ("（LINE）" if u["line_user_id"] else ""), "/admin/members")
+    return u
+
+
 @app.post("/api/auth/register")
 async def register(request: Request):
+    """信箱註冊（手機選填）。舊版只帶手機的請求也接受。"""
     b = await request.json()
-    name, phone, password = (str(b.get(k, "")).strip() for k in ("name", "phone", "password"))
-    if not name or not phone or len(password) < 6:
-        fail(400, "請填寫姓名、手機，密碼至少 6 碼")
+    name, password = str(b.get("name", "")).strip(), str(b.get("password", ""))
+    email, phone = clean_email(b.get("email")), clean_phone(b.get("phone"))
+    if not name or not (email or phone) or len(password) < 6:
+        fail(400, "請填寫姓名與信箱，密碼至少 6 碼")
     with db() as conn:
-        if one(conn.execute("SELECT id FROM users WHERE phone=?", (phone,))):
+        if email and one(conn.execute("SELECT id FROM users WHERE email=?", (email,))):
+            fail(400, "此信箱已註冊，請直接登入")
+        if phone and one(conn.execute("SELECT id FROM users WHERE phone=?", (phone,))):
             fail(400, "此手機號碼已註冊，請直接登入")
-        cur = conn.execute("INSERT INTO users (name, phone, password_hash, created_at) VALUES (?,?,?,?)",
-                           (name[:40], phone[:20], hash_password(password), stamp()))
-        u = one(conn.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)))
-        admin_notify(conn, "member", f"新會員 {u['name']} 註冊", "/admin/members")
+        u = create_user(conn, name, email=email, phone=phone, password_hash=hash_password(password))
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
 @app.post("/api/auth/login")
 async def login(request: Request):
+    """用信箱或手機＋密碼登入。"""
     b = await request.json()
+    key = str(b.get("login") or b.get("email") or b.get("phone") or "").strip()
     with db() as conn:
-        u = one(conn.execute("SELECT * FROM users WHERE phone=?", (str(b.get("phone", "")).strip(),)))
+        u = one(conn.execute("SELECT * FROM users WHERE email=? OR phone=?", (key.lower(), clean_phone(key))))
+        if u and not u["password_hash"]:
+            fail(400, "這個帳號是用 LINE 註冊的，請按「使用 LINE 登入」")
         if not u or not check_password(str(b.get("password", "")), u["password_hash"]):
-            fail(400, "手機或密碼錯誤")
+            fail(400, "帳號或密碼錯誤")
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
+
+
+# ---------------------------------------------------------------- LINE 登入
+
+def public_base(request: Request) -> str:
+    base = os.getenv("BOOKING_PUBLIC_URL")
+    if base:
+        return base.rstrip("/") + "/"
+    proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+    return f"{proto}://{request.headers.get('host', request.url.netloc)}/"
+
+
+def safe_next(v) -> str:
+    v = str(v or "/")
+    return v if v.startswith("/") and not v.startswith("//") else "/"
+
+
+def line_user(conn, profile: dict, link_user_id: int | None = None) -> dict:
+    """依 LINE 身分找到或建立會員；同步 LINE 頭像（使用者自己上傳過就不覆蓋）。"""
+    u = one(conn.execute("SELECT * FROM users WHERE line_user_id=?", (profile["sub"],)))
+    if link_user_id:
+        if u and u["id"] != link_user_id:
+            fail(400, "這個 LINE 帳號已綁定其他會員")
+        u = one(conn.execute("SELECT * FROM users WHERE id=?", (link_user_id,)))
+    if not u and profile["email"]:
+        u = one(conn.execute("SELECT * FROM users WHERE email=?", (profile["email"],)))
+    if not u:
+        u = create_user(conn, profile["name"], line_user_id=profile["sub"], email=profile["email"] or None,
+                        avatar_url=profile["picture"], avatar_source="line" if profile["picture"] else "")
+    updates = {"line_user_id": profile["sub"]}
+    if profile["picture"] and u["avatar_source"] != "upload":
+        updates.update(avatar_url=profile["picture"], avatar_source="line")
+    if profile["email"] and not u["email"] and not one(conn.execute("SELECT id FROM users WHERE email=?", (profile["email"],))):
+        updates["email"] = profile["email"]
+    conn.execute(f"UPDATE users SET {','.join(k + '=?' for k in updates)} WHERE id=?", (*updates.values(), u["id"]))
+    return one(conn.execute("SELECT * FROM users WHERE id=?", (u["id"],)))
+
+
+def line_redirect(conn, request: Request, next_path: str, link_user_id: int | None = None) -> str:
+    if not line_login.enabled():
+        fail(400, "場館尚未開通 LINE 登入")
+    state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(16)
+    conn.execute("DELETE FROM oauth_states WHERE created_at < ?", ((now() - timedelta(minutes=30)).isoformat(),))
+    conn.execute("INSERT INTO oauth_states VALUES (?,?,?,?,?)", (state, nonce, safe_next(next_path), link_user_id, stamp()))
+    return line_login.authorize_url(public_base(request) + "api/auth/line/callback", state, nonce)
+
+
+@app.get("/api/auth/config")
+def auth_config():
+    return {"line_enabled": line_login.enabled(), "liff_id": line_login.liff_id()}
+
+
+@app.get("/api/auth/line/start")
+def line_start(request: Request):
+    with db() as conn:
+        return RedirectResponse(line_redirect(conn, request, request.query_params.get("next", "/")), status_code=302)
+
+
+@app.post("/api/auth/line/link")
+def line_link(request: Request, user=Depends(require_user)):
+    """已登入的會員綁定 LINE：回傳授權網址，前端導過去。"""
+    with db() as conn:
+        return {"url": line_redirect(conn, request, "/me?tab=account", user["id"])}
+
+
+@app.get("/api/auth/line/callback")
+def line_callback(request: Request):
+    base = public_base(request)
+    q = request.query_params
+
+    def back(**params):
+        return RedirectResponse(base + "#/auth/line?" + urllib.parse.urlencode(params), status_code=302)
+
+    if q.get("error"):
+        return back(error="已取消 LINE 登入")
+    with db() as conn:
+        st = one(conn.execute("SELECT * FROM oauth_states WHERE state=?", (q.get("state", ""),)))
+        if not st or st["created_at"] < (now() - timedelta(minutes=30)).isoformat():
+            return back(error="登入逾時，請再試一次")
+        conn.execute("DELETE FROM oauth_states WHERE state=?", (st["state"],))
+        try:
+            profile = line_login.exchange_code(q.get("code", ""), base + "api/auth/line/callback", st["nonce"])
+            u = line_user(conn, profile, st["link_user_id"])
+        except line_login.LineError as e:
+            return back(error=str(e))
+        except HTTPException as e:
+            return back(error=str(e.detail))
+        return back(token=issue_token(conn, u["id"]), next=st["next"], linked="1" if st["link_user_id"] else "")
+
+
+@app.post("/api/auth/line/idtoken")
+async def line_idtoken(request: Request):
+    """LIFF（在 LINE 裡開啟）：前端取得 ID token 後換成本站登入。"""
+    if not line_login.enabled():
+        fail(400, "場館尚未開通 LINE 登入")
+    b = await request.json()
+    try:
+        profile = line_login.verify_id_token(str(b.get("id_token", "")))
+    except line_login.LineError as e:
+        fail(400, str(e))
+    with db() as conn:
+        u = line_user(conn, profile)
+        return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
+
+
+@app.delete("/api/me/line")
+def line_unlink(user=Depends(require_user)):
+    if not user["password_hash"]:
+        fail(400, "請先設定信箱與密碼，才能解除 LINE 綁定（否則會無法登入）")
+    with db() as conn:
+        conn.execute("UPDATE users SET line_user_id=NULL WHERE id=?", (user["id"],))
+        if user["avatar_source"] == "line":
+            conn.execute("UPDATE users SET avatar_url='', avatar_source='' WHERE id=?", (user["id"],))
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
 @app.post("/api/auth/logout")
@@ -635,8 +811,21 @@ async def update_me(request: Request, user=Depends(require_user)):
     with db() as conn:
         name = str(b.get("name", user["name"])).strip()[:40] or user["name"]
         conn.execute("UPDATE users SET name=? WHERE id=?", (name, user["id"]))
+        if "email" in b:
+            email = clean_email(b["email"])
+            if not email and not user["line_user_id"]:
+                fail(400, "請填寫信箱")
+            if email and one(conn.execute("SELECT id FROM users WHERE email=? AND id!=?", (email, user["id"]))):
+                fail(400, "此信箱已被其他帳號使用")
+            conn.execute("UPDATE users SET email=? WHERE id=?", (email, user["id"]))
+        if "phone" in b:
+            phone = clean_phone(b["phone"])
+            if phone and one(conn.execute("SELECT id FROM users WHERE phone=? AND id!=?", (phone, user["id"]))):
+                fail(400, "此手機號碼已被其他帳號使用")
+            conn.execute("UPDATE users SET phone=? WHERE id=?", (phone, user["id"]))
         if b.get("new_password"):
-            if not check_password(str(b.get("password", "")), user["password_hash"]):
+            # LINE 註冊的帳號第一次設定密碼不需要原密碼
+            if user["password_hash"] and not check_password(str(b.get("password", "")), user["password_hash"]):
                 fail(400, "原密碼錯誤")
             if len(b["new_password"]) < 6:
                 fail(400, "新密碼至少 6 碼")
@@ -1452,7 +1641,7 @@ async def save_image(file: UploadFile, max_mb: int) -> str:
 async def upload_avatar(file: UploadFile = File(...), user=Depends(require_user)):
     url = await save_image(file, 2)
     with db() as conn:
-        conn.execute("UPDATE users SET avatar_url=? WHERE id=?", (url, user["id"]))
+        conn.execute("UPDATE users SET avatar_url=?, avatar_source='upload' WHERE id=?", (url, user["id"]))
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 

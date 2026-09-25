@@ -264,6 +264,15 @@ a.card:active, button.card:active { transform: scale(0.995); }
 .summary { background: var(--gray-soft); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
 .pay-info { background: var(--brand-soft); color: var(--brand-dark); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
 
+/* ---------------------------------------------------------------- LINE 登入（LINE 品牌綠） */
+
+.btn-line { background: #06c755; border-color: #06c755; color: #fff; }
+.btn-line:hover:not(:disabled) { filter: brightness(0.95); }
+.or { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
+.line-dot { width: 44px; height: 44px; border-radius: 12px; background: #06c755; color: #fff; font-weight: 800; font-size: 12px; display: grid; place-items: center; flex: none; }
+.badge-line { background: #06c755; color: #fff; }
+
 /* ---------------------------------------------------------------- 報名者頭像 */
 
 .avatar-stack { display: inline-flex; align-items: center; flex: none; }

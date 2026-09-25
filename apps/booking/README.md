@@ -49,6 +49,18 @@
 > DUPR 金鑰需以場館名義向 DUPR 申請 API 合作夥伴（partner）資格。
 > 系統使用 `POST /api/auth/v1/token` 取得權杖、`GET /api/user/v1/{duprId}` 取得球員資料。
 
+### 登入方式
+
+- **LINE 登入**：設定 `LINE_CHANNEL_ID`／`LINE_CHANNEL_SECRET` 後，登入頁會出現「使用 LINE 登入」，並使用 LINE 的名字與頭像。
+  LINE 提供的信箱與既有帳號相同時，會連到同一個帳號。
+- **在 LINE 裡開啟（LIFF）**：再設定 `LINE_LIFF_ID`，從 LINE 開啟網站時會自動登入。
+- **信箱註冊**：姓名、信箱、密碼（手機選填），沒有頭像，可自行上傳。
+- 會員可在「會員中心 → 帳號」綁定／解除 LINE、設定信箱與密碼；使用者自己上傳的頭像不會被 LINE 頭像覆蓋。
+- 舊的手機號碼帳號仍可用「手機＋密碼」登入。
+
+LINE Developers 設定：建立 Provider → LINE Login channel，開啟 OpenID Connect（Email address permission 需另外申請），
+Callback URL 填 `https://<網域>/api/auth/line/callback`；LIFF 的 Endpoint URL 填 `https://<網域>/`，Scope 勾選 `openid`、`profile`（可選 `email`）。
+
 ### 預約規則
 
 - 堂數卡每堂扣 1 堂；點數卡依課程設定扣點；無限卡不扣次數；課程扣點設為 0 則為免費課程，不需課卡。
@@ -99,7 +111,7 @@ curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-dav
 |---|---|
 | 程式 | `/opt/booking/server` |
 | 資料（SQLite、上傳圖片） | `/opt/booking/data`，請定期備份 |
-| 設定（場主帳號、DUPR 金鑰） | `/etc/booking.env`，修改後 `sudo systemctl restart booking` |
+| 設定（場主帳號、DUPR、LINE 金鑰） | `/etc/booking.env`，修改後 `sudo systemctl restart booking` |
 | 服務記錄 | `journalctl -u booking -f` |
 
 也可以用 Docker：`cp .env.example .env` 填好後執行 `docker compose up -d --build`。
