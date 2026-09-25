@@ -87,6 +87,9 @@ CREATE TABLE IF NOT EXISTS reviews (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, course_id INTEGER, teacher_id INTEGER,
   rating INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS admin_notifications (
+  id INTEGER PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL, link TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, text TEXT NOT NULL,
   read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
@@ -102,6 +105,7 @@ MIGRATIONS = {
         "dupr_source": "TEXT NOT NULL DEFAULT ''",
         "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
+        "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
     },
     "courses": {
         "dupr_required": "INTEGER NOT NULL DEFAULT 0",
@@ -169,6 +173,16 @@ def get_settings(conn) -> dict:
     for r in conn.execute("SELECT key, value FROM settings"):
         out[r["key"]] = json.loads(r["value"])
     return out
+
+
+def admin_notify(conn, kind: str, text: str, link: str = ""):
+    """場主後台通知（所有場主共用，各自記錄已讀位置）。"""
+    conn.execute("INSERT INTO admin_notifications (kind, text, link, created_at) VALUES (?,?,?,?)",
+                 (kind, text, link, stamp()))
+
+
+def course_label(c: dict) -> str:
+    return f"「{c['name']}」{c['date'][5:].replace('-', '/')} {c['start_time']}"
 
 
 def notify(conn, user_id: int, text: str):
@@ -441,6 +455,7 @@ def promote_waitlist(conn, c: dict):
         conn.execute("UPDATE reservations SET status='booked', card_id=?, charged=?, updated_at=? WHERE id=?",
                      (card_id, charged, stamp(), w["id"]))
         notify(conn, w["user_id"], f"候補成功！您已預約「{c['name']}」{c['date']} {c['start_time']}。")
+        admin_notify(conn, "promote", f"{u['name']} 由候補遞補 {course_label(c)}", f"/admin/courses/{c['id']}")
         booked += 1
 
 
@@ -550,6 +565,7 @@ async def register(request: Request):
         cur = conn.execute("INSERT INTO users (name, phone, password_hash, created_at) VALUES (?,?,?,?)",
                            (name[:40], phone[:20], hash_password(password), stamp()))
         u = one(conn.execute("SELECT * FROM users WHERE id=?", (cur.lastrowid,)))
+        admin_notify(conn, "member", f"新會員 {u['name']} 註冊", "/admin/members")
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
@@ -578,7 +594,11 @@ def me(user=Depends(require_user)):
     with db() as conn:
         unread = conn.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND read=0",
                               (user["id"],)).fetchone()[0]
-        return {**public_user(user), "unread": unread}
+        out = {**public_user(user), "unread": unread}
+        if user["role"] == "owner":
+            out["admin_unread"] = conn.execute("SELECT COUNT(*) FROM admin_notifications WHERE id>?",
+                                               (user["admin_seen_id"],)).fetchone()[0]
+        return out
 
 
 @app.put("/api/me")
@@ -660,11 +680,13 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
             conn.execute("INSERT INTO reservations (course_id, user_id, status, created_at, updated_at)"
                          " VALUES (?,?,?,?,?)", (course_id, user["id"], "waitlist", stamp(), stamp()))
             notify(conn, user["id"], f"已加入「{c['name']}」{c['date']} {c['start_time']} 候補名單。")
+            admin_notify(conn, "waitlist", f"{user['name']} 候補 {course_label(c)}", f"/admin/courses/{c['id']}")
             return {"result": "waitlist"}
         card_id, charged = charge(conn, user["id"], c, b.get("card_id"))
         conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, created_at, updated_at)"
                      " VALUES (?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, stamp(), stamp()))
         notify(conn, user["id"], f"預約成功：「{c['name']}」{c['date']} {c['start_time']}。")
+        admin_notify(conn, "booking", f"{user['name']} 預約 {course_label(c)}", f"/admin/courses/{c['id']}")
         return {"result": "booked"}
 
 
@@ -682,6 +704,8 @@ def cancel(course_id: int, user=Depends(require_user)):
         conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
         refund(conn, r)
         notify(conn, user["id"], f"已取消「{c['name']}」{c['date']} {c['start_time']}。")
+        admin_notify(conn, "cancel", f"{user['name']} 取消{'候補' if r['status'] == 'waitlist' else '預約'} {course_label(c)}",
+                     f"/admin/courses/{c['id']}")
         if r["status"] == "booked":
             promote_waitlist(conn, c)
         return {"ok": True}
@@ -697,6 +721,7 @@ def order_plan(plan_id: int, user=Depends(require_user)):
         cur = conn.execute("INSERT INTO orders (user_id, plan_id, amount, created_at, updated_at) VALUES (?,?,?,?,?)",
                            (user["id"], plan_id, p["price"], stamp(), stamp()))
         notify(conn, user["id"], f"已送出「{p['name']}」購買申請，場館確認付款後即會開通課卡。")
+        admin_notify(conn, "order", f"{user['name']} 申請購買「{p['name']}」NT$ {p['price']:,}，待確認收款", "/admin/orders")
         return {"order_id": cur.lastrowid}
 
 
@@ -718,6 +743,7 @@ async def create_review(request: Request, user=Depends(require_user)):
         conn.execute("INSERT INTO reviews (user_id, course_id, teacher_id, rating, comment, created_at)"
                      " VALUES (?,?,?,?,?,?)",
                      (user["id"], c["id"], c["teacher_id"], rating, str(b.get("comment", ""))[:500], stamp()))
+        admin_notify(conn, "review", f"{user['name']} 給了 {rating} 星評價：{course_label(c)}", "/admin/reviews")
         return {"ok": True}
 
 
@@ -903,16 +929,79 @@ def delete_course(course_id: int, owner=Depends(require_owner)):
         return {"ok": True}
 
 
+@app.get("/api/admin/notifications")
+def admin_notifications(owner=Depends(require_owner)):
+    with db() as conn:
+        items = rows(conn.execute("SELECT * FROM admin_notifications ORDER BY id DESC LIMIT 100"))
+        for n in items:
+            n["read"] = n["id"] <= owner["admin_seen_id"]
+        if items:
+            conn.execute("UPDATE users SET admin_seen_id=? WHERE id=?", (items[0]["id"], owner["id"]))
+        return items
+
+
+def roster_rows(conn, course_id: int) -> list[dict]:
+    return rows(conn.execute(
+        "SELECT r.*, u.name, u.phone, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified,"
+        " cd.name card_name FROM reservations r JOIN users u ON u.id=r.user_id"
+        " LEFT JOIN cards cd ON cd.id=r.card_id WHERE r.course_id=? AND r.status!='cancelled' ORDER BY r.id",
+        (course_id,)))
+
+
+@app.get("/api/admin/attendance")
+def attendance(request: Request, owner=Depends(require_owner)):
+    """某一天所有課程與名單，集中點名用。"""
+    day = request.query_params.get("date") or now().date().isoformat()
+    with db() as conn:
+        s = get_settings(conn)
+        out = []
+        for c in rows(conn.execute("SELECT * FROM courses WHERE date=? AND status='open' ORDER BY start_time, id",
+                                   (day,))):
+            v = course_view(conn, c, None, s)
+            v["roster"] = [r for r in roster_rows(conn, c["id"]) if r["status"] != "waitlist"]
+            v["started"] = now() >= course_start(c)
+            out.append(v)
+        return out
+
+
+@app.post("/api/admin/courses/{course_id}/attendance")
+def mark_all(course_id: int, owner=Depends(require_owner)):
+    """把尚未點名的學員全部標記為出席。"""
+    with db() as conn:
+        c = get_course(conn, course_id)
+        if now() < course_start(c) - timedelta(minutes=30):
+            fail(400, "課程開始前 30 分鐘才能點名")
+        n = conn.execute("UPDATE reservations SET status='attended', updated_at=? WHERE course_id=? AND status='booked'",
+                         (stamp(), course_id)).rowcount
+        return {"updated": n}
+
+
+@app.get("/api/admin/attendance/stats")
+def attendance_stats(request: Request, owner=Depends(require_owner)):
+    """期間內每位學員的預約、出席、缺席、未點名統計（只算已開始的課）。"""
+    end = request.query_params.get("to") or now().date().isoformat()
+    start = request.query_params.get("from") or (date.fromisoformat(end) - timedelta(days=29)).isoformat()
+    with db() as conn:
+        items = rows(conn.execute(
+            "SELECT u.id, u.name, u.phone,"
+            " SUM(r.status IN ('booked','attended','absent')) total,"
+            " SUM(r.status='attended') attended, SUM(r.status='absent') absent, SUM(r.status='booked') unmarked"
+            " FROM reservations r JOIN users u ON u.id=r.user_id JOIN courses c ON c.id=r.course_id"
+            " WHERE c.date BETWEEN ? AND ? AND c.status='open' AND (c.date || 'T' || c.start_time) <= ?"
+            " GROUP BY u.id HAVING total > 0 ORDER BY absent DESC, total DESC",
+            (start, end, now().isoformat(timespec="minutes"))))
+        for i in items:
+            marked = i["attended"] + i["absent"]
+            i["rate"] = round(i["attended"] / marked * 100) if marked else None
+        return {"from": start, "to": end, "members": items}
+
+
 @app.get("/api/admin/courses/{course_id}/roster")
 def roster(course_id: int, owner=Depends(require_owner)):
     with db() as conn:
         c = get_course(conn, course_id)
         v = course_view(conn, c, None, get_settings(conn))
-        v["roster"] = rows(conn.execute(
-            "SELECT r.*, u.name, u.phone, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified,"
-            " cd.name card_name FROM reservations r JOIN users u ON u.id=r.user_id"
-            " LEFT JOIN cards cd ON cd.id=r.card_id WHERE r.course_id=? AND r.status!='cancelled' ORDER BY r.id",
-            (course_id,)))
+        v["roster"] = roster_rows(conn, course_id)
         return v
 
 

@@ -358,6 +358,99 @@ textarea.input { resize: vertical; }
 .pick-item:hover { border-color: var(--brand); background: var(--brand-soft); }
 .dim { opacity: 0.55; }
 
+/* ---------------------------------------------------------------- admin shell (☰ 側邊選單) */
+
+.admin-bar {
+  position: sticky; top: 0; z-index: 20; display: grid; grid-template-columns: 44px 1fr 44px; align-items: center;
+  height: 58px; padding: 0 6px; background: var(--card); border-bottom: 1px solid var(--line);
+}
+.admin-bar-title { display: flex; flex-direction: column; align-items: center; line-height: 1.25; min-width: 0; }
+.admin-bar-title b { font-size: 17px; }
+.admin-bar-title .admin-kicker { color: var(--muted); opacity: 1; font-size: 11px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bell { position: relative; }
+.bell-count {
+  position: absolute; top: 2px; right: 0; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
+  background: var(--danger); color: #fff; font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  border: 2px solid var(--card);
+}
+.drawer-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(12, 24, 48, 0.45); animation: fade 0.15s ease; }
+.drawer {
+  position: fixed; top: 0; bottom: 0; z-index: 41; width: 272px; max-width: 82vw;
+  left: max(0px, calc(50% - var(--shell) / 2));
+  background: #16233b; color: #c9d4e6; overflow-y: auto; padding: 0 0 24px;
+  transform: translateX(-105%); transition: transform 0.2s ease, visibility 0.2s; visibility: hidden;
+}
+.drawer.open { transform: none; visibility: visible; }
+.drawer-head { padding: 22px 22px 14px; border-bottom: 1px solid rgba(255, 255, 255, 0.08); margin-bottom: 8px; }
+.drawer-venue { font-size: 12px; letter-spacing: 0.1em; color: #8ea3c4; text-transform: uppercase; }
+.drawer-user { color: #fff; font-weight: 700; font-size: 16px; margin-top: 2px; }
+.drawer-group { padding: 16px 22px 6px; font-size: 12px; color: #8ea3c4; letter-spacing: 0.08em; }
+.drawer-link { display: flex; align-items: center; gap: 14px; padding: 12px 22px; font-size: 16px; color: #c9d4e6; border-left: 3px solid transparent; }
+.drawer-link:hover { background: rgba(255, 255, 255, 0.05); color: #fff; }
+.drawer-link.active { color: #fff; background: rgba(61, 139, 242, 0.18); border-left-color: #3d8bf2; font-weight: 700; }
+.drawer-front { margin-top: 10px; border-top: 1px solid rgba(255, 255, 255, 0.08); padding-top: 16px; }
+
+/* ---------------------------------------------------------------- 課表行事曆 */
+
+.cal {
+  display: grid; grid-auto-flow: column; grid-auto-columns: 148px; gap: 8px; overflow-x: auto;
+  margin: 0 -16px; padding: 0 16px 8px; scroll-snap-type: x proximity; align-items: start;
+}
+.cal-col { display: flex; flex-direction: column; gap: 8px; scroll-snap-align: start; }
+.cal-head {
+  position: relative; background: var(--card); border-radius: 12px; padding: 10px 6px; text-align: center;
+  display: flex; flex-direction: column; box-shadow: var(--shadow);
+}
+.cal-head b { font-size: 16px; }
+.cal-head span { font-size: 14px; color: var(--text-2); }
+.cal-col.is-today .cal-head { background: var(--brand); color: #fff; }
+.cal-col.is-today .cal-head span { color: rgba(255, 255, 255, 0.85); }
+.cal-col.is-past { opacity: 0.72; }
+.cal-add {
+  position: absolute; top: 6px; right: 6px; width: 24px; height: 24px; border-radius: 50%; border: 0;
+  background: var(--brand-soft); color: var(--brand); font-size: 16px; line-height: 1; padding: 0;
+}
+.cal-col.is-today .cal-add { background: rgba(255, 255, 255, 0.22); color: #fff; }
+.cal-empty { text-align: center; color: var(--muted); font-size: 13px; padding: 10px 0; }
+.cal-item {
+  display: flex; flex-direction: column; gap: 3px; background: var(--card); border-radius: 12px; padding: 10px;
+  box-shadow: var(--shadow); border-left: 4px solid var(--brand); font-size: 13px;
+}
+.cal-item:hover { box-shadow: 0 4px 14px rgba(20, 45, 90, 0.1); }
+.cal-item.full { border-left-color: var(--warn); }
+.cal-item.cancelled { border-left-color: #b8c2cf; background: #eef1f5; }
+.cal-item.cancelled .cal-time, .cal-item.cancelled .cal-name { text-decoration: line-through; color: var(--muted); }
+.cal-time { color: var(--brand); font-weight: 700; font-size: 14px; }
+.cal-name { font-size: 14px; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.cal-item .badge { align-self: flex-start; }
+.cal-meta { color: var(--text-2); }
+.cal-meta em { font-style: normal; color: var(--warn); }
+
+/* ---------------------------------------------------------------- 出席管理 */
+
+.roll-card { display: flex; flex-direction: column; gap: 6px; }
+.roll-card .course-name { font-size: 16px; }
+.roll-row { display: flex; align-items: center; gap: 6px; padding: 8px 0; border-top: 1px solid var(--line); }
+.roll-btn {
+  border: 1px solid var(--line); background: var(--card); color: var(--text-2); border-radius: 8px;
+  padding: 5px 12px; font-size: 14px; flex: none;
+}
+.roll-btn.on-ok { background: var(--success); border-color: var(--success); color: #fff; }
+.roll-btn.on-bad { background: var(--danger); border-color: var(--danger); color: #fff; }
+.stat-table { display: flex; flex-direction: column; }
+.stat-tr { display: grid; grid-template-columns: 1fr 44px 44px 44px 56px; gap: 4px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.stat-tr > span:not(:first-child) { text-align: center; }
+.stat-tr:last-child { border-bottom: 0; }
+.stat-tr.head { color: var(--muted); font-size: 12px; padding-top: 0; }
+.stat-tr em { font-style: normal; }
+
+/* ---------------------------------------------------------------- 後台通知 */
+
+.admin-notice { display: flex; align-items: flex-start; gap: 10px; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.admin-notice:last-child { border-bottom: 0; }
+.admin-notice .badge { margin-top: 3px; }
+.admin-notice.unread { background: linear-gradient(90deg, var(--brand-soft), transparent 70%); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+
 /* ---------------------------------------------------------------- modal / toast */
 
 .modal-backdrop {

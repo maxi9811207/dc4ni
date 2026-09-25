@@ -21,6 +21,9 @@ import AdminOrders from './pages/admin/AdminOrders'
 import AdminMembers from './pages/admin/AdminMembers'
 import AdminReviews from './pages/admin/AdminReviews'
 import AdminSettings from './pages/admin/AdminSettings'
+import AdminCalendar from './pages/admin/AdminCalendar'
+import Attendance from './pages/admin/Attendance'
+import AdminNotifications from './pages/admin/AdminNotifications'
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -92,6 +95,9 @@ export default function App() {
           <Route path="/me" element={<Member />} />
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
+            <Route path="calendar" element={<AdminCalendar />} />
+            <Route path="attendance" element={<Attendance />} />
+            <Route path="notifications" element={<AdminNotifications />} />
             <Route path="courses" element={<AdminCourses />} />
             <Route path="courses/new" element={<CourseForm />} />
             <Route path="courses/:id/edit" element={<CourseForm />} />
