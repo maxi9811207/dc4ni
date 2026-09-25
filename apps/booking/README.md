@@ -83,7 +83,11 @@ API 文件：`http://localhost:8100/api/docs`
 curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh \
   | sudo BOOKING_DOMAIN=booking.example.com bash
 
-# 沒有網域：用 http://主機IP:8080
+# 沒有網域：用 sslip.io 免費網域（IP 172.237.11.215 → 172-237-11-215.sslip.io），一樣有 HTTPS
+curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh \
+  | sudo BOOKING_DOMAIN=172-237-11-215.sslip.io bash
+
+# 只用 http://主機IP:8080（密碼會以明文傳送，不建議正式使用）
 curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh \
   | sudo bash
 ```

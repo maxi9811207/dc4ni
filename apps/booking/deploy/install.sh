@@ -4,7 +4,8 @@
 #   curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-davinci-5wb5rp/apps/booking/deploy/install.sh | sudo bash
 #
 # 可選環境變數：
-#   BOOKING_DOMAIN=booking.example.com   用網域對外（會另外建立 nginx 站台，並嘗試申請 HTTPS 憑證）
+#   BOOKING_DOMAIN=booking.example.com   用網域對外（會另外建立 nginx 站台，並申請 HTTPS 憑證）
+#                                        沒有網域可用 sslip.io，例如 IP 1.2.3.4 → BOOKING_DOMAIN=1-2-3-4.sslip.io
 #   BOOKING_PORT=8080                    沒有網域時，用 http://主機IP:8080 對外（預設 8080）
 #
 # 只會新增 /opt/booking、/etc/booking.env、booking.service 與 nginx 的 booking 站台，
@@ -124,6 +125,9 @@ if ! nginx -t 2>/dev/null; then
 fi
 systemctl reload nginx
 
+if [ -n "$DOMAIN" ] && ! command -v certbot > /dev/null; then
+  apt-get install -y -qq certbot python3-certbot-nginx > /dev/null
+fi
 if [ -n "$DOMAIN" ] && command -v certbot > /dev/null; then
   certbot --nginx -d "$DOMAIN" --non-interactive --redirect --agree-tos --register-unsafely-without-email \
     || echo "HTTPS 憑證申請失敗（請確認 $DOMAIN 已指向這台主機），目前先以 http 運作"
