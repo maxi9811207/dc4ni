@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Avatar } from './ui'
+import { Avatar, AvatarStack } from './ui'
 import { duprRange } from '../util'
 
 const BUTTON_CLASS = {
@@ -36,6 +36,7 @@ export default function CourseCard({ course: c, showCount = true, showDate, to }
           {c.category && <span> · {c.category}</span>}
         </p>
         <div className="course-foot">
+          {c.attendees?.length > 0 && <AvatarStack people={c.attendees.slice(0, 4)} total={c.booked_count} size={22} />}
           <span className="course-teacher">{c.teacher?.name || '未指定老師'}{c.substitute && ' (代課)'}</span>
           {info && <span className="course-count">{info}</span>}
           <span className={`${BUTTON_CLASS[c.state]} btn-small`}>{c.button}</span>

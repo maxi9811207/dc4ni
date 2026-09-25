@@ -11,6 +11,7 @@ const I = {
   members: 'M16 20v-2a4 4 0 0 0-8 0v2M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
   teachers: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20v-1a5 5 0 0 1 10 0v1M16 5a3 3 0 0 1 0 6M21 20v-1a5 5 0 0 0-3-4.6',
   orders: 'M12 3v18M16 7H10a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H7',
+  reports: 'M3 3v18h18M7 15l4-4 3 3 5-6',
   reviews: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
 }
@@ -20,11 +21,12 @@ export const MENU = [
     ['/admin', '營運總覽', 'dashboard'],
     ['/admin/attendance', '出席管理', 'attendance'],
     ['/admin/calendar', '課表行事曆', 'calendar'],
-    ['/admin/courses', '課程管理', 'courses'],
+    ['/admin/templates', '課程管理', 'courses'],
     ['/admin/plans', '課卡方案', 'plans'],
     ['/admin/members', '會員管理', 'members'],
     ['/admin/teachers', '師資團隊', 'teachers'],
     ['/admin/orders', '付款審核', 'orders'],
+    ['/admin/reports', '分析與報表', 'reports'],
     ['/admin/reviews', '評價管理', 'reviews'],
   ] },
   { title: '系統設定', items: [
@@ -45,6 +47,9 @@ function pageTitle(pathname) {
   if (/^\/admin\/courses\/new/.test(pathname)) return '新增課程'
   if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯課程'
   if (/^\/admin\/courses\/\d+/.test(pathname)) return '名單點名'
+  if (pathname === '/admin/courses') return '課程管理'
+  if (pathname === '/admin/templates/new') return '新增課程範本'
+  if (/^\/admin\/templates\/\d+/.test(pathname)) return '編輯課程範本'
   const item = MENU.flatMap((g) => g.items).filter(([to]) => pathname === to || pathname.startsWith(to + '/'))
     .sort((a, b) => b[0].length - a[0].length)[0]
   return item ? item[1] : '場主後台'

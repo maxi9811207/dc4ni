@@ -125,3 +125,19 @@ export function Field({ label, hint, children }) {
 export function Badge({ tone = 'brand', children }) {
   return <span className={`badge badge-${tone}`}>{children}</span>
 }
+
+// 已報名者頭像疊放（課程卡片用）
+export function AvatarStack({ people, total, size = 26 }) {
+  if (!people?.length) return null
+  const more = (total ?? people.length) - people.length
+  return (
+    <span className="avatar-stack" aria-label={`${total ?? people.length} 人已報名`}>
+      {people.map((p, i) => (
+        <span key={i} className="avatar-stack-item" style={{ width: size, height: size }}>
+          {p.avatar_url ? <img src={asset(p.avatar_url)} alt="" /> : <span>{p.name.slice(0, 1)}</span>}
+        </span>
+      ))}
+      {more > 0 && <span className="avatar-stack-more">+{more}</span>}
+    </span>
+  )
+}

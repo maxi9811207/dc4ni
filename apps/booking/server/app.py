@@ -15,10 +15,11 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from fastapi import Depends, FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import dupr
+import reports
 
 DATA_DIR = Path(os.getenv("BOOKING_DATA_DIR", Path(__file__).parent / "data"))
 DB_PATH = DATA_DIR / "booking.db"
@@ -87,6 +88,16 @@ CREATE TABLE IF NOT EXISTS reviews (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, course_id INTEGER, teacher_id INTEGER,
   rating INTEGER NOT NULL, comment TEXT NOT NULL DEFAULT '', hidden INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS course_templates (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', teacher_id INTEGER,
+  substitute INTEGER NOT NULL DEFAULT 0, start_time TEXT NOT NULL DEFAULT '19:00', end_time TEXT NOT NULL DEFAULT '21:00',
+  capacity INTEGER NOT NULL DEFAULT 10, cost INTEGER NOT NULL DEFAULT 1, beginner INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '',
+  booking_deadline_min INTEGER NOT NULL DEFAULT 120, cancel_deadline_min INTEGER NOT NULL DEFAULT 720,
+  plan_ids TEXT NOT NULL DEFAULT '[]', dupr_required INTEGER NOT NULL DEFAULT 0,
+  dupr_format TEXT NOT NULL DEFAULT 'doubles', dupr_min REAL, dupr_max REAL,
+  dupr_verified_only INTEGER NOT NULL DEFAULT 0, active INTEGER NOT NULL DEFAULT 1, sort INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS admin_notifications (
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL, link TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL);
@@ -106,6 +117,7 @@ MIGRATIONS = {
         "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
         "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
+        "avatar_url": "TEXT NOT NULL DEFAULT ''",
     },
     "courses": {
         "dupr_required": "INTEGER NOT NULL DEFAULT 0",
@@ -113,6 +125,7 @@ MIGRATIONS = {
         "dupr_min": "REAL",
         "dupr_max": "REAL",
         "dupr_verified_only": "INTEGER NOT NULL DEFAULT 0",
+        "template_id": "INTEGER",
     },
 }
 
@@ -195,7 +208,7 @@ def course_start(c: dict) -> datetime:
 
 
 USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "created_at", "dupr_id", "dupr_name",
-               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at")
+               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at", "avatar_url")
 
 
 def public_user(u: dict) -> dict:
@@ -385,6 +398,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "waitlist_position": position,
         "can_cancel": bool(mine) and (mine["status"] == "waitlist" or
                                       t < start - timedelta(minutes=c["cancel_deadline_min"])),
+        "template_id": c["template_id"],
         "dupr_required": bool(c["dupr_required"]),
         "dupr_format": c["dupr_format"],
         "dupr_min": c["dupr_min"],
@@ -476,6 +490,22 @@ def venue():
         return {**s, "rating": round(r["a"], 1) if r["a"] else None, "review_count": r["n"]}
 
 
+def attendees(conn, c: dict, limit: int = 200) -> list[dict]:
+    """已預約學員（姓名遮罩＋頭像）；DUPR 場附上該場依據的 DUPR 分數。"""
+    out = []
+    for r in conn.execute(
+            "SELECT u.name, u.avatar_url, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified"
+            " FROM reservations r JOIN users u ON u.id=r.user_id"
+            " WHERE r.course_id=? AND r.status IN ('booked','attended','absent') ORDER BY r.id LIMIT ?",
+            (c["id"], limit)):
+        a = {"name": mask_name(r["name"]), "avatar_url": r["avatar_url"]}
+        if c["dupr_required"]:
+            a["dupr"] = r[f"dupr_{c['dupr_format']}"]
+            a["dupr_verified"] = bool(r["dupr_verified"])
+        out.append(a)
+    return out
+
+
 @app.get("/api/courses")
 def list_courses(request: Request, user=Depends(current_user)):
     day = request.query_params.get("date") or now().date().isoformat()
@@ -485,7 +515,7 @@ def list_courses(request: Request, user=Depends(current_user)):
         d = date.fromisoformat(day)
         return {"date": day, "weekday": WEEKDAYS[d.weekday()],
                 "show_reservation_count": s["show_reservation_count"],
-                "courses": [course_view(conn, c, user, s) for c in cs]}
+                "courses": [{**course_view(conn, c, user, s), "attendees": attendees(conn, c, 6)} for c in cs]}
 
 
 @app.get("/api/courses/{course_id}")
@@ -497,9 +527,7 @@ def course_detail(course_id: int, user=Depends(current_user)):
         plans = rows(conn.execute("SELECT id, name, type FROM plans WHERE active=1 ORDER BY sort, id"))
         v["plans"] = [p for p in plans if not allowed or p["id"] in allowed]
         v["cards"] = eligible_cards(conn, user["id"], c) if user else []
-        v["attendees"] = [mask_name(r["name"]) for r in conn.execute(
-            "SELECT u.name FROM reservations r JOIN users u ON u.id=r.user_id"
-            " WHERE r.course_id=? AND r.status IN ('booked','attended','absent') ORDER BY r.id", (course_id,))]
+        v["attendees"] = attendees(conn, c)
         return v
 
 
@@ -844,7 +872,11 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
-                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only")
+                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id")
+# 範本只存課程內容與預設時間，不含日期
+TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
+# 修改範本時同步到未開始課程的欄位（不含時間與日期）
+SYNC_FIELDS = tuple(k for k in TEMPLATE_FIELDS if k not in ("start_time", "end_time", "active", "sort"))
 
 
 def clean_course(b: dict) -> dict:
@@ -860,8 +892,9 @@ def clean_course(b: dict) -> dict:
     for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min"):
         if k in out:
             out[k] = max(int(out[k] or 0), 0)
-    if "teacher_id" in out:
-        out["teacher_id"] = int(out["teacher_id"]) if out["teacher_id"] else None
+    for k in ("teacher_id", "template_id"):
+        if k in out:
+            out[k] = int(out[k]) if out[k] else None
     if "plan_ids" in out:
         out["plan_ids"] = json.dumps([int(x) for x in out["plan_ids"] or []])
     return out
@@ -884,6 +917,138 @@ async def create_course(request: Request, owner=Depends(require_owner)):
                                tuple(row.values()))
             ids.append(cur.lastrowid)
     return {"ids": ids}
+
+
+# ---------------------------------------------------------------- course templates（課程範本）
+
+def clean_template(b: dict) -> dict:
+    out = clean_course({k: v for k, v in b.items() if k in COURSE_FIELDS})
+    out.pop("date", None)
+    out.pop("template_id", None)
+    for k in ("active", "sort"):
+        if k in b:
+            out[k] = int(b[k] or 0)
+    return out
+
+
+def template_view(conn, t: dict) -> dict:
+    today = now().date().isoformat()
+    upcoming = conn.execute("SELECT COUNT(*), MIN(date) FROM courses WHERE template_id=? AND date>=? AND status='open'",
+                            (t["id"], today)).fetchone()
+    teacher = one(conn.execute("SELECT id, name, photo_url FROM teachers WHERE id=?", (t["teacher_id"],)))
+    return {**t, "plan_ids": json.loads(t["plan_ids"]), "beginner": bool(t["beginner"]),
+            "substitute": bool(t["substitute"]), "dupr_required": bool(t["dupr_required"]),
+            "dupr_verified_only": bool(t["dupr_verified_only"]), "active": bool(t["active"]),
+            "teacher": teacher, "upcoming": upcoming[0], "next_date": upcoming[1]}
+
+
+def get_template(conn, template_id: int) -> dict:
+    t = one(conn.execute("SELECT * FROM course_templates WHERE id=?", (template_id,)))
+    if not t:
+        fail(404, "找不到課程範本")
+    return t
+
+
+@app.get("/api/admin/templates")
+def list_templates(owner=Depends(require_owner)):
+    with db() as conn:
+        return [template_view(conn, t) for t in rows(conn.execute(
+            "SELECT * FROM course_templates ORDER BY active DESC, sort, id"))]
+
+
+@app.get("/api/admin/templates/{template_id}")
+def template_detail(template_id: int, owner=Depends(require_owner)):
+    with db() as conn:
+        return template_view(conn, get_template(conn, template_id))
+
+
+@app.post("/api/admin/templates")
+async def create_template(request: Request, owner=Depends(require_owner)):
+    data = clean_template(await request.json())
+    if not data.get("name"):
+        fail(400, "請填寫課程名稱")
+    data["created_at"] = stamp()
+    with db() as conn:
+        cur = conn.execute(f"INSERT INTO course_templates ({','.join(data)}) VALUES ({','.join('?' * len(data))})",
+                           tuple(data.values()))
+        return {"id": cur.lastrowid}
+
+
+@app.put("/api/admin/templates/{template_id}")
+async def update_template(template_id: int, request: Request, owner=Depends(require_owner)):
+    """更新範本；apply_future=true 時同步更新這個範本之後尚未開始的課程。"""
+    b = await request.json()
+    data = clean_template(b)
+    with db() as conn:
+        get_template(conn, template_id)
+        if data:
+            conn.execute(f"UPDATE course_templates SET {','.join(k + '=?' for k in data)} WHERE id=?",
+                         (*data.values(), template_id))
+        updated = 0
+        if b.get("apply_future"):
+            sync = {k: v for k, v in data.items() if k in SYNC_FIELDS}
+            t = now()
+            for c in rows(conn.execute("SELECT * FROM courses WHERE template_id=? AND date>=? AND status='open'",
+                                       (template_id, t.date().isoformat()))):
+                if course_start(c) <= t:
+                    continue
+                row = dict(sync)
+                if "capacity" in row:
+                    row["capacity"] = max(row["capacity"], course_counts(conn, c["id"])[0])
+                if row:
+                    conn.execute(f"UPDATE courses SET {','.join(k + '=?' for k in row)} WHERE id=?",
+                                 (*row.values(), c["id"]))
+                promote_waitlist(conn, get_course(conn, c["id"]))
+                updated += 1
+        return {"ok": True, "updated": updated}
+
+
+@app.post("/api/admin/templates/{template_id}/schedule")
+async def schedule_template(template_id: int, request: Request, owner=Depends(require_owner)):
+    """依範本在期間內的指定星期幾排課；同一天同時段已有這個範本的課就略過。"""
+    b = await request.json()
+    try:
+        start, end = date.fromisoformat(b["from"]), date.fromisoformat(b["to"])
+    except (KeyError, ValueError):
+        fail(400, "請選擇開始與結束日期")
+    weekdays = {int(x) for x in b.get("weekdays", [])}
+    if not weekdays:
+        fail(400, "請至少選一個星期")
+    if end < start or (end - start).days > 366:
+        fail(400, "日期範圍不正確（最多一年）")
+    with db() as conn:
+        t = get_template(conn, template_id)
+        start_time = b.get("start_time") or t["start_time"]
+        end_time = b.get("end_time") or t["end_time"]
+        if end_time <= start_time:
+            fail(400, "結束時間需晚於開始時間")
+        base = {k: t[k] for k in SYNC_FIELDS}
+        created, skipped, d = [], 0, start
+        while d <= end:
+            if d.weekday() in weekdays:
+                if one(conn.execute("SELECT id FROM courses WHERE template_id=? AND date=? AND start_time=?",
+                                    (template_id, d.isoformat(), start_time))):
+                    skipped += 1
+                else:
+                    row = {**base, "date": d.isoformat(), "start_time": start_time, "end_time": end_time,
+                           "template_id": template_id, "created_at": stamp()}
+                    cur = conn.execute(f"INSERT INTO courses ({','.join(row)}) VALUES ({','.join('?' * len(row))})",
+                                       tuple(row.values()))
+                    created.append(cur.lastrowid)
+                    if len(created) > 300:
+                        fail(400, "一次最多排 300 堂課")
+            d += timedelta(days=1)
+        return {"created": len(created), "skipped": skipped}
+
+
+@app.delete("/api/admin/templates/{template_id}")
+def delete_template(template_id: int, owner=Depends(require_owner)):
+    """刪除範本；已排的課程保留，只是不再連結範本。"""
+    with db() as conn:
+        get_template(conn, template_id)
+        conn.execute("UPDATE courses SET template_id=NULL WHERE template_id=?", (template_id,))
+        conn.execute("DELETE FROM course_templates WHERE id=?", (template_id,))
+        return {"ok": True}
 
 
 @app.put("/api/admin/courses/{course_id}")
@@ -1099,6 +1264,30 @@ def grant_card(conn, user_id: int, plan: dict, source: str) -> int:
     return cur.lastrowid
 
 
+@app.get("/api/admin/reports")
+def report(request: Request, owner=Depends(require_owner)):
+    try:
+        start, end = reports.parse_range(request.query_params, now().date())
+    except ValueError as e:
+        fail(400, str(e))
+    with db() as conn:
+        return reports.public(reports.summary(conn, start, end, now().date().isoformat()))
+
+
+@app.get("/api/admin/reports/export")
+def report_export(request: Request, owner=Depends(require_owner)):
+    try:
+        start, end = reports.parse_range(request.query_params, now().date())
+    except ValueError as e:
+        fail(400, str(e))
+    with db() as conn:
+        data = reports.summary(conn, start, end, now().date().isoformat())
+        content = reports.to_xlsx(data, get_settings(conn)["name"])
+    name = f"report-{start}-{end}.xlsx"
+    return Response(content, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @app.get("/api/admin/orders")
 def admin_orders(owner=Depends(require_owner)):
     with db() as conn:
@@ -1160,6 +1349,8 @@ async def update_member(user_id: int, request: Request, owner=Depends(require_ow
             conn.execute("UPDATE users SET dupr_verified=? WHERE id=?", (1 if b["dupr_verified"] else 0, user_id))
         if "dupr" in b:
             set_dupr(conn, user_id, b["dupr"], source="owner")
+        if "avatar_url" in b:
+            conn.execute("UPDATE users SET avatar_url=? WHERE id=?", (str(b["avatar_url"] or "")[:300], user_id))
         if "note" in b:
             conn.execute("UPDATE users SET note=? WHERE id=?", (str(b["note"])[:500], user_id))
         if b.get("role") in ("student", "owner") and u["id"] != owner["id"]:
@@ -1242,15 +1433,27 @@ ALLOWED_IMAGES = {"image/jpeg": ".jpg", "image/png": ".png", "image/webp": ".web
 
 @app.post("/api/admin/upload")
 async def upload(file: UploadFile = File(...), owner=Depends(require_owner)):
+    return {"url": await save_image(file, 5)}
+
+
+async def save_image(file: UploadFile, max_mb: int) -> str:
     ext = ALLOWED_IMAGES.get(file.content_type)
     if not ext:
         fail(400, "只接受 JPG、PNG、WebP、GIF")
     content = await file.read()
-    if len(content) > 5 * 1024 * 1024:
-        fail(400, "圖片需小於 5MB")
+    if len(content) > max_mb * 1024 * 1024:
+        fail(400, f"圖片需小於 {max_mb}MB")
     name = uuid.uuid4().hex + ext
     (UPLOAD_DIR / name).write_bytes(content)
-    return {"url": f"uploads/{name}"}
+    return f"uploads/{name}"
+
+
+@app.post("/api/me/avatar")
+async def upload_avatar(file: UploadFile = File(...), user=Depends(require_user)):
+    url = await save_image(file, 2)
+    with db() as conn:
+        conn.execute("UPDATE users SET avatar_url=? WHERE id=?", (url, user["id"]))
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
 # ---------------------------------------------------------------- static

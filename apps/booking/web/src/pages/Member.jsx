@@ -3,7 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api } from '../api'
 import CourseCard from '../components/CourseCard'
-import { Badge, Chips, Empty, Field, Loading, Modal, Stars, TopBar } from '../components/ui'
+import { Avatar, Badge, Chips, Empty, Field, Loading, Modal, Stars, TopBar } from '../components/ui'
 import { cardRemain, money, rating, showDateTime } from '../util'
 
 const TABS = [['reservations', '預約紀錄'], ['cards', '我的課卡'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
@@ -19,7 +19,7 @@ export default function Member() {
       <TopBar title="會員中心" back="/" />
       <main className="page">
         <section className="card row gap member-head">
-          <div className="avatar" style={{ width: 52, height: 52, fontSize: 22 }}><span>{user.name.slice(0, 1)}</span></div>
+          <Avatar src={user.avatar_url} name={user.name} size={52} />
           <div className="flex1">
             <b className="big">{user.name}</b>
             <p className="muted small">{user.phone}</p>
@@ -164,6 +164,19 @@ function Account() {
   const navigate = useNavigate()
   const [form, setForm] = useState({ name: user.name, password: '', new_password: '' })
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+  const [uploading, setUploading] = useState(false)
+  const uploadAvatar = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const data = new FormData()
+    data.append('file', file)
+    setUploading(true)
+    try {
+      await api('me/avatar', { method: 'POST', form: data })
+      await refreshUser()
+      showToast('已更新大頭照')
+    } catch (err) { handleError(err) } finally { setUploading(false) }
+  }
   const save = async (e) => {
     e.preventDefault()
     try {
@@ -175,6 +188,17 @@ function Account() {
   }
   return (
     <>
+      <section className="card row gap">
+        <Avatar src={user.avatar_url} name={user.name} size={64} />
+        <div className="flex1">
+          <b>大頭照</b>
+          <p className="muted small">會顯示在您報名的課程中，讓球友認識您</p>
+        </div>
+        <label className="btn btn-small btn-light upload-btn">
+          {uploading ? '上傳中…' : '更換'}
+          <input type="file" accept="image/*" hidden onChange={uploadAvatar} />
+        </label>
+      </section>
       <form className="card" onSubmit={save}>
         <Field label="姓名"><input className="input" value={form.name} onChange={set('name')} required /></Field>
         <Field label="手機號碼"><input className="input" value={user.phone} disabled /></Field>

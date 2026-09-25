@@ -264,6 +264,24 @@ a.card:active, button.card:active { transform: scale(0.995); }
 .summary { background: var(--gray-soft); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
 .pay-info { background: var(--brand-soft); color: var(--brand-dark); border-radius: 12px; padding: 12px 14px; font-size: 14px; }
 
+/* ---------------------------------------------------------------- 報名者頭像 */
+
+.avatar-stack { display: inline-flex; align-items: center; flex: none; }
+.avatar-stack-item {
+  border-radius: 50%; overflow: hidden; background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 700;
+  display: grid; place-items: center; box-shadow: 0 0 0 2px var(--card); margin-left: -6px;
+}
+.avatar-stack-item:first-child { margin-left: 0; }
+.avatar-stack-item img { width: 100%; height: 100%; object-fit: cover; }
+.avatar-stack-more { font-size: 12px; color: var(--muted); margin-left: 4px; }
+.attendee-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 12px 6px; }
+.attendee-cell { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.attendee-name { font-size: 13px; color: var(--text-2); }
+.dupr-chip { font-size: 12px; font-weight: 700; color: #0b2a5b; background: #e3eaf6; border-radius: 999px; padding: 0 8px; }
+.dupr-chip.verified { background: #0b2a5b; color: #fff; }
+.member-initial img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+.member-initial { overflow: visible; }
+
 /* ---------------------------------------------------------------- DUPR */
 
 .dupr-card { border-top: 4px solid #0b2a5b; display: flex; flex-direction: column; gap: 8px; }
@@ -450,6 +468,45 @@ textarea.input { resize: vertical; }
 .admin-notice:last-child { border-bottom: 0; }
 .admin-notice .badge { margin-top: 3px; }
 .admin-notice.unread { background: linear-gradient(90deg, var(--brand-soft), transparent 70%); margin: 0 -16px; padding-left: 16px; padding-right: 16px; }
+
+/* ---------------------------------------------------------------- 課程範本 */
+
+.weekday-picks { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+.weekday-pick { border: 1px solid var(--line); background: var(--card); border-radius: 10px; padding: 8px 0; font-size: 15px; color: var(--text-2); }
+.weekday-pick.on { background: var(--brand); border-color: var(--brand); color: #fff; font-weight: 700; }
+.mt { margin-top: 12px; }
+
+/* ---------------------------------------------------------------- 分析與報表 */
+
+.stat em { font-style: normal; font-size: 12px; color: var(--muted); }
+.bar-chart { margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.bar-plot { position: relative; height: 160px; margin: 18px 0 0 36px; }
+.bar-grid { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); }
+.bar-grid span { position: absolute; right: 100%; top: -8px; padding-right: 6px; font-size: 11px; color: var(--muted); white-space: nowrap; }
+.bar-cols { position: absolute; inset: 0; display: grid; border-bottom: 1px solid #c9d3e0; }
+.bar-col { position: relative; border: 0; background: none; padding: 0 1px; height: 100%; display: flex; align-items: flex-end; justify-content: center; cursor: pointer; }
+.bar-col .bar { width: 100%; max-width: 24px; background: var(--brand); border-radius: 4px 4px 0 0; min-height: 0; transition: opacity 0.12s; }
+.bar-col:hover .bar, .bar-col.on .bar { background: var(--brand-dark); }
+.bar-peak { position: absolute; bottom: 100%; left: 50%; transform: translate(-50%, -4px); font-size: 11px; color: var(--text-2); white-space: nowrap; pointer-events: none; }
+.bar-tip {
+  position: absolute; bottom: calc(100% + 6px); transform: translateX(-50%); background: #16233b; color: #fff; border-radius: 8px;
+  padding: 4px 9px; font-size: 12px; white-space: nowrap; display: flex; gap: 8px; pointer-events: none; z-index: 2;
+}
+.bar-axis { display: grid; margin-left: 36px; font-size: 11px; color: var(--muted); }
+.bar-axis span { white-space: nowrap; overflow: visible; }
+.bar-table summary { font-size: 13px; color: var(--brand); cursor: pointer; margin-top: 6px; }
+.bar-table table { width: 100%; font-size: 13px; border-collapse: collapse; margin-top: 6px; }
+.bar-table td { padding: 4px 0; border-bottom: 1px solid var(--line); }
+.bar-table td:last-child { text-align: right; }
+.report-table { display: flex; flex-direction: column; }
+.report-tr { display: grid; column-gap: 14px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.report-tr > span:not(:first-child) { text-align: right; white-space: nowrap; min-width: 36px; }
+.report-tr.head { color: var(--muted); font-size: 12px; padding-top: 0; }
+.report-tr:last-child { border-bottom: 0; }
+.meter-cell { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.meter-track { width: 40px; height: 6px; border-radius: 3px; background: var(--brand-soft); overflow: hidden; }
+.meter-fill { display: block; height: 100%; background: var(--brand); border-radius: 3px; }
+@media (min-width: 420px) { .stats:has(.stat em) { grid-template-columns: repeat(3, 1fr); } }
 
 /* ---------------------------------------------------------------- modal / toast */
 

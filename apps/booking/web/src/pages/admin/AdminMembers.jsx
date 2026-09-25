@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
-import { Badge, Empty, Field, Loading, Modal } from '../../components/ui'
+import { Avatar, Badge, Empty, Field, Loading, Modal } from '../../components/ui'
 import { cardRemain, rating, showDateTime } from '../../util'
 
 export default function AdminMembers() {
@@ -22,7 +22,7 @@ export default function AdminMembers() {
       <input className="input search" placeholder="搜尋姓名或手機" value={q} onChange={(e) => setQ(e.target.value)} />
       {!list ? <Loading /> : shown.length === 0 ? <Empty text="找不到會員" /> : shown.map((m) => (
         <button key={m.id} className="card member-row text-left" onClick={() => setOpen(m)}>
-          <div className="avatar" style={{ width: 40, height: 40, fontSize: 17 }}><span>{m.name.slice(0, 1)}</span></div>
+          <Avatar src={m.avatar_url} name={m.name} size={40} />
           <div className="flex1 min0">
             <b>{m.name}</b>
             {m.role === 'owner' && <Badge>場主</Badge>}

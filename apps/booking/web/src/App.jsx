@@ -24,6 +24,8 @@ import AdminSettings from './pages/admin/AdminSettings'
 import AdminCalendar from './pages/admin/AdminCalendar'
 import Attendance from './pages/admin/Attendance'
 import AdminNotifications from './pages/admin/AdminNotifications'
+import AdminTemplates from './pages/admin/AdminTemplates'
+import Reports from './pages/admin/Reports'
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -96,6 +98,10 @@ export default function App() {
           <Route path="/admin" element={<AdminLayout />}>
             <Route index element={<Dashboard />} />
             <Route path="calendar" element={<AdminCalendar />} />
+            <Route path="templates" element={<AdminTemplates />} />
+            <Route path="templates/new" element={<CourseForm template />} />
+            <Route path="templates/:id/edit" element={<CourseForm template />} />
+            <Route path="reports" element={<Reports />} />
             <Route path="attendance" element={<Attendance />} />
             <Route path="notifications" element={<AdminNotifications />} />
             <Route path="courses" element={<AdminCourses />} />

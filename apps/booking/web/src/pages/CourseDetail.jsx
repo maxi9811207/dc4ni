@@ -159,10 +159,23 @@ export default function CourseDetail() {
 
         {c.attendees.length > 0 && (
           <section className="card">
-            <h3 className="card-title">已預約學員（{c.attendees.length}）</h3>
-            <div className="attendees">
-              {c.attendees.map((n, i) => <span key={i} className="attendee">{n}</span>)}
+            <h3 className="card-title">已報名（{c.attendees.length}）</h3>
+            <div className="attendee-grid">
+              {c.attendees.map((a, i) => (
+                <div key={i} className="attendee-cell">
+                  <Avatar src={a.avatar_url} name={a.name} size={48} />
+                  <span className="attendee-name">{a.name}</span>
+                  {c.dupr_required && (
+                    <span className={`dupr-chip ${a.dupr_verified ? 'verified' : ''}`} title={a.dupr_verified ? '場館已驗證' : '未驗證'}>
+                      {a.dupr == null ? 'NR' : Number(a.dupr).toFixed(3)}{a.dupr_verified && ' ✓'}
+                    </span>
+                  )}
+                </div>
+              ))}
             </div>
+            {c.dupr_required && c.attendees.length > 1 && (
+              <p className="muted small">平均 DUPR {c.dupr_format === 'singles' ? '單打' : '雙打'}：{(c.attendees.filter((a) => a.dupr != null).reduce((s, a) => s + a.dupr, 0) / Math.max(c.attendees.filter((a) => a.dupr != null).length, 1)).toFixed(3)}</p>
+            )}
           </section>
         )}
       </main>

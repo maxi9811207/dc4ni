@@ -5,6 +5,7 @@ import { api } from '../../api'
 import WeekPicker from '../../components/WeekPicker'
 import { Avatar, Badge, Confirm, Empty, Loading } from '../../components/ui'
 import { addDays, mondayOf, showDate, today } from '../../util'
+import { CourseTabs } from './AdminTemplates'
 
 export default function AdminCourses() {
   const { handleError, showToast } = useApp()
@@ -27,6 +28,7 @@ export default function AdminCourses() {
 
   return (
     <>
+      <CourseTabs value="daily" />
       <WeekPicker value={date} onChange={(d) => setParams({ date: d }, { replace: true })} />
       {week && (
         <p className="muted small week-summary">

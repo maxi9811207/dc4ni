@@ -12,7 +12,18 @@ const EMPTY = {
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
 }
 
-export default function CourseForm() {
+// template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
+function fromSource(c) {
+  return {
+    ...EMPTY,
+    ...Object.fromEntries(Object.keys(EMPTY).filter((k) => k in c && c[k] !== null).map((k) => [k, c[k]])),
+    teacher_id: c.teacher?.id || c.teacher_id || '',
+    dupr_min: c.dupr_min ?? '',
+    dupr_max: c.dupr_max ?? '',
+  }
+}
+
+export default function CourseForm({ template = false }) {
   const { id } = useParams()
   const [params] = useSearchParams()
   const { venue, handleError, showToast } = useApp()
@@ -21,28 +32,41 @@ export default function CourseForm() {
   const [teachers, setTeachers] = useState([])
   const [plans, setPlans] = useState([])
   const [busy, setBusy] = useState(false)
+  const [templates, setTemplates] = useState([])
+  const [applyFuture, setApplyFuture] = useState(true)
 
   useEffect(() => {
     api('admin/teachers').then((l) => setTeachers(l.filter((t) => t.active))).catch(handleError)
     api('admin/plans').then(setPlans).catch(handleError)
+    if (!template && !id) api('admin/templates').then((l) => setTemplates(l.filter((t) => t.active))).catch(handleError)
+    if (template) {
+      if (!id) { setForm({ ...EMPTY, category: venue?.categories?.[0] || '' }); return }
+      api(`admin/templates/${id}`).then((t) => setForm(fromSource(t))).catch(handleError)
+      return
+    }
+    if (params.get('template')) {
+      api(`admin/templates/${params.get('template')}`).then((t) => setForm({ ...fromSource(t), template_id: t.id, date: params.get('date') || today() })).catch(handleError)
+      return
+    }
     const source = id || params.get('copy')
     if (!source) {
       setForm({ ...EMPTY, date: params.get('date') || today(), category: venue?.categories?.[0] || '' })
       return
     }
     api(`courses/${source}`).then((c) => setForm({
-      ...EMPTY,
-      ...Object.fromEntries(Object.keys(EMPTY).filter((k) => k in c).map((k) => [k, c[k]])),
-      teacher_id: c.teacher?.id || '',
-      dupr_min: c.dupr_min ?? '',
-      dupr_max: c.dupr_max ?? '',
+      ...fromSource(c),
+      template_id: c.template_id,
       ...(id ? {} : { date: params.get('date') || c.date }),
     })).catch(handleError)
-  }, [id, params, venue, handleError])
+  }, [id, params, venue, handleError, template])
 
   if (!form) return <Loading />
   const set = (k, cast = (v) => v) => (e) => setForm({ ...form, [k]: cast(e.target.type === 'checkbox' ? e.target.checked : e.target.value) })
   const togglePlan = (pid) => setForm({ ...form, plan_ids: form.plan_ids.includes(pid) ? form.plan_ids.filter((x) => x !== pid) : [...form.plan_ids, pid] })
+  const useTemplate = (tid) => {
+    const t = templates.find((x) => String(x.id) === tid)
+    setForm(t ? { ...fromSource(t), template_id: t.id, date: form.date, repeat_weeks: form.repeat_weeks } : { ...form, template_id: null })
+  }
   const categories = Array.from(new Set([...(venue?.categories || []), form.category].filter(Boolean)))
 
   const submit = async (e) => {
@@ -51,6 +75,17 @@ export default function CourseForm() {
     if (form.dupr_required && form.dupr_min !== '' && form.dupr_max !== '' && Number(form.dupr_min) > Number(form.dupr_max)) return showToast('DUPR 最低分不能高於最高分')
     setBusy(true)
     try {
+      if (template) {
+        if (id) {
+          const r = await api(`admin/templates/${id}`, { method: 'PUT', body: { ...form, apply_future: applyFuture } })
+          showToast(applyFuture && r.updated ? `已儲存，並更新之後的 ${r.updated} 堂課` : '已儲存範本')
+        } else {
+          await api('admin/templates', { method: 'POST', body: form })
+          showToast('已建立課程範本')
+        }
+        navigate('/admin/templates')
+        return
+      }
       if (id) {
         await api(`admin/courses/${id}`, { method: 'PUT', body: form })
         showToast('已儲存')
@@ -64,7 +99,16 @@ export default function CourseForm() {
 
   return (
     <form className="card form" onSubmit={submit}>
-      <h3 className="card-title">{id ? '編輯課程' : params.get('copy') ? '複製課程' : '新增課程'}</h3>
+      <h3 className="card-title">{template ? (id ? '編輯課程範本' : '新增課程範本') : id ? '編輯課程' : params.get('copy') ? '複製課程' : '新增課程'}</h3>
+      {template && <p className="muted small">範本是課程的預設內容，建好後用「排課」一次排出多堂課。</p>}
+      {!template && !id && templates.length > 0 && (
+        <Field label="從課程範本帶入" hint="帶入範本的內容與時間，仍可再修改">
+          <select className="input" value={form.template_id || ''} onChange={(e) => useTemplate(e.target.value)}>
+            <option value="">不使用範本</option>
+            {templates.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Field>
+      )}
       <Field label="課程名稱"><input className="input" value={form.name} onChange={set('name')} required placeholder="例：匹克球初階實戰班 Lv.1" /></Field>
       <div className="grid2">
         <Field label="課程類別">
@@ -81,12 +125,12 @@ export default function CourseForm() {
         </Field>
       </div>
       <label className="check"><input type="checkbox" checked={form.substitute} onChange={set('substitute')} /> 代課</label>
-      <Field label="日期"><input className="input" type="date" value={form.date} onChange={set('date')} required /></Field>
+      {!template && <Field label="日期"><input className="input" type="date" value={form.date} onChange={set('date')} required /></Field>}
       <div className="grid2">
         <Field label="開始時間"><input className="input" type="time" value={form.start_time} onChange={set('start_time')} required /></Field>
         <Field label="結束時間"><input className="input" type="time" value={form.end_time} onChange={set('end_time')} required /></Field>
       </div>
-      {!id && (
+      {!id && !template && (
         <Field label="重複排課" hint="每週同一時間自動建立，最多 26 週">
           <select className="input" value={form.repeat_weeks} onChange={set('repeat_weeks', Number)}>
             {[1, 2, 4, 8, 12, 26].map((n) => <option key={n} value={n}>{n === 1 ? '只有這一堂' : `連續 ${n} 週`}</option>)}
@@ -141,6 +185,9 @@ export default function CourseForm() {
           ))}
         </div>
       </Field>
+      {template && id && (
+        <label className="check strong"><input type="checkbox" checked={applyFuture} onChange={(e) => setApplyFuture(e.target.checked)} /> 同步更新這個範本之後、尚未開始的課程（時間不變，名額不會少於已報名人數）</label>
+      )}
       <div className="row gap">
         <button type="button" className="btn btn-light flex1" onClick={() => navigate(-1)}>取消</button>
         <button className="btn flex1" disabled={busy}>{busy ? '儲存中…' : '儲存'}</button>
