@@ -40,6 +40,8 @@ mkdir -p "$APP/data"
 rm -rf "$APP/server.new" && cp -r "$SRC/apps/booking/server" "$APP/server.new"
 [ -f "$APP/server.new/static/index.html" ] || { echo "找不到前端檔案，請確認分支內容"; exit 1; }
 rm -rf "$APP/server" && mv "$APP/server.new" "$APP/server"
+# 填 LINE 金鑰的小工具：sudo booking-line-setup
+[ -f "$SRC/apps/booking/deploy/line-setup.sh" ] && install -m 755 "$SRC/apps/booking/deploy/line-setup.sh" /usr/local/sbin/booking-line-setup
 rm -rf "$SRC"
 
 echo "==> 安裝 Python 套件"

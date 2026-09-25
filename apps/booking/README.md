@@ -60,6 +60,12 @@
 
 LINE Developers 設定：建立 Provider → LINE Login channel，開啟 OpenID Connect（Email address permission 需另外申請），
 Callback URL 填 `https://<網域>/api/auth/line/callback`；LIFF 的 Endpoint URL 填 `https://<網域>/`，Scope 勾選 `openid`、`profile`（可選 `email`）。
+最後把 channel 從 Developing 切到 Published，否則只有 channel 管理員能登入。
+
+金鑰在主機上執行 `sudo booking-line-setup` 貼上即可（會檢查格式、重新啟動並確認 LINE 登入已啟用，失敗會自動還原）。
+
+- 還沒申請到 Email address permission 也能登入：LINE 回 `invalid_scope` 時會自動改成不要求信箱再授權一次。
+- 設定了 `BOOKING_DOMAIN` 時，callback 一律使用 `https://<網域>/`，從 `http://IP:8080` 開啟網站也能用 LINE 登入。
 
 ### 預約規則
 
