@@ -1,7 +1,7 @@
 import { NavLink, useNavigate } from 'react-router-dom'
 import { useApp } from '../App'
 import { asset } from '../api'
-import { RatingPill } from './ui'
+import { AvatarImg, RatingPill } from './ui'
 
 const TABS = [
   ['/', '課程預約'],
@@ -25,7 +25,7 @@ export default function VenueHeader() {
           onClick={() => navigate(user ? '/me' : '/login')}
         >
           {user
-            ? <span className="member-initial">{user.avatar_url ? <img src={asset(user.avatar_url)} alt="" /> : user.name.slice(0, 1)}{user.unread > 0 && <i className="dot" />}</span>
+            ? <span className="member-initial"><AvatarImg src={user.avatar_url} name={user.name} />{user.unread > 0 && <i className="dot" />}</span>
             : <span className="member-login">登入/註冊</span>}
         </button>
       </div>

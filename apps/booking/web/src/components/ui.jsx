@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { asset } from '../api'
 
@@ -45,10 +45,18 @@ export function TopBar({ title, back = -1, right }) {
   )
 }
 
+// 頭像圖片載入失敗（例如 LINE 換了大頭貼、舊網址失效）時改顯示姓名首字
+export function AvatarImg({ src, name, alt = '' }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [src])
+  if (!src || broken) return <span>{(name || '?').slice(0, 1)}</span>
+  return <img src={asset(src)} alt={alt} onError={() => setBroken(true)} />
+}
+
 export function Avatar({ src, name, size = 44 }) {
   return (
     <div className="avatar" style={{ width: size, height: size, fontSize: size * 0.42 }}>
-      {src ? <img src={asset(src)} alt={name} /> : <span>{(name || '?').slice(0, 1)}</span>}
+      <AvatarImg src={src} name={name} alt={name} />
     </div>
   )
 }
@@ -134,7 +142,7 @@ export function AvatarStack({ people, total, size = 26 }) {
     <span className="avatar-stack" aria-label={`${total ?? people.length} 人已報名`}>
       {people.map((p, i) => (
         <span key={i} className="avatar-stack-item" style={{ width: size, height: size }}>
-          {p.avatar_url ? <img src={asset(p.avatar_url)} alt="" /> : <span>{p.name.slice(0, 1)}</span>}
+          <AvatarImg src={p.avatar_url} name={p.name} />
         </span>
       ))}
       {more > 0 && <span className="avatar-stack-more">+{more}</span>}

@@ -134,6 +134,9 @@ MIGRATIONS = {
         "dupr_verified_only": "INTEGER NOT NULL DEFAULT 0",
         "template_id": "INTEGER",
     },
+    "oauth_states": {
+        "no_email": "INTEGER NOT NULL DEFAULT 0",
+    },
 }
 
 app = FastAPI(title="約課系統 API", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -679,7 +682,8 @@ async def login(request: Request):
 # ---------------------------------------------------------------- LINE 登入
 
 def public_base(request: Request) -> str:
-    base = os.getenv("BOOKING_PUBLIC_URL")
+    """對外網址。有網域時一律用 https://網域/，從 IP:8080 進來的 LINE callback 才會和 LINE 後台設定的一致。"""
+    base = os.getenv("BOOKING_PUBLIC_URL") or (f"https://{os.getenv('BOOKING_DOMAIN')}" if os.getenv("BOOKING_DOMAIN") else "")
     if base:
         return base.rstrip("/") + "/"
     proto = request.headers.get("x-forwarded-proto", request.url.scheme)
@@ -717,7 +721,8 @@ def line_redirect(conn, request: Request, next_path: str, link_user_id: int | No
         fail(400, "場館尚未開通 LINE 登入")
     state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(16)
     conn.execute("DELETE FROM oauth_states WHERE created_at < ?", ((now() - timedelta(minutes=30)).isoformat(),))
-    conn.execute("INSERT INTO oauth_states VALUES (?,?,?,?,?)", (state, nonce, safe_next(next_path), link_user_id, stamp()))
+    conn.execute("INSERT INTO oauth_states (state, nonce, next, link_user_id, created_at) VALUES (?,?,?,?,?)",
+                 (state, nonce, safe_next(next_path), link_user_id, stamp()))
     return line_login.authorize_url(public_base(request) + "api/auth/line/callback", state, nonce)
 
 
@@ -747,11 +752,17 @@ def line_callback(request: Request):
     def back(**params):
         return RedirectResponse(base + "#/auth/line?" + urllib.parse.urlencode(params), status_code=302)
 
-    if q.get("error"):
-        return back(error="已取消 LINE 登入")
     with db() as conn:
         st = one(conn.execute("SELECT * FROM oauth_states WHERE state=?", (q.get("state", ""),)))
-        if not st or st["created_at"] < (now() - timedelta(minutes=30)).isoformat():
+        fresh = st and st["created_at"] >= (now() - timedelta(minutes=30)).isoformat()
+        if q.get("error") == "invalid_scope" and fresh and not st["no_email"]:
+            # channel 尚未取得 email 權限：同一個 state 改成不要求 email 再授權一次（只退一次，不會無限重導）
+            conn.execute("UPDATE oauth_states SET no_email=1 WHERE state=?", (st["state"],))
+            return RedirectResponse(line_login.authorize_url(base + "api/auth/line/callback", st["state"], st["nonce"],
+                                                             email=False), status_code=302)
+        if q.get("error"):
+            return back(error="已取消 LINE 登入" if q["error"] == "access_denied" else "LINE 登入失敗，請聯絡場館")
+        if not fresh:
             return back(error="登入逾時，請再試一次")
         conn.execute("DELETE FROM oauth_states WHERE state=?", (st["state"],))
         try:
