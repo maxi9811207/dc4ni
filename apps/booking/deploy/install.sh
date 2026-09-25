@@ -54,6 +54,9 @@ if [ ! -f "$ENV_FILE" ]; then
   read -rp "場主手機號碼：" OWNER_PHONE < /dev/tty
   read -rsp "場主密碼（至少 6 碼）：" OWNER_PASSWORD < /dev/tty; echo
   read -rp "放入示範課程資料？(y/N)：" DEMO < /dev/tty
+  # 去掉誤按方向鍵等控制字元；手機只留數字
+  OWNER_NAME=$(printf '%s' "$OWNER_NAME" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | tr -d '[:cntrl:]')
+  OWNER_PHONE=$(printf '%s' "$OWNER_PHONE" | sed 's/\x1b\[[0-9;]*[A-Za-z]//g' | tr -cd '0-9+')
   cat > "$ENV_FILE" <<CONF
 BOOKING_DATA_DIR=$APP/data
 BOOKING_TZ=Asia/Taipei

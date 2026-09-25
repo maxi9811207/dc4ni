@@ -288,6 +288,10 @@ def startup():
     with db() as conn:
         conn.executescript(SCHEMA)
         rebuild_users(conn)
+        for r in rows(conn.execute("SELECT id, phone FROM users WHERE phone IS NOT NULL")):
+            fixed = clean_phone(r["phone"])
+            if fixed != r["phone"] and not one(conn.execute("SELECT id FROM users WHERE phone=? AND id!=?", (fixed, r["id"]))):
+                conn.execute("UPDATE users SET phone=? WHERE id=?", (fixed, r["id"]))
         for table, cols in MIGRATIONS.items():
             have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
             for col, ddl in cols.items():
@@ -296,6 +300,7 @@ def startup():
         conn.execute("PRAGMA journal_mode = WAL")
         phone = os.getenv("BOOKING_OWNER_PHONE")
         password = os.getenv("BOOKING_OWNER_PASSWORD")
+        phone = clean_phone(phone)
         if phone and password and not one(conn.execute("SELECT id FROM users WHERE phone=?", (phone,))):
             conn.execute(
                 "INSERT INTO users (name, phone, password_hash, role, created_at) VALUES (?,?,?,?,?)",
@@ -626,7 +631,9 @@ def clean_email(v) -> str | None:
 
 
 def clean_phone(v) -> str | None:
-    v = re.sub(r"[\s-]", "", str(v or ""))
+    """只保留數字與 +（去掉空白、橫線，以及終端機誤輸入的方向鍵等控制字元）。"""
+    v = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", str(v or ""))
+    v = re.sub(r"[^\d+]", "", v)
     return v[:20] or None
 
 
