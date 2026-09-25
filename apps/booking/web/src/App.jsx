@@ -39,7 +39,12 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [dialog, setDialog] = useState(null)
 
-  const loadVenue = useCallback(() => api('venue').then(setVenue).catch(() => {}), [])
+  // 網路不穩時重試，避免場館名稱、封面空白
+  const loadVenue = useCallback(async () => {
+    for (let i = 0; i < 3; i++) {
+      try { setVenue(await api('venue')); return } catch { await new Promise((r) => setTimeout(r, 800 * (i + 1))) }
+    }
+  }, [])
 
   const refreshUser = useCallback(async () => {
     if (!getToken()) { setUser(null); return null }
