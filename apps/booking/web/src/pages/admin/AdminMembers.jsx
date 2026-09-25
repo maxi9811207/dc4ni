@@ -44,6 +44,7 @@ function MemberDialog({ m, onClose, onChanged }) {
   const [planId, setPlanId] = useState('')
   const [note, setNote] = useState(m.note || '')
   const [reason, setReason] = useState(m.suspend_reason || '')
+  const [confirmDelete, setConfirmDelete] = useState(false)
   useEffect(() => { api('admin/plans').then(setPlans).catch(handleError) }, [handleError])
 
   const run = async (fn, msg) => {
@@ -110,6 +111,18 @@ function MemberDialog({ m, onClose, onChanged }) {
           <button className="btn btn-block btn-light" onClick={() => update({ role: m.role === 'owner' ? 'student' : 'owner' }, '已更新權限')}>
             {m.role === 'owner' ? '取消場主權限' : '設為場主（可管理後台）'}
           </button>
+          {confirmDelete ? (
+            <div className="alert danger">
+              <p>確定刪除「{m.name}」？他的預約、課卡、訂單、評價都會一併刪除，無法復原。</p>
+              <div className="row gap" style={{ marginTop: 8 }}>
+                <button className="btn btn-small btn-light flex1" onClick={() => setConfirmDelete(false)}>取消</button>
+                <button className="btn btn-small btn-danger flex1"
+                  onClick={() => run(() => api(`admin/members/${m.id}`, { method: 'DELETE' }), '已刪除會員').then(onClose)}>確定刪除</button>
+              </div>
+            </div>
+          ) : (
+            <button className="btn btn-block btn-light text-danger" onClick={() => setConfirmDelete(true)}>刪除會員</button>
+          )}
         </>
       )}
     </Modal>

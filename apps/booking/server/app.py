@@ -1078,6 +1078,25 @@ async def update_member(user_id: int, request: Request, owner=Depends(require_ow
         return {"ok": True}
 
 
+@app.delete("/api/admin/members/{user_id}")
+def delete_member(user_id: int, owner=Depends(require_owner)):
+    """刪除會員與其所有資料；他佔用的名額會釋出並遞補候補。"""
+    if user_id == owner["id"]:
+        fail(400, "不能刪除自己的帳號")
+    with db() as conn:
+        u = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
+        if not u:
+            fail(404, "找不到會員")
+        freed = [r["course_id"] for r in conn.execute(
+            "SELECT course_id FROM reservations WHERE user_id=? AND status='booked'", (user_id,))]
+        for table in ("tokens", "reservations", "cards", "orders", "reviews", "notifications"):
+            conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        for course_id in freed:
+            promote_waitlist(conn, get_course(conn, course_id))
+        return {"ok": True}
+
+
 @app.post("/api/admin/members/{user_id}/cards")
 async def give_card(user_id: int, request: Request, owner=Depends(require_owner)):
     b = await request.json()
