@@ -97,7 +97,9 @@ export function LineCallback() {
     setToken(token)
     refreshUser().then((u) => {
       showToast(params.get('linked') ? '已綁定 LINE 帳號' : `歡迎，${u?.name || ''}`)
-      navigate(params.get('next') || (u?.role === 'owner' ? '/admin' : '/'), { replace: true })
+      // 從一般「登入」進來（next 是首頁）時，場主直接進後台；從某個頁面被導來登入的就回原頁
+      const next = params.get('next')
+      navigate(next && next !== '/' ? next : (u?.role === 'owner' ? '/admin' : '/'), { replace: true })
     })
   }, [params, refreshUser, showToast, navigate])
   return <Loading text="LINE 登入中" />
