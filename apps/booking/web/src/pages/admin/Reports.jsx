@@ -88,7 +88,7 @@ function Body({ d }) {
       <section className="card">
         <h3 className="card-title">課卡銷售</h3>
         {rev.by_plan.length === 0 ? <p className="muted small">沒有銷售</p> : (
-          <Table head={['方案', '張數', '金額']} rows={rev.by_plan.map((p) => [p.name, p.count, money(p.amount)])} />
+          <Table head={['方案／活動', '筆數', '金額']} rows={rev.by_plan.map((p) => [p.name, p.count, money(p.amount)])} />
         )}
         <div className="stats stats-3 mt">
           <div className="stat"><span>消耗堂數</span><b>{cards.consumed.sessions}</b></div>

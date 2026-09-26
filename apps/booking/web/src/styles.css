@@ -637,3 +637,12 @@ textarea.input { resize: vertical; }
 .standalone-bar { grid-template-columns: 1fr auto; }
 .standalone-venue { font-weight: 700; font-size: 15px; padding-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .standalone-user { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }
+
+/* ---------------------------------------------------------------- 單次報名費 */
+
+.pay-card { border-top: 4px solid var(--warn); }
+.pay-card.paid { border-top-color: var(--success); }
+.pay-card form { align-items: flex-end; }
+.pay-card .field { flex: 1; margin: 0; }
+.fee-summary { margin-top: 10px; }
+.stat .stat-sub { display: block; font-size: 12px; margin-top: 2px; }

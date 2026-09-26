@@ -40,6 +40,13 @@ def summary(conn, start: str, end: str, today: str) -> dict:
                    " JOIN plans p ON p.id=o.plan_id JOIN users u ON u.id=o.user_id"
                    " WHERE o.status='paid' AND substr(o.updated_at,1,10) BETWEEN ? AND ? ORDER BY o.updated_at",
                    (start, end))
+    # 單次報名費（已收款）也算營收，列在「報名費：課程名稱」
+    orders += _rows(conn,
+                    "SELECT r.fee amount, r.paid_at updated_at, '報名費：' || c.name plan_name, 'fee' plan_type,"
+                    " u.name user_name, u.phone FROM reservations r JOIN courses c ON c.id=r.course_id"
+                    " JOIN users u ON u.id=r.user_id WHERE r.paid=1 AND r.fee>0 AND substr(r.paid_at,1,10) BETWEEN ? AND ?",
+                    (start, end))
+    orders.sort(key=lambda o: o["updated_at"])
     by_plan: dict[str, dict] = {}
     daily_rev = {d: 0 for d in _days(start, end)}
     for o in orders:
@@ -142,7 +149,7 @@ def summary(conn, start: str, end: str, today: str) -> dict:
 
 
 STATUS = {"booked": "已預約", "attended": "出席", "absent": "缺席", "waitlist": "候補", "cancelled": "已取消"}
-TYPES = {"sessions": "堂數課卡", "points": "點數課卡", "unlimited": "無限課卡"}
+TYPES = {"sessions": "堂數課卡", "points": "點數課卡", "unlimited": "無限課卡", "fee": "單次報名費"}
 
 
 def to_xlsx(data: dict, venue: str) -> bytes:
@@ -170,7 +177,7 @@ def to_xlsx(data: dict, venue: str) -> bytes:
     rev, cls, cards, mem = data["revenue"], data["classes"], data["cards"], data["members"]
     sheet("摘要", ["項目", "數值"], [
         ["場館", venue], ["期間", f"{data['from']} ~ {data['to']}"],
-        ["營收（NT$）", rev["total"]], ["已收款訂單", rev["orders"]], ["待確認訂單（目前）", rev["pending"]],
+        ["營收（NT$）", rev["total"]], ["已收款筆數（課卡＋報名費）", rev["orders"]], ["待確認訂單（目前）", rev["pending"]],
         ["開課堂數", cls["sessions"]], ["停課堂數", cls["cancelled_sessions"]], ["總名額", cls["capacity"]],
         ["預約人次", cls["booked"]], ["滿班率（%）", cls["fill_rate"]], ["出席", cls["attended"]],
         ["缺席", cls["absent"]], ["出席率（%）", cls["attendance_rate"]], ["取消預約", cls["cancellations"]],

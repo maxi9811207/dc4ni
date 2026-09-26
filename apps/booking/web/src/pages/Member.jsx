@@ -63,6 +63,9 @@ function Reservations() {
         : shown.map(({ reservation: r, course: c, reviewed }) => (
           <div key={r.id}>
             <CourseCard course={c} showDate />
+            {r.fee > 0 && r.status === 'booked' && !r.paid && view === 'upcoming' && (
+              <Link to={`/course/${c.id}`} className="history-foot text-warn small">報名費 NT$ {r.fee.toLocaleString()} 待付款 ›</Link>
+            )}
             {view === 'history' && (
               <div className="history-foot">
                 <span className="muted small">{{ attended: '已出席', absent: '缺席', booked: '已預約', waitlist: '候補未遞補' }[r.status]}</span>

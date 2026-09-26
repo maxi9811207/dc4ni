@@ -23,6 +23,14 @@ export default function Roster() {
   const booked = c.roster.filter((r) => r.status !== 'waitlist')
   const waiting = c.roster.filter((r) => r.status === 'waitlist')
 
+  const setPaid = async (r, paid) => {
+    try {
+      await api(`admin/reservations/${r.id}/payment`, { method: 'POST', body: { paid } })
+      showToast(paid ? `已確認收到 ${r.name} 的報名費` : '已改為未付款')
+      load()
+    } catch (e) { handleError(e) }
+  }
+  const feeRows = booked.filter((r) => r.fee > 0)
   const setStatus = async (r, status, extra = {}) => {
     try {
       await api(`admin/reservations/${r.id}`, { method: 'POST', body: { status, ...extra } })
@@ -50,6 +58,13 @@ export default function Roster() {
           <div className="stat"><span>出席</span><b>{c.roster.filter((r) => r.status === 'attended').length}</b></div>
           <div className="stat"><span>候補</span><b>{c.waitlist_count}</b></div>
         </div>
+        {feeRows.length > 0 && (
+          <p className="small fee-summary">
+            報名費已收 <b className="text-success">NT$ {feeRows.filter((r) => r.paid).reduce((s, r) => s + r.fee, 0).toLocaleString()}</b>
+            ／應收 NT$ {feeRows.reduce((s, r) => s + r.fee, 0).toLocaleString()}
+            {feeRows.some((r) => !r.paid) && <span className="text-warn">（{feeRows.filter((r) => !r.paid).length} 人待付款）</span>}
+          </p>
+        )}
       </section>
 
       {c.share_code && <ShareBox c={c} />}
@@ -66,12 +81,21 @@ export default function Roster() {
                 <div>
                   <b>{i + 1}. {r.name}</b> <Badge tone={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge>
                   {r.dupr_id && <span className="small dupr-inline"> DUPR {rating(r[`dupr_${c.dupr_format}`])}{r.dupr_verified ? ' ✓' : ''}</span>}
-                  <p className="muted small">{r.phone && <><a href={`tel:${r.phone}`}>{r.phone}</a> · </>}{r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
+                  <p className="muted small">{r.phone && <><a href={`tel:${r.phone}`}>{r.phone}</a> · </>}{r.fee > 0 ? `報名費 NT$ ${r.fee.toLocaleString()}` : r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
+                  {r.fee > 0 && (
+                    <p className="small">
+                      {r.paid ? <Badge tone="success">已付款</Badge> : <Badge tone="warn">待付款</Badge>}
+                      {r.pay_note && <span className="muted"> 學員回報：{r.pay_note}</span>}
+                    </p>
+                  )}
                 </div>
               </div>
               <div className="admin-actions">
                 <button className={`btn btn-small ${r.status === 'attended' ? '' : 'btn-light'}`} onClick={() => setStatus(r, r.status === 'attended' ? 'booked' : 'attended')}>出席</button>
                 <button className={`btn btn-small ${r.status === 'absent' ? 'btn-danger' : 'btn-light'}`} onClick={() => setStatus(r, r.status === 'absent' ? 'booked' : 'absent')}>缺席</button>
+                {r.fee > 0 && (
+                  <button className={`btn btn-small ${r.paid ? 'btn-light' : ''}`} onClick={() => setPaid(r, !r.paid)}>{r.paid ? '改為未付款' : '確認收款'}</button>
+                )}
                 <button className="btn btn-small btn-light text-danger" onClick={() => { setRefund(true); setRemoving(r) }}>取消預約</button>
               </div>
             </div>
@@ -101,7 +125,9 @@ export default function Roster() {
       {removing && (
         <Confirm title={`取消 ${removing.name} 的預約？`} danger okText="確定取消" onClose={() => setRemoving(null)}
           onOk={async () => { await setStatus(removing, 'cancelled', { refund }); setRemoving(null); showToast('已取消並通知學員') }}>
-          <label className="check"><input type="checkbox" checked={refund} onChange={(e) => setRefund(e.target.checked)} /> 退還課卡</label>
+          {removing.fee > 0
+            ? removing.paid && <p className="alert warn small">這位學員已付報名費 NT$ {removing.fee.toLocaleString()}，請另外處理退費。</p>
+            : <label className="check"><input type="checkbox" checked={refund} onChange={(e) => setRefund(e.target.checked)} /> 退還課卡</label>}
           <p className="muted small">若有候補，會自動遞補下一位。</p>
         </Confirm>
       )}

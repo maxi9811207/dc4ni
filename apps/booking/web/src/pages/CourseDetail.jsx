@@ -79,13 +79,13 @@ export default function CourseDetail() {
   }
 
   const primaryLabel = {
-    book: c.cost === 0 ? '立即預約（免費）' : '立即預約',
+    book: c.fee > 0 ? `立即報名（NT$ ${c.fee.toLocaleString()}）` : c.cost === 0 ? '立即預約（免費）' : '立即預約',
     waitlist: '額滿，加入候補',
     booked: c.has_event ? '已排入賽事' : '取消預約',
     waiting: `取消候補（第 ${c.waitlist_position} 位）`,
   }[c.state] || c.button
 
-  const costText = c.cost === 0 ? '免費' : `堂數卡扣 1 堂／點數卡扣 ${c.cost} 點`
+  const costText = c.fee > 0 ? `報名費 NT$ ${c.fee.toLocaleString()}（不需課卡）` : c.cost === 0 ? '免費' : `堂數卡扣 1 堂／點數卡扣 ${c.cost} 點`
 
   return (
     <>
@@ -107,7 +107,7 @@ export default function CourseDetail() {
             <div><dt>時間</dt><dd className="text-brand strong">{c.start_time} ~ {c.end_time}</dd></div>
             {c.location && <div><dt>地點</dt><dd>{c.location}</dd></div>}
             <div><dt>人數</dt><dd>{c.booked_count} / {c.capacity}{c.waitlist_count > 0 && `（候補 ${c.waitlist_count} 人）`}</dd></div>
-            <div><dt>扣卡</dt><dd>{costText}</dd></div>
+            <div><dt>{c.fee > 0 ? '費用' : '扣卡'}</dt><dd className={c.fee > 0 ? 'strong' : ''}>{costText}</dd></div>
           </dl>
         </section>
 
@@ -140,6 +140,8 @@ export default function CourseDetail() {
             )}
           </section>
         )}
+
+        {c.fee > 0 && ['booked', 'attended', 'absent'].includes(c.my_reservation?.status) && <PaymentBox c={c} onSaved={load} />}
 
         {c.dupr_required && <EventSection c={c} />}
 
@@ -222,6 +224,7 @@ export default function CourseDetail() {
           <div className="dialog-icon success">✓</div>
           <h3 className="dialog-title">預約成功</h3>
           <p className="dialog-text">{showDate(c.date)} {c.start_time}<br />{c.name}</p>
+          {c.fee > 0 && <p className="alert warn small">名額已保留，請付報名費 NT$ {c.fee.toLocaleString()}，付款方式在頁面上的「報名費」區塊。</p>}
           {standalone
             ? <button className="btn btn-block" onClick={() => setDialog(null)}>好</button>
             : <button className="btn btn-block" onClick={() => navigate('/me')}>查看預約紀錄</button>}
@@ -356,5 +359,42 @@ function StandaloneBar() {
           : <button className="btn btn-small" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
       </div>
     </header>
+  )
+}
+
+// 單次報名費：付款說明、回報匯款資訊、收款狀態
+function PaymentBox({ c, onSaved }) {
+  const { venue, handleError, showToast } = useApp()
+  const r = c.my_reservation
+  const [note, setNote] = useState(r.pay_note || '')
+  const save = async (e) => {
+    e.preventDefault()
+    try {
+      await api(`courses/${c.id}/payment`, { method: 'PUT', body: { note } })
+      showToast('已送出，場館核對後會通知您')
+      onSaved()
+    } catch (err) { handleError(err) }
+  }
+  return (
+    <section className={`card pay-card ${r.paid ? 'paid' : ''}`}>
+      <div className="row between">
+        <h3 className="card-title nomargin">報名費 NT$ {r.fee.toLocaleString()}</h3>
+        {r.paid ? <Badge tone="success">已付款</Badge> : <Badge tone="warn">待付款</Badge>}
+      </div>
+      {r.paid ? (
+        <p className="small text-success">場館已確認收款，當天直接到場即可。</p>
+      ) : (
+        <>
+          <p className="pre small pay-info">{venue?.payment_info || '請依場館說明付款。'}</p>
+          <form className="row gap" onSubmit={save}>
+            <Field label="付款回報" hint="例如匯款帳號末五碼、轉帳時間，或「現場付款」">
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={100} placeholder="末五碼 12345" />
+            </Field>
+            <button className="btn btn-small" disabled={note === (r.pay_note || '')}>送出</button>
+          </form>
+          {r.pay_note && <p className="muted small">已回報：{r.pay_note}，等待場館確認</p>}
+        </>
+      )}
+    </section>
   )
 }

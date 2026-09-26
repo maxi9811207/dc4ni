@@ -150,14 +150,20 @@ MIGRATIONS = {
         "games_to": "INTEGER NOT NULL DEFAULT 11",
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "share_code": "TEXT NOT NULL DEFAULT ''",
+        "fee": "INTEGER NOT NULL DEFAULT 0",
     },
     "course_templates": {
         "listed": "INTEGER NOT NULL DEFAULT 1",
+        "fee": "INTEGER NOT NULL DEFAULT 0",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
     },
     "reservations": {
         "partner_id": "INTEGER",
+        "fee": "INTEGER NOT NULL DEFAULT 0",
+        "paid": "INTEGER NOT NULL DEFAULT 0",
+        "pay_note": "TEXT NOT NULL DEFAULT ''",
+        "paid_at": "TEXT NOT NULL DEFAULT ''",
     },
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
@@ -490,6 +496,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "games_to": c["games_to"],
         "listed": bool(c["listed"]),
         "share_code": c["share_code"],
+        "fee": c["fee"],
     }
 
 
@@ -553,7 +560,7 @@ def promote_waitlist(conn, c: dict):
             continue
         conn.execute("UPDATE reservations SET status='booked', card_id=?, charged=?, updated_at=? WHERE id=?",
                      (card_id, charged, stamp(), w["id"]))
-        notify(conn, w["user_id"], f"候補成功！您已預約「{c['name']}」{c['date']} {c['start_time']}。")
+        notify(conn, w["user_id"], f"候補成功！您已預約「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c))
         admin_notify(conn, "promote", f"{u['name']} 由候補遞補 {course_label(c)}", f"/admin/courses/{c['id']}")
         booked += 1
 
@@ -985,16 +992,17 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
         if v["state"] == "waitlist":
             if c["cost"] and not eligible_cards(conn, user["id"], c):
                 fail(400, "沒有可用的課卡，請先購買課卡方案")
-            conn.execute("INSERT INTO reservations (course_id, user_id, status, created_at, updated_at)"
-                         " VALUES (?,?,?,?,?)", (course_id, user["id"], "waitlist", stamp(), stamp()))
+            conn.execute("INSERT INTO reservations (course_id, user_id, status, fee, created_at, updated_at)"
+                         " VALUES (?,?,?,?,?,?)", (course_id, user["id"], "waitlist", c["fee"], stamp(), stamp()))
             notify(conn, user["id"], f"已加入「{c['name']}」{c['date']} {c['start_time']} 候補名單。")
             admin_notify(conn, "waitlist", f"{user['name']} 候補 {course_label(c)}", f"/admin/courses/{c['id']}")
             return {"result": "waitlist"}
         card_id, charged = charge(conn, user["id"], c, b.get("card_id"))
-        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, created_at, updated_at)"
-                     " VALUES (?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, stamp(), stamp()))
-        notify(conn, user["id"], f"預約成功：「{c['name']}」{c['date']} {c['start_time']}。")
-        admin_notify(conn, "booking", f"{user['name']} 預約 {course_label(c)}", f"/admin/courses/{c['id']}")
+        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, created_at, updated_at)"
+                     " VALUES (?,?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, c["fee"], stamp(), stamp()))
+        notify(conn, user["id"], f"預約成功：「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c))
+        admin_notify(conn, "booking", f"{user['name']} 預約 {course_label(c)}" + (f"（報名費 NT$ {c['fee']:,} 待收款）" if c["fee"] else ""),
+                     f"/admin/courses/{c['id']}")
         return {"result": "booked"}
 
 
@@ -1013,7 +1021,11 @@ def cancel(course_id: int, user=Depends(require_user)):
             fail(400, "已超過可自行取消的時間，請聯絡場館")
         conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
         refund(conn, r)
-        notify(conn, user["id"], f"已取消「{c['name']}」{c['date']} {c['start_time']}。")
+        notify(conn, user["id"], f"已取消「{c['name']}」{c['date']} {c['start_time']}。"
+                                 + (f"已付的報名費 NT$ {r['fee']:,} 將由場館與您聯繫退費。" if r["paid"] else ""))
+        if r["paid"]:
+            admin_notify(conn, "refund", f"{user['name']} 取消了已付款的 {course_label(c)}，請處理退費 NT$ {r['fee']:,}",
+                         f"/admin/courses/{c['id']}")
         admin_notify(conn, "cancel", f"{user['name']} 取消{'候補' if r['status'] == 'waitlist' else '預約'} {course_label(c)}",
                      f"/admin/courses/{c['id']}")
         if r["status"] == "booked":
@@ -1117,6 +1129,51 @@ def refresh_dupr(user=Depends(require_user)):
     with db() as conn:
         set_dupr(conn, user["id"], {"dupr_id": user["dupr_id"]}, source="self")
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+
+
+# ---------------------------------------------------------------- 單次報名費
+
+def fee_notice(conn, c: dict) -> str:
+    if not c["fee"]:
+        return ""
+    info = get_settings(conn)["payment_info"].strip()
+    return f"報名費 NT$ {c['fee']:,}，" + (f"付款方式：{info}" if info else "請依場館說明付款。") + "付款後可在活動頁填寫匯款末五碼。"
+
+
+@app.put("/api/courses/{course_id}/payment")
+async def payment_note(course_id: int, request: Request, user=Depends(require_user)):
+    """學員填寫付款資訊（匯款末五碼、付款方式等），供場主核對。"""
+    note = str((await request.json()).get("note", "")).strip()[:100]
+    with db() as conn:
+        c = get_course(conn, course_id)
+        r = one(conn.execute("SELECT * FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')"
+                             " ORDER BY id DESC LIMIT 1", (course_id, user["id"])))
+        if not r or not r["fee"]:
+            fail(400, "這場不需要付報名費")
+        if r["paid"]:
+            fail(400, "場館已確認收款")
+        conn.execute("UPDATE reservations SET pay_note=?, updated_at=? WHERE id=?", (note, stamp(), r["id"]))
+        if note:
+            admin_notify(conn, "payment", f"{user['name']} 回報已付款（{note}）：{course_label(c)}，請核對", f"/admin/courses/{c['id']}")
+        return {"ok": True}
+
+
+@app.post("/api/admin/reservations/{res_id}/payment")
+async def mark_paid(res_id: int, request: Request, owner=Depends(require_owner)):
+    """場主確認收款／取消收款（退費後可改回未付款）。"""
+    paid = bool((await request.json()).get("paid"))
+    with db() as conn:
+        r = one(conn.execute("SELECT * FROM reservations WHERE id=?", (res_id,)))
+        if not r:
+            fail(404, "找不到預約")
+        if not r["fee"]:
+            fail(400, "這筆預約沒有報名費")
+        c = get_course(conn, r["course_id"])
+        conn.execute("UPDATE reservations SET paid=?, paid_at=?, updated_at=? WHERE id=?",
+                     (1 if paid else 0, stamp() if paid else "", stamp(), res_id))
+        if paid and not r["paid"]:
+            notify(conn, r["user_id"], f"場館已確認收到「{c['name']}」{c['date']} {c['start_time']} 的報名費 NT$ {r['fee']:,}。")
+        return {"ok": True}
 
 
 # ---------------------------------------------------------------- DUPR 賽事（分組、賽程、比分）
@@ -1425,12 +1482,16 @@ def dashboard(owner=Depends(require_owner)):
         return {
             "today": [course_view(conn, c, None, s) for c in cs],
             "pending_orders": conn.execute("SELECT COUNT(*) FROM orders WHERE status='pending'").fetchone()[0],
+            "unpaid_fees": conn.execute("SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE r.fee>0 AND r.paid=0"
+                                        " AND r.status IN ('booked','attended','absent') AND c.status='open'").fetchone()[0],
             "members": conn.execute("SELECT COUNT(*) FROM users WHERE role='student'").fetchone()[0],
             "week_bookings": conn.execute(
                 "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id"
                 " WHERE r.status='booked' AND c.date BETWEEN ? AND ?", (today, week_end)).fetchone()[0],
             "month_revenue": conn.execute(
                 "SELECT COALESCE(SUM(amount),0) FROM orders WHERE status='paid' AND substr(updated_at,1,7)=?",
+                (today[:7],)).fetchone()[0] + conn.execute(
+                "SELECT COALESCE(SUM(fee),0) FROM reservations WHERE paid=1 AND substr(paid_at,1,7)=?",
                 (today[:7],)).fetchone()[0],
         }
 
@@ -1449,7 +1510,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to", "listed")
+                 "match_format", "games_to", "listed", "fee")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -1470,9 +1531,11 @@ def clean_course(b: dict) -> dict:
     for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed"):
         if k in out:
             out[k] = 1 if out[k] else 0
-    for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min"):
+    for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min", "fee"):
         if k in out:
             out[k] = max(int(out[k] or 0), 0)
+    if out.get("fee"):
+        out["cost"] = 0  # 單次報名費的活動不扣課卡
     for k in ("teacher_id", "template_id"):
         if k in out:
             out[k] = int(out[k]) if out[k] else None
@@ -1660,7 +1723,8 @@ async def course_status(course_id: int, request: Request, owner=Depends(require_
                                        (course_id,))):
                 refund(conn, r)
                 conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
-                notify(conn, r["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 已停課，課卡已退還。")
+                notify(conn, r["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 已停課，"
+                                           + (f"已付的報名費 NT$ {r['fee']:,} 將由場館與您聯繫退費。" if r["paid"] else "課卡已退還。"))
         return {"ok": True}
 
 
@@ -1793,8 +1857,10 @@ async def add_to_course(course_id: int, request: Request, owner=Depends(require_
                             (course_id, u["id"]))):
             fail(400, "此會員已在名單中")
         card_id, charged = charge(conn, u["id"], c, None) if b.get("charge", True) else (None, 0)
-        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, created_at, updated_at)"
-                     " VALUES (?,?,?,?,?,?,?)", (course_id, u["id"], "booked", card_id, charged, stamp(), stamp()))
+        paid = 1 if c["fee"] and b.get("paid") else 0
+        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, paid, paid_at, created_at, updated_at)"
+                     " VALUES (?,?,?,?,?,?,?,?,?,?)", (course_id, u["id"], "booked", card_id, charged, c["fee"], paid,
+                                                      stamp() if paid else "", stamp(), stamp()))
         notify(conn, u["id"], f"場館已為您預約「{c['name']}」{c['date']} {c['start_time']}。")
         return {"ok": True}
 
@@ -2068,6 +2134,8 @@ def share_page(code: str, request: Request):
         booked, _ = course_counts(conn, c["id"])
     d = date.fromisoformat(c["date"])
     parts = [f"{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}", c["location"] or s["name"]]
+    if c["fee"]:
+        parts.append(f"報名費 NT${c['fee']:,}")
     if c["status"] == "cancelled":
         parts.append("已停課")
     elif s["show_reservation_count"]:

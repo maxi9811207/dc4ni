@@ -10,7 +10,7 @@ const EMPTY = {
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true,
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0,
 }
 
 // template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
@@ -69,6 +69,8 @@ export default function CourseForm({ template = false }) {
     setForm(t ? { ...fromSource(t), template_id: t.id, date: form.date, repeat_weeks: form.repeat_weeks } : { ...form, template_id: null })
   }
   const categories = Array.from(new Set([...(venue?.categories || []), form.category].filter(Boolean)))
+  const payMode = form.fee > 0 ? 'fee' : form.cost > 0 ? 'card' : 'free'
+  const setPayMode = (m) => setForm({ ...form, fee: m === 'fee' ? (form.fee || 500) : 0, cost: m === 'card' ? (form.cost || 1) : 0 })
 
   const submit = async (e) => {
     e.preventDefault()
@@ -140,8 +142,24 @@ export default function CourseForm({ template = false }) {
       )}
       <div className="grid2">
         <Field label="名額"><input className="input" type="number" min="1" value={form.capacity} onChange={set('capacity', Number)} required /></Field>
-        <Field label="點數卡扣點" hint="堂數卡固定扣 1 堂；填 0 為免費課程"><input className="input" type="number" min="0" value={form.cost} onChange={set('cost', Number)} /></Field>
+        <Field label="付費方式">
+          <select className="input" value={payMode} onChange={(e) => setPayMode(e.target.value)}>
+            <option value="card">使用課卡</option>
+            <option value="fee">單次報名費</option>
+            <option value="free">免費</option>
+          </select>
+        </Field>
       </div>
+      {payMode === 'card' && (
+        <Field label="點數卡扣點" hint="堂數卡固定扣 1 堂、無限卡不扣；學員需有可用課卡才能報名">
+          <input className="input" type="number" min="1" value={form.cost} onChange={set('cost', Number)} required />
+        </Field>
+      )}
+      {payMode === 'fee' && (
+        <Field label="報名費（NT$）" hint="不需課卡。報名後保留名額，學員依「場館設定 → 付款說明」付款，您在名單頁確認收款">
+          <input className="input" type="number" min="1" value={form.fee || ''} onChange={set('fee', Number)} required placeholder="500" />
+        </Field>
+      )}
       <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>
       <label className="check">
         <input type="checkbox" checked={!form.listed} onChange={(e) => setForm({ ...form, listed: !e.target.checked })} />

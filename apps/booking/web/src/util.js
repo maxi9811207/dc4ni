@@ -47,6 +47,7 @@ export const PLAN_TYPES = {
   points: '點數課卡',
   sessions: '堂數課卡',
   unlimited: '無限課卡',
+  fee: '單次報名費',
 }
 
 export function planAmount(p) {

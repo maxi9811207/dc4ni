@@ -15,7 +15,7 @@ export default function Dashboard() {
     <>
       <div className="stats">
         <Link to="/admin/orders" className={`stat ${d.pending_orders ? 'alert-stat' : ''}`}><span>待確認訂單</span><b>{d.pending_orders}</b></Link>
-        <div className="stat"><span>本月營收</span><b>{money(d.month_revenue)}</b></div>
+        <div className="stat"><span>本月營收</span><b>{money(d.month_revenue)}</b>{d.unpaid_fees > 0 && <small className="stat-sub text-warn">{d.unpaid_fees} 筆報名費待收</small>}</div>
         <div className="stat"><span>7 日內預約</span><b>{d.week_bookings}</b></div>
         <Link to="/admin/members" className="stat"><span>學生人數</span><b>{d.members}</b></Link>
       </div>
