@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useApp } from '../../App'
-import { api } from '../../api'
+import { api, downloadFile } from '../../api'
 import { ShareBox } from '../../components/Share'
 import { Badge, Confirm, Empty, Loading, Modal } from '../../components/ui'
 import { duprRange, rating, showDate } from '../../util'
@@ -71,7 +71,10 @@ export default function Roster() {
 
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>
-        <button className="btn btn-small" onClick={() => setAdding(true)}>＋ 代為預約</button>
+        <div className="row gap-sm">
+          <button className="btn btn-small btn-light" onClick={() => downloadFile(`admin/courses/${c.id}/roster/export`, `名單_${c.date}_${c.name}.xlsx`).catch(handleError)}>下載名單</button>
+          <button className="btn btn-small" onClick={() => setAdding(true)}>＋ 加人</button>
+        </div>
       </div>
       {booked.length === 0 ? <Empty text="還沒有人預約" /> : (
         <section className="card">
@@ -86,6 +89,7 @@ export default function Roster() {
                     <p className="small">
                       {r.paid ? <Badge tone="success">已付款</Badge> : <Badge tone="warn">待付款</Badge>}
                       {r.pay_note && <span className="muted"> 學員回報：{r.pay_note}</span>}
+                      {!r.paid && !r.pay_note && r.pay_due && <span className="muted"> 期限 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')}</span>}
                     </p>
                   )}
                 </div>
@@ -141,12 +145,26 @@ function AddMember({ courseId, onClose, onDone }) {
   const [members, setMembers] = useState([])
   const [q, setQ] = useState('')
   const [charge, setCharge] = useState(true)
+  const [guest, setGuest] = useState({ name: '', phone: '' })
   useEffect(() => { api('admin/members').then(setMembers).catch(handleError) }, [handleError])
   const shown = members.filter((m) => m.role === 'student' && (m.name.includes(q) || (m.phone || '').includes(q) || (m.email || '').includes(q))).slice(0, 30)
   const add = (m) => api(`admin/courses/${courseId}/add`, { method: 'POST', body: { user_id: m.id, charge } }).then(onDone).catch(handleError)
+  const addGuest = (e) => {
+    e.preventDefault()
+    api(`admin/courses/${courseId}/add`, { method: 'POST', body: { guest_name: guest.name, guest_phone: guest.phone } }).then(onDone).catch(handleError)
+  }
   return (
     <Modal onClose={onClose}>
-      <h3 className="dialog-title">代為預約</h3>
+      <h3 className="dialog-title">加入名單</h3>
+      <form className="guest-form" onSubmit={addGuest}>
+        <p className="small strong">沒有帳號的人（現場、朋友帶來）</p>
+        <div className="row gap-sm">
+          <input className="input" placeholder="姓名" value={guest.name} onChange={(e) => setGuest({ ...guest, name: e.target.value })} required />
+          <input className="input" placeholder="手機（選填）" inputMode="tel" value={guest.phone} onChange={(e) => setGuest({ ...guest, phone: e.target.value })} />
+          <button className="btn btn-small">加入</button>
+        </div>
+      </form>
+      <div className="or"><span>或找已註冊的會員</span></div>
       <input className="input" placeholder="搜尋姓名或手機" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
       <label className="check"><input type="checkbox" checked={charge} onChange={(e) => setCharge(e.target.checked)} /> 從學員課卡扣除</label>
       <div className="pick-list">

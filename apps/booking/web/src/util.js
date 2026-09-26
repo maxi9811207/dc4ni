@@ -72,7 +72,7 @@ export function hours(min) {
 }
 
 export function rating(v) {
-  return v === null || v === undefined ? 'NR' : Number(v).toFixed(3)
+  return v === null || v === undefined ? '尚無分數' : Number(v).toFixed(3)
 }
 
 // 例：DUPR 雙打 3.000–4.000

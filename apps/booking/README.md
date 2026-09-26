@@ -58,7 +58,9 @@
 - 建課時「付費方式」可選：使用課卡（扣堂／扣點）、**單次報名費 NT$**、免費。適合不需要課卡的一次性活動。
 - 學員不需課卡即可報名，名額先保留；活動頁顯示「場館設定 → 付款說明」，學員可回報匯款末五碼或「現場付款」。
 - 場主在名單頁看到每人付款狀態與回報內容，按「確認收款」後通知學員；名單頁上方顯示已收／應收金額。
+- 可設付款期限（報名後 24／48／72 小時或不限）：逾期沒付款、也沒回報付款的名額自動讓給候補，雙方都會收到通知（背景每 5 分鐘檢查）。
 - 額滿一樣可候補，遞補成功的通知會附上付款方式；已付款的人取消或活動停課時，會提醒場主處理退費（退費後可改回未付款）。
+- 付款審核頁的「報名費待收」分頁列出所有活動的待收與學員回報，可以直接確認收款。
 - 已收的報名費計入總覽「本月營收」與報表（營收明細列為「報名費：活動名稱」）。
 
 ### DUPR 賽事（分組、賽程、比分）
@@ -76,8 +78,9 @@
 
 ### 登入方式
 
-- **LINE 登入**：設定 `LINE_CHANNEL_ID`／`LINE_CHANNEL_SECRET` 後，登入頁會出現「使用 LINE 登入」，並使用 LINE 的名字與頭像。
-  LINE 提供的信箱與既有帳號相同時，會連到同一個帳號。
+- **LINE 登入**：設定 `LINE_CHANNEL_ID`／`LINE_CHANNEL_SECRET` 後，登入頁會出現「用 LINE 一鍵登入」，並使用 LINE 的名字與頭像。
+  為了防止搶帳號，不會用信箱自動併入既有帳號；已有信箱帳號的人請登入後到「會員中心 → 帳號」綁定 LINE。
+- 從活動頁按報名時才登入的話，登入完成會自動接著報名。
 - **在 LINE 裡開啟（LIFF）**：再設定 `LINE_LIFF_ID`，從 LINE 開啟網站時會自動登入。
 - **信箱註冊**：姓名、信箱、密碼（手機選填），沒有頭像，可自行上傳。
 - 會員可在「會員中心 → 帳號」綁定／解除 LINE、設定信箱與密碼；使用者自己上傳的頭像不會被 LINE 頭像覆蓋。
@@ -92,6 +95,25 @@ Callback URL 填 `https://<網域>/api/auth/line/callback`；LIFF 的 Endpoint U
 - 還沒申請到 Email address permission 也能登入：LINE 回 `invalid_scope` 時會自動改成不要求信箱再授權一次。
 - 設定了 `BOOKING_DOMAIN` 時，callback 一律使用 `https://<網域>/`（有網域時網站只從這個網址對外，不再開 8080）。
 
+### LINE 推播通知
+
+設定 `LINE_MESSAGING_TOKEN` 後，站內通知會同時推到會員的 LINE（附活動頁連結）：報名成功、候補遞補、收款確認、停課、賽程排好、比分待確認、逾期釋出。
+場主（有綁 LINE 的）會收到需要處理的事：新的課卡訂單、學員回報付款、需退費。沒設定時只有站內通知，其他功能不受影響。
+
+1. 到 [LINE Official Account Manager](https://manager.line.biz/) 建官方帳號 → 設定 → Messaging API → 啟用，**選和 LINE Login 同一個 Provider**（userId 才對得上）。
+2. LINE Developers → 這個 Messaging API channel → Messaging API 分頁最下方發行 Channel access token（long-lived）。
+3. LINE Login channel → Basic settings → Linked LINE Official Account 選這個官方帳號（登入時會提示加好友；沒加好友的人收不到推播）。
+4. 主機上 `sudo booking-line-setup`，前三項直接按 Enter，第四項貼上 token。
+
+免費方案每月有推播則數上限（依 LINE 當期方案），超過會失敗但不影響站內通知。
+
+### 名單工具
+
+- 名單頁「＋ 加人」：可以直接加沒有帳號的人（只填姓名，手機選填），或搜尋已註冊的會員。
+- 「下載名單」：Excel，含聯絡方式、付款狀態、DUPR、簽名欄。
+- 賽事頁「下載比分」：CSV，含每位球員的 DUPR ID，可整理後上傳 DUPR。
+- 點名：開課當天就能一鍵全部出席。
+
 ### 預約規則
 
 - 堂數卡每堂扣 1 堂；點數卡依課程設定扣點；無限卡不扣次數；課程扣點設為 0 則為免費課程，不需課卡。
@@ -99,6 +121,8 @@ Callback URL 填 `https://<網域>/api/auth/line/callback`；LIFF 的 Endpoint U
 - 開課前 N 小時截止預約、開課前 M 小時內不能自行取消（每堂課可各自設定）。
 - 額滿可加入候補；有人取消時，依候補順序自動遞補、扣卡並通知，沒有可用課卡的人會被跳過。
 - 被停權的帳號無法預約或購買課卡。
+
+路線圖與審查結論見 [ROADMAP.md](ROADMAP.md)。
 
 ## 本機開發
 
@@ -142,7 +166,7 @@ curl -fsSL https://raw.githubusercontent.com/maxi9811207/dc4ni/claude/upbeat-dav
 |---|---|
 | 程式 | `/opt/booking/server` |
 | 資料（SQLite、上傳圖片） | `/opt/booking/data`，請定期備份 |
-| 設定（場主帳號、DUPR、LINE 金鑰） | `/etc/booking.env`，修改後 `sudo systemctl restart booking` |
+| 設定（場主帳號、DUPR、LINE 金鑰與推播 token） | `/etc/booking.env`，修改後 `sudo systemctl restart booking`；LINE 相關用 `sudo booking-line-setup` |
 | 服務記錄 | `journalctl -u booking -f` |
 
 也可以用 Docker：`cp .env.example .env` 填好後執行 `docker compose up -d --build`。

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useApp } from '../../App'
-import { api } from '../../api'
+import { api, downloadFile } from '../../api'
 import EventBoard, { ScoreModal } from '../../components/EventBoard'
 import { AvatarImg, Confirm, Empty, Loading } from '../../components/ui'
 import { rating, showDate } from '../../util'
@@ -87,6 +87,7 @@ export default function EventAdmin() {
       {d.event ? (
         <>
           <EventBoard event={d.event} mode="owner" onScore={setScoring} />
+          <button className="btn btn-block btn-light" onClick={() => downloadFile(`admin/courses/${id}/event/export`, `比分_${c.date}_${c.name}.csv`).catch(handleError)}>下載比分（CSV，可整理後上傳 DUPR）</button>
           <button className="btn btn-block btn-light text-danger" onClick={() => setDeleting(true)}>刪除賽事，重新分組</button>
         </>
       ) : d.plan_error ? (

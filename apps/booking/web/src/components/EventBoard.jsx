@@ -20,9 +20,26 @@ export default function EventBoard({ event, me, mode = 'player', onScore, onConf
   const [onlyMine, setOnlyMine] = useState(mode === 'player' && mineGroup >= 0)
   const group = event.groups[tab] || event.groups[0]
   const games = onlyMine ? group.games.filter((g) => g.mine) : group.games
+  // 球員最需要的一件事：我的下一局（要確認的優先，其次是還沒打的）
+  const myGames = mode === 'player' ? event.groups.flatMap((g) => g.games.filter((x) => x.mine)) : []
+  const next = myGames.find((g) => g.can_confirm) || myGames.find((g) => g.status === 'pending') || myGames.find((g) => g.status === 'reported')
 
   return (
     <div className="event-board">
+      {next && (
+        <section className="card next-game">
+          <div className="row between">
+            <b>{next.can_confirm ? '請確認比分' : next.status === 'pending' ? `你的下一局：第 ${next.round} 局` : `第 ${next.round} 局等待對手確認`}</b>
+            <span className="muted small">{myGames.filter((g) => g.status === 'confirmed').length} / {myGames.length} 局完成</span>
+          </div>
+          <p className="next-vs"><Names people={next.a} me={me} /> <span className="muted">vs</span> <Names people={next.b} me={me} /></p>
+          {next.score_a != null && <p className="small">回報比分 <b>{next.score_a} : {next.score_b}</b>{next.reported_by && `（${next.reported_by}）`}</p>}
+          <div className="admin-actions">
+            {next.can_confirm && <button className="btn" onClick={() => onConfirm(next)}>比分正確，確認</button>}
+            {next.can_report && <button className={`btn ${next.can_confirm ? 'btn-light' : ''}`} onClick={() => onScore(next)}>{next.status === 'pending' ? '打完了，回報比分' : next.can_confirm ? '比分不對，改報' : '修改回報'}</button>}
+          </div>
+        </section>
+      )}
       {event.groups.length > 1 && (
         <Chips options={event.groups.map((g, i) => [i, `${g.name}${i === mineGroup ? '（我）' : ''}`])} value={tab} onChange={(v) => { setTab(v); setOnlyMine(v === mineGroup && mode === 'player') }} />
       )}
@@ -49,7 +66,7 @@ export default function EventBoard({ event, me, mode = 'player', onScore, onConf
       </section>
 
       <div className="row between section-head">
-        <h3 className="date-title">對戰（每局打到 {event.games_to} 分）</h3>
+        <h3 className="date-title">對戰</h3>
         {mode === 'player' && tab === mineGroup && (
           <button className="btn btn-small btn-light" onClick={() => setOnlyMine(!onlyMine)}>{onlyMine ? '看全部' : '只看我的'}</button>
         )}
@@ -94,8 +111,21 @@ export function ScoreModal({ game, gamesTo, owner, onClose, onSave, onClear }) {
   const [a, setA] = useState(game.score_a ?? '')
   const [b, setB] = useState(game.score_b ?? '')
   const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState('')
+  // 和伺服器同一套規則：打到 N 分、領先 2 分（團主登錄只擋平手）
+  const problem = () => {
+    const x = Number(a), y = Number(b), hi = Math.max(x, y), lo = Math.min(x, y)
+    if (a === '' || b === '') return '請填寫雙方分數'
+    if (x === y) return '比分不能平手'
+    if (owner) return ''
+    if (hi < gamesTo) return `勝方要打到 ${gamesTo} 分`
+    if (hi - lo < 2 || (hi > gamesTo && hi - lo !== 2)) return `要領先 2 分才算贏（例如 ${gamesTo}:${gamesTo - 2}、${gamesTo + 1}:${gamesTo - 1}）`
+    return ''
+  }
   const submit = async (e) => {
     e.preventDefault()
+    const p = problem()
+    if (p) return setErr(p)
     setBusy(true)
     try { await onSave(Number(a), Number(b)) } finally { setBusy(false) }
   }
@@ -107,9 +137,10 @@ export function ScoreModal({ game, gamesTo, owner, onClose, onSave, onClear }) {
         {[['a', a, setA], ['b', b, setB]].map(([side, v, set]) => (
           <label key={side} className="score-row">
             <span className="flex1"><Names people={game[side]} /></span>
-            <input className="input score-input" type="number" inputMode="numeric" min="0" max="99" required value={v} onChange={(e) => set(e.target.value)} />
+            <input className="input score-input" type="number" inputMode="numeric" min="0" max="99" required value={v} onChange={(e) => { setErr(''); set(e.target.value) }} aria-label="分數" />
           </label>
         ))}
+        {err && <p className="alert danger small" role="alert">{err}</p>}
         <div className="row gap">
           <button type="button" className="btn btn-light flex1" onClick={onClose}>取消</button>
           <button className="btn flex1" disabled={busy}>{busy ? '送出中…' : '送出'}</button>

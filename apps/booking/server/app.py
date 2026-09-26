@@ -3,13 +3,16 @@
 學生：瀏覽課程、預約／候補／取消、購買課卡、評價。
 場主：排課、名單點名、老師、課卡方案、訂單、會員、場館設定。
 """
+import csv
 import hashlib
+import io
 import html
 import json
 import os
 import re
 import secrets
 import sqlite3
+import threading
 import urllib.parse
 import uuid
 from contextlib import contextmanager
@@ -23,6 +26,7 @@ from fastapi.staticfiles import StaticFiles
 
 import dupr
 import line_login
+import line_push
 import matches
 import reports
 
@@ -136,6 +140,7 @@ MIGRATIONS = {
         "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
         "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
+        "deleted": "INTEGER NOT NULL DEFAULT 0",
         "avatar_url": "TEXT NOT NULL DEFAULT ''",
         "avatar_source": "TEXT NOT NULL DEFAULT ''",
     },
@@ -151,10 +156,12 @@ MIGRATIONS = {
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "share_code": "TEXT NOT NULL DEFAULT ''",
         "fee": "INTEGER NOT NULL DEFAULT 0",
+        "pay_hours": "INTEGER NOT NULL DEFAULT 0",
     },
     "course_templates": {
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "fee": "INTEGER NOT NULL DEFAULT 0",
+        "pay_hours": "INTEGER NOT NULL DEFAULT 0",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
     },
@@ -164,6 +171,7 @@ MIGRATIONS = {
         "paid": "INTEGER NOT NULL DEFAULT 0",
         "pay_note": "TEXT NOT NULL DEFAULT ''",
         "paid_at": "TEXT NOT NULL DEFAULT ''",
+        "pay_due": "TEXT NOT NULL DEFAULT ''",
     },
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
@@ -185,17 +193,36 @@ def stamp() -> str:
 
 @contextmanager
 def db():
-    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn = sqlite3.connect(DB_PATH, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
+        # 端點在 threadpool 同時執行：一開始就取得寫入鎖，所有「先查再寫」（扣卡、遞補、開卡、點名…）都不會交錯
+        conn.execute("BEGIN IMMEDIATE")
         yield conn
         conn.commit()
+        for to, text in PENDING_PUSH.pop(id(conn), []):  # 確定寫入後才推播，失敗回滾的不會送出
+            line_push.push(to, text)
     except Exception:
         conn.rollback()
         raise
     finally:
+        PENDING_PUSH.pop(id(conn), None)
         conn.close()
+
+
+PENDING_PUSH: dict[int, list[tuple[str, str]]] = {}
+
+
+def site_url(path: str = "") -> str:
+    """對外網址（推播訊息裡的連結用）；沒設定網域時不附連結。"""
+    base = os.getenv("BOOKING_PUBLIC_URL") or (f"https://{os.getenv('BOOKING_DOMAIN')}" if os.getenv("BOOKING_DOMAIN") else "")
+    return (base.rstrip("/") + "/" + path.lstrip("/")) if base else ""
+
+
+def queue_push(conn, line_user_id: str | None, text: str, link: str = ""):
+    if line_user_id and line_push.enabled():
+        PENDING_PUSH.setdefault(id(conn), []).append((line_user_id, f"{text}\n{link}" if link else text))
 
 
 def rows(cur) -> list[dict]:
@@ -231,19 +258,30 @@ def get_settings(conn) -> dict:
     return out
 
 
+OWNER_PUSH_KINDS = {"order", "payment", "refund"}  # 需要場主動手的事才推到 LINE，其餘只在後台通知
+
+
 def admin_notify(conn, kind: str, text: str, link: str = ""):
-    """場主後台通知（所有場主共用，各自記錄已讀位置）。"""
+    """場主後台通知（所有場主共用，各自記錄已讀位置）；待處理的事另外推到場主的 LINE。"""
     conn.execute("INSERT INTO admin_notifications (kind, text, link, created_at) VALUES (?,?,?,?)",
                  (kind, text, link, stamp()))
+    if kind in OWNER_PUSH_KINDS:
+        for o in conn.execute("SELECT line_user_id FROM users WHERE role='owner' AND deleted=0 AND line_user_id IS NOT NULL"):
+            queue_push(conn, o["line_user_id"], f"【後台】{text}", site_url("#/admin" + link.removeprefix("/admin")))
 
 
 def course_label(c: dict) -> str:
     return f"「{c['name']}」{c['date'][5:].replace('-', '/')} {c['start_time']}"
 
 
-def notify(conn, user_id: int, text: str):
+def notify(conn, user_id: int, text: str, course: dict | None = None):
+    """站內通知；有綁 LINE 的會員同時推到 LINE（附活動頁連結）。"""
     conn.execute("INSERT INTO notifications (user_id, text, created_at) VALUES (?,?,?)",
                  (user_id, text, stamp()))
+    u = conn.execute("SELECT line_user_id FROM users WHERE id=?", (user_id,)).fetchone()
+    if u and u["line_user_id"]:
+        link = site_url(f"e/{course['share_code']}") if course and course.get("share_code") else site_url("#/me?tab=notifications")
+        queue_push(conn, u["line_user_id"], text, link)
 
 
 def course_start(c: dict) -> datetime:
@@ -265,13 +303,34 @@ def mask_name(name: str) -> str:
 
 # ---------------------------------------------------------------- auth
 
+async def json_body(request: Request) -> dict:
+    """讀 JSON 請求內容（空白視為 {}）。端點本身寫成一般 def，交給 threadpool 執行，避免 pbkdf2、SQLite 鎖、連外阻塞整個伺服器。"""
+    raw = await request.body()
+    if not raw:
+        return {}
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        fail(400, "資料格式錯誤")
+    if not isinstance(data, dict):
+        fail(400, "資料格式錯誤")
+    return data
+
+
 def current_user(authorization: str | None = Header(default=None)) -> dict | None:
     if not authorization or not authorization.startswith("Bearer "):
         return None
     with db() as conn:
         return one(conn.execute(
-            "SELECT u.* FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ?",
-            (authorization[7:],)))
+            "SELECT u.* FROM tokens t JOIN users u ON u.id = t.user_id WHERE t.token = ? AND t.created_at >= ?",
+            (authorization[7:], (now() - timedelta(days=TOKEN_DAYS)).isoformat(timespec="seconds"))))
+
+
+TOKEN_DAYS = 180  # 登入有效期；改密碼、停權、被刪除時會立即登出其他裝置
+
+
+def revoke_tokens(conn, user_id: int, keep: str | None = None):
+    conn.execute("DELETE FROM tokens WHERE user_id=? AND token IS NOT ?", (user_id, keep))
 
 
 def require_user(user=Depends(current_user)) -> dict:
@@ -319,6 +378,9 @@ CREATE TABLE users_new (
 def startup():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    wal = sqlite3.connect(DB_PATH)  # journal_mode 不能在交易中切換，另開一條連線設定
+    wal.execute("PRAGMA journal_mode = WAL")
+    wal.close()
     with db() as conn:
         conn.executescript(SCHEMA)
         rebuild_users(conn)
@@ -331,11 +393,12 @@ def startup():
             for col, ddl in cols.items():
                 if col not in have:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
-        conn.execute("PRAGMA journal_mode = WAL")
         phone = os.getenv("BOOKING_OWNER_PHONE")
         password = os.getenv("BOOKING_OWNER_PASSWORD")
         phone = clean_phone(phone)
-        if phone and password and not one(conn.execute("SELECT id FROM users WHERE phone=?", (phone,))):
+        # 只在第一次安裝（還沒有任何場主）時建立；之後改手機、刪除或降級場主都不會被設定檔「長回來」
+        if phone and password and not one(conn.execute("SELECT id FROM users WHERE role='owner' AND deleted=0")) \
+                and not one(conn.execute("SELECT id FROM users WHERE phone=?", (phone,))):
             conn.execute(
                 "INSERT INTO users (name, phone, password_hash, role, created_at) VALUES (?,?,?,?,?)",
                 (os.getenv("BOOKING_OWNER_NAME", "場主"), phone, hash_password(password), "owner", stamp()))
@@ -344,6 +407,7 @@ def startup():
         for r in rows(conn.execute("SELECT id FROM courses WHERE share_code=''")):
             conn.execute("UPDATE courses SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
+    threading.Thread(target=sweeper, name="sweeper", daemon=True).start()
 
 
 SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o、1/l/i
@@ -425,7 +489,7 @@ def dupr_problem(c: dict, u: dict) -> str | None:
     if not u.get("dupr_id"):
         return "這是 DUPR 場，請先到會員中心綁定 DUPR 帳號"
     if c["dupr_verified_only"] and not u.get("dupr_verified"):
-        return "這場限已驗證的 DUPR 帳號，請聯絡場館核對身分"
+        return "這場只收主辦驗證過的 DUPR 帳號，請聯絡主辦核對"
     rating = u.get(f"dupr_{c['dupr_format']}")
     fmt = FORMAT_NAMES.get(c["dupr_format"], "")
     if c["dupr_min"] is not None and (rating is None or rating < c["dupr_min"]):
@@ -450,7 +514,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
     if c["status"] == "cancelled":
         button, state = "停課", "disabled"
     elif mine and mine["status"] in ("booked", "attended", "absent"):
-        button, state = "已預約", "booked"
+        button, state = "已報名", "booked"
     elif mine and mine["status"] == "waitlist":
         button, state = "已候補", "waiting"
     elif t >= start:
@@ -460,7 +524,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
     elif remain <= 0:
         button, state = ("候補", "waitlist") if settings["waitlist_enabled"] else ("額滿", "disabled")
     else:
-        button, state = "預約", "book"
+        button, state = "報名", "book"
     position = None
     if mine and mine["status"] == "waitlist":
         position = conn.execute(
@@ -497,6 +561,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "listed": bool(c["listed"]),
         "share_code": c["share_code"],
         "fee": c["fee"],
+        "pay_hours": c["pay_hours"],
     }
 
 
@@ -505,7 +570,8 @@ def eligible_cards(conn, user_id: int, c: dict) -> list[dict]:
     allowed = json.loads(c["plan_ids"])
     out = []
     for card in rows(conn.execute(
-            "SELECT * FROM cards WHERE user_id=? AND starts_on<=? AND expires_on>=? ORDER BY expires_on",
+            "SELECT cd.*, p.price plan_price, p.quantity plan_qty FROM cards cd LEFT JOIN plans p ON p.id=cd.plan_id"
+            " WHERE cd.user_id=? AND cd.starts_on<=? AND cd.expires_on>=? ORDER BY cd.expires_on",
             (user_id, today, today))):
         if allowed and card["plan_id"] not in allowed:
             continue
@@ -514,7 +580,11 @@ def eligible_cards(conn, user_id: int, c: dict) -> list[dict]:
             continue
         if card["type"] == "unlimited" and card["expires_on"] < c["date"]:
             continue
-        out.append({**card, "charge": 0 if card["type"] == "unlimited" else need})
+        charge_n = 0 if card["type"] == "unlimited" else need
+        # 這堂課用這張卡約折合多少錢（方案售價÷張數×扣除量），預設用最划算的卡
+        unit = (card["plan_price"] or 0) / card["plan_qty"] if card["plan_qty"] else 0
+        out.append({**card, "charge": charge_n, "value": round(unit * charge_n)})
+    out.sort(key=lambda x: (x["value"], x["expires_on"]))
     return out
 
 
@@ -534,8 +604,10 @@ def charge(conn, user_id: int, c: dict, card_id: int | None) -> tuple[int | None
 
 
 def refund(conn, r: dict):
+    """退還課卡；退完把 charged 歸零，同一筆預約不會退兩次。"""
     if r["card_id"] and r["charged"]:
         conn.execute("UPDATE cards SET remaining = remaining + ? WHERE id=?", (r["charged"], r["card_id"]))
+        conn.execute("UPDATE reservations SET charged=0 WHERE id=?", (r["id"],))
 
 
 def promote_waitlist(conn, c: dict):
@@ -548,6 +620,8 @@ def promote_waitlist(conn, c: dict):
         if booked >= c["capacity"]:
             break
         u = one(conn.execute("SELECT * FROM users WHERE id=?", (w["user_id"],)))
+        if u["suspended"]:
+            continue
         if dupr_problem(c, u):
             notify(conn, w["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 有名額釋出，"
                                        "但您的 DUPR 分數不符合這場的條件，未能自動遞補。")
@@ -558,9 +632,9 @@ def promote_waitlist(conn, c: dict):
             notify(conn, w["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 有名額釋出，"
                                        "但您沒有可用課卡，未能自動遞補。")
             continue
-        conn.execute("UPDATE reservations SET status='booked', card_id=?, charged=?, updated_at=? WHERE id=?",
-                     (card_id, charged, stamp(), w["id"]))
-        notify(conn, w["user_id"], f"候補成功！您已預約「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c))
+        conn.execute("UPDATE reservations SET status='booked', card_id=?, charged=?, pay_due=?, updated_at=? WHERE id=?",
+                     (card_id, charged, pay_due(c), stamp(), w["id"]))
+        notify(conn, w["user_id"], f"候補成功！您已報名「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c), course=c)
         admin_notify(conn, "promote", f"{u['name']} 由候補遞補 {course_label(c)}", f"/admin/courses/{c['id']}")
         booked += 1
 
@@ -579,7 +653,7 @@ def venue():
     with db() as conn:
         s = get_settings(conn)
         r = conn.execute("SELECT AVG(rating) a, COUNT(*) n FROM reviews WHERE hidden=0").fetchone()
-        return {**s, "rating": round(r["a"], 1) if r["a"] else None, "review_count": r["n"]}
+        return {**s, "payment_ready": payment_ready(s), "rating": round(r["a"], 1) if r["a"] else None, "review_count": r["n"]}
 
 
 def attendees(conn, c: dict, limit: int = 200) -> list[dict]:
@@ -694,7 +768,7 @@ def review_list(conn, where: str, args: tuple) -> list[dict]:
 @app.get("/api/reviews")
 def reviews():
     with db() as conn:
-        return review_list(conn, "WHERE r.hidden=0", ())
+        return review_list(conn, "WHERE r.hidden=0 AND (c.id IS NULL OR c.listed=1)", ())
 
 
 # ---------------------------------------------------------------- auth API
@@ -727,9 +801,9 @@ def create_user(conn, name: str, **fields) -> dict:
 
 
 @app.post("/api/auth/register")
-async def register(request: Request):
+def register(body: dict = Depends(json_body)):
     """信箱註冊（手機選填）。舊版只帶手機的請求也接受。"""
-    b = await request.json()
+    b = body
     name, password = str(b.get("name", "")).strip(), str(b.get("password", ""))
     email, phone = clean_email(b.get("email")), clean_phone(b.get("phone"))
     if not name or not (email or phone) or len(password) < 6:
@@ -743,17 +817,26 @@ async def register(request: Request):
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
+LOGIN_FAILS: dict[str, list[float]] = {}
+
+
 @app.post("/api/auth/login")
-async def login(request: Request):
-    """用信箱或手機＋密碼登入。"""
-    b = await request.json()
+def login(body: dict = Depends(json_body)):
+    """用信箱或手機＋密碼登入。同一帳號 10 分鐘內錯 8 次就暫停登入。"""
+    b = body
     key = str(b.get("login") or b.get("email") or b.get("phone") or "").strip()
+    t = datetime.now().timestamp()
+    recent = [x for x in LOGIN_FAILS.get(key.lower(), []) if t - x < 600]
+    if len(recent) >= 8:
+        fail(429, "嘗試次數太多，請 10 分鐘後再試")
     with db() as conn:
         u = one(conn.execute("SELECT * FROM users WHERE email=? OR phone=?", (key.lower(), clean_phone(key))))
         if u and not u["password_hash"]:
             fail(400, "這個帳號是用 LINE 註冊的，請按「使用 LINE 登入」")
         if not u or not check_password(str(b.get("password", "")), u["password_hash"]):
+            LOGIN_FAILS[key.lower()] = recent + [t]
             fail(400, "帳號或密碼錯誤")
+        LOGIN_FAILS.pop(key.lower(), None)
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
@@ -780,10 +863,13 @@ def line_user(conn, profile: dict, link_user_id: int | None = None) -> dict:
         if u and u["id"] != link_user_id:
             fail(400, "這個 LINE 帳號已綁定其他會員")
         u = one(conn.execute("SELECT * FROM users WHERE id=?", (link_user_id,)))
-    if not u and profile["email"]:
-        u = one(conn.execute("SELECT * FROM users WHERE email=?", (profile["email"],)))
+    # 不用信箱自動併入既有帳號：本站註冊的信箱沒有驗證，別人可以先用你的信箱註冊來搶帳號。
+    # 已有信箱帳號的人請登入後到「會員中心 → 帳號」綁定 LINE。
     if not u:
-        u = create_user(conn, profile["name"], line_user_id=profile["sub"], email=profile["email"] or None,
+        email = profile["email"] or None
+        if email and one(conn.execute("SELECT id FROM users WHERE email=?", (email,))):
+            email = None
+        u = create_user(conn, profile["name"], line_user_id=profile["sub"], email=email,
                         avatar_url=profile["picture"], avatar_source="line" if profile["picture"] else "")
     updates = {"line_user_id": profile["sub"]}
     if profile["picture"] and u["avatar_source"] != "upload":
@@ -794,14 +880,28 @@ def line_user(conn, profile: dict, link_user_id: int | None = None) -> dict:
     return one(conn.execute("SELECT * FROM users WHERE id=?", (u["id"],)))
 
 
-def line_redirect(conn, request: Request, next_path: str, link_user_id: int | None = None) -> str:
+LINE_STATE_COOKIE = "line_state"
+
+
+def with_state_cookie(response, state: str):
+    """把這次授權的 state 綁在發起的瀏覽器上；callback 時比對，別人丟來的授權連結（CSRF）會被擋下。"""
+    response.set_cookie(LINE_STATE_COOKIE, state, max_age=1800, httponly=True, samesite="lax",
+                        secure=public_base_is_https(), path="/api/auth/line")
+    return response
+
+
+def public_base_is_https() -> bool:
+    return bool(os.getenv("BOOKING_DOMAIN")) or os.getenv("BOOKING_PUBLIC_URL", "").startswith("https://")
+
+
+def line_redirect(conn, request: Request, next_path: str, link_user_id: int | None = None) -> tuple[str, str]:
     if not line_login.enabled():
         fail(400, "場館尚未開通 LINE 登入")
     state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(16)
     conn.execute("DELETE FROM oauth_states WHERE created_at < ?", ((now() - timedelta(minutes=30)).isoformat(),))
     conn.execute("INSERT INTO oauth_states (state, nonce, next, link_user_id, created_at) VALUES (?,?,?,?,?)",
                  (state, nonce, safe_next(next_path), link_user_id, stamp()))
-    return line_login.authorize_url(public_base(request) + "api/auth/line/callback", state, nonce)
+    return line_login.authorize_url(public_base(request) + "api/auth/line/callback", state, nonce), state
 
 
 @app.get("/api/auth/config")
@@ -812,14 +912,16 @@ def auth_config():
 @app.get("/api/auth/line/start")
 def line_start(request: Request):
     with db() as conn:
-        return RedirectResponse(line_redirect(conn, request, request.query_params.get("next", "/")), status_code=302)
+        url, state = line_redirect(conn, request, request.query_params.get("next", "/"))
+        return with_state_cookie(RedirectResponse(url, status_code=302), state)
 
 
 @app.post("/api/auth/line/link")
 def line_link(request: Request, user=Depends(require_user)):
     """已登入的會員綁定 LINE：回傳授權網址，前端導過去。"""
     with db() as conn:
-        return {"url": line_redirect(conn, request, "/me?tab=account", user["id"])}
+        url, state = line_redirect(conn, request, "/me?tab=account", user["id"])
+        return with_state_cookie(JSONResponse({"url": url}), state)
 
 
 @app.get("/api/auth/line/callback")
@@ -832,7 +934,8 @@ def line_callback(request: Request):
 
     with db() as conn:
         st = one(conn.execute("SELECT * FROM oauth_states WHERE state=?", (q.get("state", ""),)))
-        fresh = st and st["created_at"] >= (now() - timedelta(minutes=30)).isoformat()
+        mine = st and secrets.compare_digest(request.cookies.get(LINE_STATE_COOKIE, ""), st["state"])
+        fresh = mine and st["created_at"] >= (now() - timedelta(minutes=30)).isoformat()
         if q.get("error") == "invalid_scope" and fresh and not st["no_email"]:
             # channel 尚未取得 email 權限：同一個 state 改成不要求 email 再授權一次（只退一次，不會無限重導）
             conn.execute("UPDATE oauth_states SET no_email=1 WHERE state=?", (st["state"],))
@@ -854,11 +957,11 @@ def line_callback(request: Request):
 
 
 @app.post("/api/auth/line/idtoken")
-async def line_idtoken(request: Request):
+def line_idtoken(body: dict = Depends(json_body)):
     """LIFF（在 LINE 裡開啟）：前端取得 ID token 後換成本站登入。"""
     if not line_login.enabled():
         fail(400, "場館尚未開通 LINE 登入")
-    b = await request.json()
+    b = body
     try:
         profile = line_login.verify_id_token(str(b.get("id_token", "")))
     except line_login.LineError as e:
@@ -902,8 +1005,8 @@ def me(user=Depends(require_user)):
 
 
 @app.put("/api/me")
-async def update_me(request: Request, user=Depends(require_user)):
-    b = await request.json()
+def update_me(body: dict = Depends(json_body), user=Depends(require_user), authorization: str | None = Header(default=None)):
+    b = body
     with db() as conn:
         name = str(b.get("name", user["name"])).strip()[:40] or user["name"]
         conn.execute("UPDATE users SET name=? WHERE id=?", (name, user["id"]))
@@ -927,6 +1030,7 @@ async def update_me(request: Request, user=Depends(require_user)):
                 fail(400, "新密碼至少 6 碼")
             conn.execute("UPDATE users SET password_hash=? WHERE id=?",
                          (hash_password(b["new_password"]), user["id"]))
+            revoke_tokens(conn, user["id"], keep=(authorization or "")[7:])  # 其他裝置需重新登入
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
@@ -937,7 +1041,7 @@ def my_reservations(user=Depends(require_user)):
         out = []
         for r in rows(conn.execute(
                 "SELECT r.*, c.date, c.start_time FROM reservations r JOIN courses c ON c.id=r.course_id"
-                " WHERE r.user_id=? AND r.status!='cancelled' ORDER BY c.date DESC, c.start_time DESC",
+                " WHERE r.user_id=? AND r.status!='cancelled' ORDER BY c.date DESC, c.start_time DESC LIMIT 200",
                 (user["id"],))):
             c = get_course(conn, r["course_id"])
             v = course_view(conn, c, user, s)
@@ -976,17 +1080,19 @@ def ensure_active(user: dict):
 
 
 @app.post("/api/courses/{course_id}/reserve")
-async def reserve(course_id: int, request: Request, user=Depends(require_user)):
+def reserve(course_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     ensure_active(user)
-    b = await request.json() if await request.body() else {}
+    b = body
     with db() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         c = get_course(conn, course_id)
         if not can_see(conn, c, user, str(b.get("code") or "")):
             fail(404, "找不到課程")
-        v = course_view(conn, c, user, get_settings(conn))
+        settings = get_settings(conn)
+        v = course_view(conn, c, user, settings)
         if v["state"] not in ("book", "waitlist"):
             fail(400, f"此課程目前無法預約（{v['button']}）")
+        if settings.get("open_days") and date.fromisoformat(c["date"]) > now().date() + timedelta(days=int(settings["open_days"])):
+            fail(400, f"這堂課還沒開放報名（開課前 {settings['open_days']} 天開放）")
         if v["dupr_problem"]:
             fail(400, v["dupr_problem"])
         if v["state"] == "waitlist":
@@ -998,9 +1104,10 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
             admin_notify(conn, "waitlist", f"{user['name']} 候補 {course_label(c)}", f"/admin/courses/{c['id']}")
             return {"result": "waitlist"}
         card_id, charged = charge(conn, user["id"], c, b.get("card_id"))
-        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, created_at, updated_at)"
-                     " VALUES (?,?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, c["fee"], stamp(), stamp()))
-        notify(conn, user["id"], f"預約成功：「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c))
+        conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, pay_due, created_at, updated_at)"
+                     " VALUES (?,?,?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, c["fee"], pay_due(c),
+                                                    stamp(), stamp()))
+        notify(conn, user["id"], f"報名成功：「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c), course=c)
         admin_notify(conn, "booking", f"{user['name']} 預約 {course_label(c)}" + (f"（報名費 NT$ {c['fee']:,} 待收款）" if c["fee"] else ""),
                      f"/admin/courses/{c['id']}")
         return {"result": "booked"}
@@ -1009,7 +1116,6 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
 @app.post("/api/courses/{course_id}/cancel")
 def cancel(course_id: int, user=Depends(require_user)):
     with db() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         c = get_course(conn, course_id)
         v = course_view(conn, c, user, get_settings(conn))
         r = v["my_reservation"]
@@ -1018,7 +1124,7 @@ def cancel(course_id: int, user=Depends(require_user)):
         if not v["can_cancel"]:
             if r["status"] != "waitlist" and has_event(conn, course_id):
                 fail(400, "團主已生成賽事，無法自行取消，請聯絡團主")
-            fail(400, "已超過可自行取消的時間，請聯絡場館")
+            fail(400, "已超過可自行取消的時間，請聯絡主辦")
         conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
         refund(conn, r)
         notify(conn, user["id"], f"已取消「{c['name']}」{c['date']} {c['start_time']}。"
@@ -1048,8 +1154,8 @@ def order_plan(plan_id: int, user=Depends(require_user)):
 
 
 @app.post("/api/reviews")
-async def create_review(request: Request, user=Depends(require_user)):
-    b = await request.json()
+def create_review(body: dict = Depends(json_body), user=Depends(require_user)):
+    b = body
     rating = int(b.get("rating", 0))
     if not 1 <= rating <= 5:
         fail(400, "請選擇 1–5 顆星")
@@ -1113,8 +1219,8 @@ def dupr_config():
 
 
 @app.put("/api/me/dupr")
-async def link_dupr(request: Request, user=Depends(require_user)):
-    b = await request.json()
+def link_dupr(body: dict = Depends(json_body), user=Depends(require_user)):
+    b = body
     with db() as conn:
         set_dupr(conn, user["id"], b, source="self")
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
@@ -1133,17 +1239,67 @@ def refresh_dupr(user=Depends(require_user)):
 
 # ---------------------------------------------------------------- 單次報名費
 
+def pay_due(c: dict) -> str:
+    """報名費的付款期限（報名或遞補起算 pay_hours 小時；0＝不限，但不會晚於開始前 1 小時）。"""
+    if not c["fee"] or not c["pay_hours"]:
+        return ""
+    due = min(now() + timedelta(hours=c["pay_hours"]), course_start(c) - timedelta(hours=1))
+    return max(due, now() + timedelta(minutes=30)).isoformat(timespec="minutes")
+
+
+def payment_ready(settings: dict) -> bool:
+    return bool(settings["payment_info"].strip()) and settings["payment_info"] != DEFAULT_SETTINGS["payment_info"]
+
+
 def fee_notice(conn, c: dict) -> str:
     if not c["fee"]:
         return ""
-    info = get_settings(conn)["payment_info"].strip()
-    return f"報名費 NT$ {c['fee']:,}，" + (f"付款方式：{info}" if info else "請依場館說明付款。") + "付款後可在活動頁填寫匯款末五碼。"
+    s = get_settings(conn)
+    due = pay_due(c)
+    return (f"報名費 NT$ {c['fee']:,}，" + (f"付款方式：{s['payment_info'].strip()}" if payment_ready(s) else "付款方式請洽主辦。")
+            + (f"請在 {due[5:10].replace('-', '/')} {due[11:16]} 前付款，逾期名額會讓給候補。" if due else "")
+            + "付款後在活動頁填寫匯款末五碼。")
+
+
+def release_overdue(conn) -> int:
+    """逾期未付款（也沒回報付款）的名額自動取消，讓給候補。"""
+    n = 0
+    for r in rows(conn.execute(
+            "SELECT r.*, u.name user_name FROM reservations r JOIN users u ON u.id=r.user_id WHERE r.status='booked'"
+            " AND r.fee>0 AND r.paid=0 AND r.pay_note='' AND r.pay_due!='' AND r.pay_due<?", (now().isoformat(timespec="minutes"),))):
+        c = get_course(conn, r["course_id"])
+        if has_event(conn, c["id"]) or now() >= course_start(c):
+            continue
+        conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
+        notify(conn, r["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 超過付款期限，名額已釋出。如仍想參加請重新報名。", course=c)
+        admin_notify(conn, "overdue", f"{r['user_name']} 逾期未付款，已自動取消 {course_label(c)}", f"/admin/courses/{c['id']}")
+        promote_waitlist(conn, c)
+        n += 1
+    return n
+
+
+def sweeper():
+    import time as _t
+    while True:
+        _t.sleep(300)
+        try:
+            with db() as conn:
+                release_overdue(conn)
+        except Exception:  # noqa: BLE001 — 背景工作不能讓服務掛掉
+            pass
+
+
+@app.post("/api/admin/sweep")
+def run_sweep(owner=Depends(require_owner)):
+    """立即執行一次逾期檢查（背景每 5 分鐘也會自動跑）。"""
+    with db() as conn:
+        return {"released": release_overdue(conn)}
 
 
 @app.put("/api/courses/{course_id}/payment")
-async def payment_note(course_id: int, request: Request, user=Depends(require_user)):
+def payment_note(course_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     """學員填寫付款資訊（匯款末五碼、付款方式等），供場主核對。"""
-    note = str((await request.json()).get("note", "")).strip()[:100]
+    note = str(body.get("note", "")).strip()[:100]
     with db() as conn:
         c = get_course(conn, course_id)
         r = one(conn.execute("SELECT * FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')"
@@ -1159,9 +1315,9 @@ async def payment_note(course_id: int, request: Request, user=Depends(require_us
 
 
 @app.post("/api/admin/reservations/{res_id}/payment")
-async def mark_paid(res_id: int, request: Request, owner=Depends(require_owner)):
+def mark_paid(res_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """場主確認收款／取消收款（退費後可改回未付款）。"""
-    paid = bool((await request.json()).get("paid"))
+    paid = bool(body.get("paid"))
     with db() as conn:
         r = one(conn.execute("SELECT * FROM reservations WHERE id=?", (res_id,)))
         if not r:
@@ -1172,8 +1328,87 @@ async def mark_paid(res_id: int, request: Request, owner=Depends(require_owner))
         conn.execute("UPDATE reservations SET paid=?, paid_at=?, updated_at=? WHERE id=?",
                      (1 if paid else 0, stamp() if paid else "", stamp(), res_id))
         if paid and not r["paid"]:
-            notify(conn, r["user_id"], f"場館已確認收到「{c['name']}」{c['date']} {c['start_time']} 的報名費 NT$ {r['fee']:,}。")
+            notify(conn, r["user_id"], f"主辦已確認收到「{c['name']}」{c['date']} {c['start_time']} 的報名費 NT$ {r['fee']:,}。", course=c)
         return {"ok": True}
+
+
+@app.get("/api/admin/fees")
+def admin_fees(owner=Depends(require_owner)):
+    """所有活動的報名費：待收（含學員回報）與最近 30 天已收。"""
+    since = (now() - timedelta(days=30)).isoformat()
+    with db() as conn:
+        return rows(conn.execute(
+            "SELECT r.id, r.course_id, r.fee, r.paid, r.pay_note, r.pay_due, r.paid_at, r.created_at, u.name user_name, u.phone,"
+            " c.name course_name, c.date, c.start_time FROM reservations r JOIN users u ON u.id=r.user_id"
+            " JOIN courses c ON c.id=r.course_id WHERE r.fee>0 AND r.status IN ('booked','attended','absent') AND c.status='open'"
+            " AND (r.paid=0 OR r.paid_at>=?) ORDER BY r.paid, r.pay_note='' , c.date, c.start_time LIMIT 500", (since,)))
+
+
+def xlsx_response(name: str, header: list, body: list) -> Response:
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+    wb = Workbook()
+    ws = wb.active
+    ws.append(header)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for r in body:
+        ws.append(r)
+    for i in range(len(header)):
+        ws.column_dimensions[chr(65 + i)].width = 16
+    buf = __import__("io").BytesIO()
+    wb.save(buf)
+    return Response(buf.getvalue(), media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{urllib.parse.quote(name)}"})
+
+
+@app.get("/api/admin/courses/{course_id}/roster/export")
+def roster_export(course_id: int, owner=Depends(require_owner)):
+    """名單下載（簽到、保險、聯絡用）。"""
+    status = {"booked": "已報名", "attended": "出席", "absent": "缺席", "waitlist": "候補"}
+    with db() as conn:
+        c = get_course(conn, course_id)
+        body = []
+        for i, r in enumerate(rows(conn.execute(
+                "SELECT r.*, u.name, u.phone, u.email, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.note FROM reservations r"
+                " JOIN users u ON u.id=r.user_id WHERE r.course_id=? AND r.status!='cancelled' ORDER BY r.status='waitlist', r.id",
+                (course_id,))), 1):
+            body.append([i, r["name"], r["phone"] or "", r["email"] or "", status.get(r["status"], r["status"]),
+                         r["fee"] or "", ("已付款" if r["paid"] else "待付款") if r["fee"] else "", r["pay_note"],
+                         r["dupr_id"], r[f"dupr_{c['dupr_format']}"] if c["dupr_required"] else "", "", r["note"]])
+    return xlsx_response(f"名單_{c['date']}_{c['name']}.xlsx",
+                         ["#", "姓名", "手機", "信箱", "狀態", "報名費", "付款", "付款回報", "DUPR ID", "DUPR 分數", "簽名", "備註"], body)
+
+
+@app.get("/api/admin/courses/{course_id}/event/export")
+def event_export(course_id: int, owner=Depends(require_owner)):
+    """比分下載（CSV，可整理後上傳 DUPR）。"""
+    with db() as conn:
+        c = get_course(conn, course_id)
+        ev = event_view(conn, c, owner)
+        if not ev:
+            fail(404, "這場還沒有賽事")
+        ids = {p["id"] for g in ev["groups"] for gm in g["games"] for p in gm["a"] + gm["b"]}
+        dupr_ids = {r["id"]: r["dupr_id"] for r in conn.execute(
+            f"SELECT id, dupr_id FROM users WHERE id IN ({','.join('?' * len(ids))})", tuple(ids))} if ids else {}
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["date", "event", "group", "round", "format", "team_a_player1", "team_a_player1_dupr_id", "team_a_player2",
+                "team_a_player2_dupr_id", "team_b_player1", "team_b_player1_dupr_id", "team_b_player2", "team_b_player2_dupr_id",
+                "score_a", "score_b", "status"])
+    for g in ev["groups"]:
+        for gm in g["games"]:
+            def side(ps):
+                cells = []
+                for p in (ps + [None, None])[:2]:
+                    cells += [p["name"], dupr_ids.get(p["id"], "")] if p else ["", ""]
+                return cells
+            w.writerow([c["date"], c["name"], g["name"], gm["round"], ev["format_name"], *side(gm["a"]), *side(gm["b"]),
+                        gm["score_a"] if gm["score_a"] is not None else "", gm["score_b"] if gm["score_b"] is not None else "",
+                        {"confirmed": "已確認", "reported": "待確認", "pending": "未打"}[gm["status"]]])
+    fname = urllib.parse.quote(f"比分_{c['date']}_{c['name']}.csv")
+    return Response("\ufeff" + out.getvalue(), media_type="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f"attachment; filename*=UTF-8''{fname}"})
 
 
 # ---------------------------------------------------------------- DUPR 賽事（分組、賽程、比分）
@@ -1273,9 +1508,9 @@ def course_event(course_id: int, request: Request, user=Depends(current_user)):
 
 
 @app.put("/api/courses/{course_id}/partner")
-async def set_partner(course_id: int, request: Request, user=Depends(require_user)):
+def set_partner(course_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     """固定搭檔場：已報名的學員用對方的手機或信箱指定隊友（對方也要已報名）。"""
-    b = await request.json()
+    b = body
     contact = str(b.get("contact", "")).strip()
     with db() as conn:
         c = get_course(conn, course_id)
@@ -1295,7 +1530,7 @@ async def set_partner(course_id: int, request: Request, user=Depends(require_use
                 fail(400, "找不到這位球員，請確認手機或信箱")
             if not one(conn.execute("SELECT id FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')",
                                     (course_id, partner["id"]))):
-                fail(400, f"{partner['name']} 還沒有報名這場")
+                fail(400, "對方還沒有報名這場，請對方先報名再指定")
             notify(conn, partner["id"], f"{user['name']} 在{course_label(c)}指定您為隊友。")
         conn.execute("UPDATE reservations SET partner_id=? WHERE id=?", (partner["id"] if partner else None, mine["id"]))
         return {"partner": partner}
@@ -1322,9 +1557,9 @@ def check_score_side(g: dict, user: dict) -> str:
 
 
 @app.post("/api/event-games/{game_id}/report")
-async def report_score(game_id: int, request: Request, user=Depends(require_user)):
+def report_score(game_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     """球員回報比分；由對手確認後才算數。回報後改分也要重新確認。"""
-    b = await request.json()
+    b = body
     with db() as conn:
         g, ev, c = get_game(conn, game_id)
         side = check_score_side(g, user)
@@ -1337,14 +1572,16 @@ async def report_score(game_id: int, request: Request, user=Depends(require_user
                      " updated_at=? WHERE id=?", (int(b["score_a"]), int(b["score_b"]), user["id"], stamp(), game_id))
         other = g["b"] if side == "a" else g["a"]
         for uid in other:
-            notify(conn, uid, f"{user['name']} 回報了{game_label(c, g)}的比分 {b['score_a']}:{b['score_b']}，請確認。")
+            notify(conn, uid, f"{user['name']} 回報了{game_label(c, g)}的比分 {b['score_a']}:{b['score_b']}，請確認。", course=c)
         return {"ok": True}
 
 
 @app.post("/api/event-games/{game_id}/confirm")
-def confirm_score(game_id: int, user=Depends(require_user)):
+def confirm_score(game_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     with db() as conn:
         g, ev, c = get_game(conn, game_id)
+        if "score_a" in body and (body.get("score_a"), body.get("score_b")) != (g["score_a"], g["score_b"]):
+            fail(409, f"對方剛改了比分（現在是 {g['score_a']}:{g['score_b']}），請確認後再按一次")
         side = check_score_side(g, user)
         if g["status"] != "reported":
             fail(400, "這場還沒有人回報比分" if g["status"] == "pending" else "這場比分已確認")
@@ -1387,11 +1624,10 @@ def admin_event(course_id: int, owner=Depends(require_owner)):
 
 
 @app.post("/api/admin/courses/{course_id}/event")
-async def create_event(course_id: int, request: Request, owner=Depends(require_owner)):
+def create_event(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """依團主確認的分組生成賽程。groups：[[參賽單位, …], …]，參賽單位是 [球員] 或 [球員, 隊友]。"""
-    b = await request.json()
+    b = body
     with db() as conn:
-        conn.execute("BEGIN IMMEDIATE")
         c = get_course(conn, course_id)
         if not c["dupr_required"]:
             fail(400, "只有 DUPR 場可以生成賽事")
@@ -1435,8 +1671,8 @@ async def create_event(course_id: int, request: Request, owner=Depends(require_o
                                                          json.dumps(g["bye"]), stamp()))
             for e in grp:
                 for p in e:
-                    notify(conn, p, f"{course_label(c)}賽事已生成，您在 {matches.GROUP_NAMES[i]} 組，"
-                                    f"共 {sum(1 for g in sched if p in g['a'] + g['b'])} 局。")
+                    notify(conn, p, f"{course_label(c)}賽程排好了，您在 {matches.GROUP_NAMES[i]} 組，"
+                                    f"共 {sum(1 for g in sched if p in g['a'] + g['b'])} 局。", course=c)
         return event_admin_view(conn, c, owner)
 
 
@@ -1453,9 +1689,9 @@ def delete_event(course_id: int, owner=Depends(require_owner)):
 
 
 @app.put("/api/admin/event-games/{game_id}")
-async def admin_score(game_id: int, request: Request, owner=Depends(require_owner)):
+def admin_score(game_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """團主登錄或修改比分，直接算確認；clear=true 清除比分。"""
-    b = await request.json()
+    b = body
     with db() as conn:
         g, ev, c = get_game(conn, game_id)
         if b.get("clear"):
@@ -1477,14 +1713,22 @@ def dashboard(owner=Depends(require_owner)):
     with db() as conn:
         s = get_settings(conn)
         today = now().date().isoformat()
+        setup = {
+            "venue": s["name"] != DEFAULT_SETTINGS["name"],
+            "payment": payment_ready(s),
+            "course": bool(one(conn.execute("SELECT id FROM courses LIMIT 1"))),
+            "booking": bool(one(conn.execute("SELECT r.id FROM reservations r JOIN users u ON u.id=r.user_id WHERE u.role='student' LIMIT 1"))),
+            "line_push": line_push.enabled(),
+        }
         cs = rows(conn.execute("SELECT * FROM courses WHERE date=? ORDER BY start_time", (today,)))
         week_end = (now().date() + timedelta(days=7)).isoformat()
         return {
             "today": [course_view(conn, c, None, s) for c in cs],
+            "setup": setup,
             "pending_orders": conn.execute("SELECT COUNT(*) FROM orders WHERE status='pending'").fetchone()[0],
             "unpaid_fees": conn.execute("SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE r.fee>0 AND r.paid=0"
                                         " AND r.status IN ('booked','attended','absent') AND c.status='open'").fetchone()[0],
-            "members": conn.execute("SELECT COUNT(*) FROM users WHERE role='student'").fetchone()[0],
+            "members": conn.execute("SELECT COUNT(*) FROM users WHERE role='student' AND deleted=0").fetchone()[0],
             "week_bookings": conn.execute(
                 "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id"
                 " WHERE r.status='booked' AND c.date BETWEEN ? AND ?", (today, week_end)).fetchone()[0],
@@ -1510,15 +1754,26 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to", "listed", "fee")
+                 "match_format", "games_to", "listed", "fee", "pay_hours")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
 SYNC_FIELDS = tuple(k for k in TEMPLATE_FIELDS if k not in ("start_time", "end_time", "active", "sort"))
 
 
+TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
 def clean_course(b: dict) -> dict:
     out = {k: b[k] for k in COURSE_FIELDS if k in b}
+    if "date" in out:
+        try:
+            out["date"] = date.fromisoformat(str(out["date"])).isoformat()
+        except ValueError:
+            fail(400, "日期格式不正確")
+    for k in ("start_time", "end_time"):
+        if k in out and not TIME_RE.match(str(out[k])):
+            fail(400, "時間格式不正確（例如 19:00）")
     for k in ("dupr_min", "dupr_max"):
         if k in out:
             out[k] = round(float(out[k]), 3) if out[k] not in (None, "") else None
@@ -1531,7 +1786,7 @@ def clean_course(b: dict) -> dict:
     for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed"):
         if k in out:
             out[k] = 1 if out[k] else 0
-    for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min", "fee"):
+    for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min", "fee", "pay_hours"):
         if k in out:
             out[k] = max(int(out[k] or 0), 0)
     if out.get("fee"):
@@ -1545,8 +1800,8 @@ def clean_course(b: dict) -> dict:
 
 
 @app.post("/api/admin/courses")
-async def create_course(request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def create_course(body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     data = clean_course(b)
     if not data.get("name") or not data.get("date") or not data.get("start_time") or not data.get("end_time"):
         fail(400, "請填寫課程名稱、日期與時間")
@@ -1608,8 +1863,8 @@ def template_detail(template_id: int, owner=Depends(require_owner)):
 
 
 @app.post("/api/admin/templates")
-async def create_template(request: Request, owner=Depends(require_owner)):
-    data = clean_template(await request.json())
+def create_template(body: dict = Depends(json_body), owner=Depends(require_owner)):
+    data = clean_template(body)
     if not data.get("name"):
         fail(400, "請填寫課程名稱")
     data["created_at"] = stamp()
@@ -1620,9 +1875,9 @@ async def create_template(request: Request, owner=Depends(require_owner)):
 
 
 @app.put("/api/admin/templates/{template_id}")
-async def update_template(template_id: int, request: Request, owner=Depends(require_owner)):
+def update_template(template_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """更新範本；apply_future=true 時同步更新這個範本之後尚未開始的課程。"""
-    b = await request.json()
+    b = body
     data = clean_template(b)
     with db() as conn:
         get_template(conn, template_id)
@@ -1649,9 +1904,9 @@ async def update_template(template_id: int, request: Request, owner=Depends(requ
 
 
 @app.post("/api/admin/templates/{template_id}/schedule")
-async def schedule_template(template_id: int, request: Request, owner=Depends(require_owner)):
+def schedule_template(template_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """依範本在期間內的指定星期幾排課；同一天同時段已有這個範本的課就略過。"""
-    b = await request.json()
+    b = body
     try:
         start, end = date.fromisoformat(b["from"]), date.fromisoformat(b["to"])
     except (KeyError, ValueError):
@@ -1697,8 +1952,8 @@ def delete_template(template_id: int, owner=Depends(require_owner)):
 
 
 @app.put("/api/admin/courses/{course_id}")
-async def update_course(course_id: int, request: Request, owner=Depends(require_owner)):
-    data = clean_course(await request.json())
+def update_course(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    data = clean_course(body)
     with db() as conn:
         c = get_course(conn, course_id)
         if data:
@@ -1710,9 +1965,9 @@ async def update_course(course_id: int, request: Request, owner=Depends(require_
 
 
 @app.post("/api/admin/courses/{course_id}/status")
-async def course_status(course_id: int, request: Request, owner=Depends(require_owner)):
+def course_status(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """停課時退還所有人的課卡並通知。"""
-    status = (await request.json()).get("status")
+    status = body.get("status")
     if status not in ("open", "cancelled"):
         fail(400, "狀態錯誤")
     with db() as conn:
@@ -1723,8 +1978,9 @@ async def course_status(course_id: int, request: Request, owner=Depends(require_
                                        (course_id,))):
                 refund(conn, r)
                 conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
-                notify(conn, r["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 已停課，"
-                                           + (f"已付的報名費 NT$ {r['fee']:,} 將由場館與您聯繫退費。" if r["paid"] else "課卡已退還。"))
+                notify(conn, r["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 已停課。"
+                                           + (f"已付的報名費 NT$ {r['fee']:,} 將由主辦與您聯繫退費。" if r["paid"] else "課卡已退還。" if r["charged"] else ""),
+                       course=c)
         return {"ok": True}
 
 
@@ -1780,8 +2036,8 @@ def mark_all(course_id: int, owner=Depends(require_owner)):
     """把尚未點名的學員全部標記為出席。"""
     with db() as conn:
         c = get_course(conn, course_id)
-        if now() < course_start(c) - timedelta(minutes=30):
-            fail(400, "課程開始前 30 分鐘才能點名")
+        if now().date().isoformat() < c["date"]:
+            fail(400, "開課當天才能點名")
         n = conn.execute("UPDATE reservations SET status='attended', updated_at=? WHERE course_id=? AND status='booked'",
                          (stamp(), course_id)).rowcount
         return {"updated": n}
@@ -1817,9 +2073,9 @@ def roster(course_id: int, owner=Depends(require_owner)):
 
 
 @app.post("/api/admin/reservations/{res_id}")
-async def update_reservation(res_id: int, request: Request, owner=Depends(require_owner)):
+def update_reservation(res_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     """點名（attended/absent/booked）或場主取消（cancelled，退卡）。"""
-    b = await request.json()
+    b = body
     status = b.get("status")
     if status not in ("attended", "absent", "booked", "cancelled"):
         fail(400, "狀態錯誤")
@@ -1828,11 +2084,13 @@ async def update_reservation(res_id: int, request: Request, owner=Depends(requir
         if not r:
             fail(404, "找不到預約")
         c = get_course(conn, r["course_id"])
+        if r["status"] == "cancelled":
+            fail(400, "這筆預約已取消；要恢復請用「代為預約」重新加入（會重新扣卡）")
         if status == "cancelled" and r["status"] != "waitlist" and has_event(conn, c["id"]):
             fail(400, "這場已生成賽事，請先到「賽事」刪除賽事再取消預約")
         if r["status"] == "waitlist" and status == "booked":
             card_id, charged = charge(conn, r["user_id"], c, None)
-            conn.execute("UPDATE reservations SET card_id=?, charged=? WHERE id=?", (card_id, charged, res_id))
+            conn.execute("UPDATE reservations SET card_id=?, charged=?, pay_due=? WHERE id=?", (card_id, charged, pay_due(c), res_id))
             notify(conn, r["user_id"], f"場館已將您從候補改為正式預約：「{c['name']}」{c['date']} {c['start_time']}。")
         conn.execute("UPDATE reservations SET status=?, updated_at=? WHERE id=?", (status, stamp(), res_id))
         if status == "cancelled":
@@ -1845,12 +2103,20 @@ async def update_reservation(res_id: int, request: Request, owner=Depends(requir
 
 
 @app.post("/api/admin/courses/{course_id}/add")
-async def add_to_course(course_id: int, request: Request, owner=Depends(require_owner)):
-    """場主替會員加入課程（現場報名），可選擇是否扣卡。"""
-    b = await request.json()
+def add_to_course(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    """場主替會員加入課程（現場報名），可選擇是否扣卡。沒有帳號的人可以只填姓名（guest_name），系統建一筆臨時名單。"""
+    b = body
     with db() as conn:
         c = get_course(conn, course_id)
-        u = one(conn.execute("SELECT * FROM users WHERE id=?", (int(b.get("user_id", 0)),)))
+        guest = str(b.get("guest_name", "")).strip()[:40]
+        if guest:
+            phone = clean_phone(b.get("guest_phone"))
+            u = one(conn.execute("SELECT * FROM users WHERE phone=? AND deleted=0", (phone,))) if phone else None
+            if not u:
+                u = create_user(conn, guest, phone=phone, note="現場名單（沒有帳號）")
+            b = {**b, "charge": False}
+        else:
+            u = one(conn.execute("SELECT * FROM users WHERE id=? AND deleted=0", (int(b.get("user_id", 0)),)))
         if not u:
             fail(404, "找不到會員")
         if one(conn.execute("SELECT id FROM reservations WHERE course_id=? AND user_id=? AND status!='cancelled'",
@@ -1861,8 +2127,8 @@ async def add_to_course(course_id: int, request: Request, owner=Depends(require_
         conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, paid, paid_at, created_at, updated_at)"
                      " VALUES (?,?,?,?,?,?,?,?,?,?)", (course_id, u["id"], "booked", card_id, charged, c["fee"], paid,
                                                       stamp() if paid else "", stamp(), stamp()))
-        notify(conn, u["id"], f"場館已為您預約「{c['name']}」{c['date']} {c['start_time']}。")
-        return {"ok": True}
+        notify(conn, u["id"], f"主辦已為您報名「{c['name']}」{c['date']} {c['start_time']}。", course=c)
+        return {"ok": True, "user_id": u["id"]}
 
 
 def crud(table: str, fields: tuple, ints: tuple = ()):
@@ -1879,8 +2145,8 @@ def crud(table: str, fields: tuple, ints: tuple = ()):
             return rows(conn.execute(f"SELECT * FROM {table} ORDER BY sort, id"))
 
     @app.post(f"/api/admin/{table}", name=f"create_{table}")
-    async def create(request: Request, owner=Depends(require_owner)):
-        data = clean(await request.json())
+    def create(body: dict = Depends(json_body), owner=Depends(require_owner)):
+        data = clean(body)
         if not data.get("name"):
             fail(400, "請填寫名稱")
         with db() as conn:
@@ -1889,8 +2155,8 @@ def crud(table: str, fields: tuple, ints: tuple = ()):
             return {"id": cur.lastrowid}
 
     @app.put(f"/api/admin/{table}/{{item_id}}", name=f"update_{table}")
-    async def update(item_id: int, request: Request, owner=Depends(require_owner)):
-        data = clean(await request.json())
+    def update(item_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+        data = clean(body)
         with db() as conn:
             if data:
                 conn.execute(f"UPDATE {table} SET {','.join(k + '=?' for k in data)} WHERE id=?",
@@ -1947,8 +2213,8 @@ def admin_orders(owner=Depends(require_owner)):
 
 
 @app.post("/api/admin/orders/{order_id}")
-async def update_order(order_id: int, request: Request, owner=Depends(require_owner)):
-    status = (await request.json()).get("status")
+def update_order(order_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    status = body.get("status")
     if status not in ("paid", "cancelled"):
         fail(400, "狀態錯誤")
     with db() as conn:
@@ -1969,7 +2235,7 @@ def members(owner=Depends(require_owner)):
     with db() as conn:
         today = now().date().isoformat()
         out = []
-        for u in rows(conn.execute("SELECT * FROM users ORDER BY role='owner' DESC, id DESC")):
+        for u in rows(conn.execute("SELECT * FROM users WHERE deleted=0 ORDER BY role='owner' DESC, id DESC")):
             m = public_user(u)
             m["note"] = u["note"]
             m["cards"] = rows(conn.execute(
@@ -1984,8 +2250,8 @@ def members(owner=Depends(require_owner)):
 
 
 @app.put("/api/admin/members/{user_id}")
-async def update_member(user_id: int, request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def update_member(user_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     with db() as conn:
         u = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
         if not u:
@@ -1995,6 +2261,8 @@ async def update_member(user_id: int, request: Request, owner=Depends(require_ow
                 fail(400, "不能停權自己")
             conn.execute("UPDATE users SET suspended=?, suspend_reason=? WHERE id=?",
                          (1 if b["suspended"] else 0, str(b.get("suspend_reason", ""))[:200], user_id))
+            if b["suspended"]:
+                revoke_tokens(conn, user_id)
         if "dupr_verified" in b:
             conn.execute("UPDATE users SET dupr_verified=? WHERE id=?", (1 if b["dupr_verified"] else 0, user_id))
         if "dupr" in b:
@@ -2020,17 +2288,23 @@ def delete_member(user_id: int, owner=Depends(require_owner)):
         freed = [r["course_id"] for r in conn.execute(
             "SELECT course_id FROM reservations WHERE user_id=? AND status='booked'", (user_id,))]
         conn.execute("UPDATE reservations SET partner_id=NULL WHERE partner_id=?", (user_id,))
-        for table in ("tokens", "reservations", "cards", "orders", "reviews", "notifications"):
+        # 未開始的預約取消（名額釋出），已上過的課與收款紀錄保留，報表才不會少
+        conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE user_id=? AND status IN ('booked','waitlist')",
+                     (stamp(), user_id))
+        conn.execute("UPDATE orders SET status='cancelled', updated_at=? WHERE user_id=? AND status='pending'", (stamp(), user_id))
+        for table in ("tokens", "cards", "reviews", "notifications"):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
-        conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+        conn.execute("UPDATE users SET name='（已刪除的會員）', phone=NULL, email=NULL, line_user_id=NULL, password_hash='',"
+                     " role='student', suspended=1, note='', avatar_url='', avatar_source='', dupr_id='', dupr_name='',"
+                     " dupr_doubles=NULL, dupr_singles=NULL, deleted=1 WHERE id=?", (user_id,))
         for course_id in freed:
             promote_waitlist(conn, get_course(conn, course_id))
         return {"ok": True}
 
 
 @app.post("/api/admin/members/{user_id}/cards")
-async def give_card(user_id: int, request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def give_card(user_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     with db() as conn:
         plan = one(conn.execute("SELECT * FROM plans WHERE id=?", (int(b.get("plan_id", 0)),)))
         if not plan:
@@ -2040,8 +2314,8 @@ async def give_card(user_id: int, request: Request, owner=Depends(require_owner)
 
 
 @app.put("/api/admin/cards/{card_id}")
-async def adjust_card(card_id: int, request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def adjust_card(card_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     with db() as conn:
         if "remaining" in b:
             conn.execute("UPDATE cards SET remaining=? WHERE id=?", (max(int(b["remaining"]), 0), card_id))
@@ -2061,16 +2335,16 @@ def admin_reviews(owner=Depends(require_owner)):
 
 
 @app.put("/api/admin/reviews/{review_id}")
-async def hide_review(review_id: int, request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def hide_review(review_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     with db() as conn:
         conn.execute("UPDATE reviews SET hidden=? WHERE id=?", (1 if b.get("hidden") else 0, review_id))
         return {"ok": True}
 
 
 @app.put("/api/admin/settings")
-async def update_settings(request: Request, owner=Depends(require_owner)):
-    b = await request.json()
+def update_settings(body: dict = Depends(json_body), owner=Depends(require_owner)):
+    b = body
     with db() as conn:
         for k in DEFAULT_SETTINGS:
             if k in b:
@@ -2087,13 +2361,23 @@ async def upload(file: UploadFile = File(...), owner=Depends(require_owner)):
     return {"url": await save_image(file, 5)}
 
 
+IMAGE_MAGIC = {".jpg": (b"\xff\xd8\xff",), ".png": (b"\x89PNG\r\n\x1a\n",), ".gif": (b"GIF87a", b"GIF89a"), ".webp": (b"RIFF",)}
+
+
 async def save_image(file: UploadFile, max_mb: int) -> str:
+    """分段讀取（超過上限立即停止）並檢查檔頭，確定真的是圖片才存。"""
     ext = ALLOWED_IMAGES.get(file.content_type)
     if not ext:
         fail(400, "只接受 JPG、PNG、WebP、GIF")
-    content = await file.read()
-    if len(content) > max_mb * 1024 * 1024:
-        fail(400, f"圖片需小於 {max_mb}MB")
+    limit, chunks, size = max_mb * 1024 * 1024, [], 0
+    while chunk := await file.read(256 * 1024):
+        size += len(chunk)
+        if size > limit:
+            fail(400, f"圖片需小於 {max_mb}MB")
+        chunks.append(chunk)
+    content = b"".join(chunks)
+    if not content.startswith(IMAGE_MAGIC[ext]) or (ext == ".webp" and content[8:12] != b"WEBP"):
+        fail(400, "這個檔案不是有效的圖片")
     name = uuid.uuid4().hex + ext
     (UPLOAD_DIR / name).write_bytes(content)
     return f"uploads/{name}"
@@ -2102,6 +2386,9 @@ async def save_image(file: UploadFile, max_mb: int) -> str:
 @app.post("/api/me/avatar")
 async def upload_avatar(file: UploadFile = File(...), user=Depends(require_user)):
     url = await save_image(file, 2)
+    old = user["avatar_url"]
+    if user["avatar_source"] == "upload" and old.startswith("uploads/"):
+        (UPLOAD_DIR / Path(old).name).unlink(missing_ok=True)
     with db() as conn:
         conn.execute("UPDATE users SET avatar_url=?, avatar_source='upload' WHERE id=?", (url, user["id"]))
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
@@ -2119,7 +2406,7 @@ def uploaded(name: str):
     path = UPLOAD_DIR / Path(name).name
     if not path.is_file():
         fail(404, "not found")
-    return FileResponse(path)
+    return FileResponse(path, headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=604800"})
 
 
 @app.get("/e/{code}", include_in_schema=False)
@@ -2151,7 +2438,7 @@ def share_page(code: str, request: Request):
     page = (f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(c["name"])}｜{e(s["name"])}</title>'
             f'<meta name="description" content="{e("｜".join(parts))}">{meta}<meta name="twitter:card" content="summary_large_image">'
-            f'<meta http-equiv="refresh" content="0;url={e(target)}"><script>location.replace({json.dumps(target)})</script>'
+            f'<meta http-equiv="refresh" content="0;url={e(target)}"><script>location.replace({json.dumps(target).replace("<", "\\u003c")})</script>'
             f'</head><body><a href="{e(target)}">前往報名頁</a></body></html>')
     return Response(page, media_type="text/html; charset=utf-8")
 

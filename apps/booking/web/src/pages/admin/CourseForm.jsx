@@ -10,7 +10,7 @@ const EMPTY = {
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true, fee: 0,
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48,
 }
 
 // template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
@@ -94,7 +94,9 @@ export default function CourseForm({ template = false }) {
         showToast('已儲存')
       } else {
         const r = await api('admin/courses', { method: 'POST', body: form })
-        showToast(r.ids.length > 1 ? `已建立 ${r.ids.length} 堂課` : '已建立課程')
+        showToast(r.ids.length > 1 ? `已建立 ${r.ids.length} 堂課` : '已建立，把報名連結分享出去吧')
+        // 單場活動建完直接到名單頁（上方就是報名連結）
+        if (r.ids.length === 1) return navigate(`/admin/courses/${r.ids[0]}`)
       }
       navigate(`/admin/courses?date=${form.date}`)
     } catch (err) { handleError(err) } finally { setBusy(false) }
@@ -160,10 +162,17 @@ export default function CourseForm({ template = false }) {
           <input className="input" type="number" min="1" value={form.fee || ''} onChange={set('fee', Number)} required placeholder="500" />
         </Field>
       )}
+      {payMode === 'fee' && (
+        <Field label="付款期限" hint="逾期沒付款、也沒回報付款的名額，會自動讓給候補並通知雙方">
+          <select className="input" value={form.pay_hours} onChange={set('pay_hours', Number)}>
+            {[[24, '報名後 24 小時'], [48, '報名後 48 小時'], [72, '報名後 72 小時'], [0, '不限（開始前都可付）']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </Field>
+      )}
       <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>
       <label className="check">
-        <input type="checkbox" checked={!form.listed} onChange={(e) => setForm({ ...form, listed: !e.target.checked })} />
-        只限連結報名（不出現在課表，適合一次性活動；建立後到名單頁複製報名連結）
+        <input type="checkbox" checked={form.listed} onChange={set('listed')} />
+        公開在課表（取消勾選＝只有拿到報名連結的人能報名，適合一次性活動）
       </label>
       <div className={`dupr-box ${form.dupr_required ? 'on' : ''}`}>
         <label className="check strong">
@@ -215,13 +224,15 @@ export default function CourseForm({ template = false }) {
           </select>
         </Field>
       </div>
-      <Field label="可使用的課卡" hint="都不勾選＝所有課卡都可使用">
-        <div className="checks">
-          {plans.map((p) => (
-            <label key={p.id} className="check"><input type="checkbox" checked={form.plan_ids.includes(p.id)} onChange={() => togglePlan(p.id)} /> {p.name}<span className="muted small">（{PLAN_TYPES[p.type]}）</span></label>
-          ))}
-        </div>
-      </Field>
+      {payMode === 'card' && (
+        <Field label="可使用的課卡" hint="都不勾選＝所有課卡都可使用">
+          <div className="checks">
+            {plans.map((p) => (
+              <label key={p.id} className="check"><input type="checkbox" checked={form.plan_ids.includes(p.id)} onChange={() => togglePlan(p.id)} /> {p.name}<span className="muted small">（{PLAN_TYPES[p.type]}）</span></label>
+            ))}
+          </div>
+        </Field>
+      )}
       {template && id && (
         <label className="check strong"><input type="checkbox" checked={applyFuture} onChange={(e) => setApplyFuture(e.target.checked)} /> 同步更新這個範本之後、尚未開始的課程（時間不變，名額不會少於已報名人數）</label>
       )}

@@ -48,3 +48,15 @@ export async function uploadImage(file) {
   const { url } = await api('admin/upload', { method: 'POST', form })
   return url
 }
+
+// 後台下載（Excel／CSV）：帶登入憑證取檔再存檔
+export async function downloadFile(path, filename) {
+  const res = await fetch(BASE + 'api/' + path.replace(/^\//, ''), { headers: { Authorization: `Bearer ${getToken()}` } })
+  if (!res.ok) throw new ApiError((await res.json().catch(() => ({}))).error || '下載失敗', res.status)
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+}

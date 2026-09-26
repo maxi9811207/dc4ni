@@ -11,8 +11,25 @@ export default function Dashboard() {
   const [d, setD] = useState(null)
   useEffect(() => { api('admin/dashboard').then(setD).catch(handleError) }, [handleError])
   if (!d) return <Loading />
+  const steps = [
+    ['venue', '設定場館名稱與介紹', '/admin/settings'],
+    ['payment', '填寫付款方式（學員報名後會看到）', '/admin/settings'],
+    ['course', '開第一堂課或一場活動', '/admin/courses/new'],
+    ['booking', '把報名連結分享到 LINE 群組，等第一位學員報名', '/admin/courses'],
+  ]
+  const todo = steps.filter(([k]) => !d.setup?.[k])
   return (
     <>
+      {todo.length > 0 && (
+        <section className="card setup-card">
+          <h3 className="card-title nomargin">開站步驟（{steps.length - todo.length}/{steps.length}）</h3>
+          {steps.map(([k, label, to]) => (
+            <Link key={k} to={to} className={`setup-step ${d.setup?.[k] ? 'done' : ''}`}>
+              <span className="setup-dot">{d.setup?.[k] ? '✓' : ''}</span>{label}<span className="muted">›</span>
+            </Link>
+          ))}
+        </section>
+      )}
       <div className="stats">
         <Link to="/admin/orders" className={`stat ${d.pending_orders ? 'alert-stat' : ''}`}><span>待確認訂單</span><b>{d.pending_orders}</b></Link>
         <div className="stat"><span>本月營收</span><b>{money(d.month_revenue)}</b>{d.unpaid_fees > 0 && <small className="stat-sub text-warn">{d.unpaid_fees} 筆報名費待收</small>}</div>

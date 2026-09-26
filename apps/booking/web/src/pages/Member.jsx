@@ -6,7 +6,7 @@ import CourseCard from '../components/CourseCard'
 import { Avatar, Badge, Chips, Empty, Field, Loading, Modal, Stars, TopBar } from '../components/ui'
 import { cardRemain, money, rating, showDateTime } from '../util'
 
-const TABS = [['reservations', '預約紀錄'], ['cards', '我的課卡'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
+const TABS = [['reservations', '我的報名'], ['cards', '我的課卡'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
 
 export default function Member() {
   const { user } = useApp()
@@ -59,7 +59,7 @@ function Reservations() {
         <button className={view === 'upcoming' ? 'active' : ''} onClick={() => setView('upcoming')}>即將到來（{upcoming.length}）</button>
         <button className={view === 'history' ? 'active' : ''} onClick={() => setView('history')}>歷史紀錄</button>
       </div>
-      {shown.length === 0 ? <Empty text={view === 'upcoming' ? '目前沒有預約' : '還沒有上課紀錄'}><Link className="btn" to="/">去預約課程</Link></Empty>
+      {shown.length === 0 ? <Empty text={view === 'upcoming' ? '目前沒有報名' : '還沒有參加紀錄'}><Link className="btn" to="/">看看有哪些活動</Link></Empty>
         : shown.map(({ reservation: r, course: c, reviewed }) => (
           <div key={r.id}>
             <CourseCard course={c} showDate />
@@ -68,7 +68,7 @@ function Reservations() {
             )}
             {view === 'history' && (
               <div className="history-foot">
-                <span className="muted small">{{ attended: '已出席', absent: '缺席', booked: '已預約', waitlist: '候補未遞補' }[r.status]}</span>
+                <span className="muted small">{{ attended: '已出席', absent: '缺席', booked: '未點名', waitlist: '候補未遞補' }[r.status]}</span>
                 {['booked', 'attended'].includes(r.status) && (reviewed
                   ? <span className="muted small">已評價</span>
                   : <button className="btn btn-small btn-outline" onClick={() => setReviewing(c)}>給評價</button>)}
@@ -266,8 +266,8 @@ function Dupr() {
           </div>
           <p className="muted small">DUPR ID：<b className="text-brand">{user.dupr_id}</b>{user.dupr_name && ` · ${user.dupr_name}`}</p>
           <div className="stats stats-2">
-            <div className="stat"><span>雙打 Doubles</span><b>{rating(user.dupr_doubles)}</b></div>
-            <div className="stat"><span>單打 Singles</span><b>{rating(user.dupr_singles)}</b></div>
+            <div className="stat"><span>雙打分數</span><b>{rating(user.dupr_doubles)}</b></div>
+            <div className="stat"><span>單打分數</span><b>{rating(user.dupr_singles)}</b></div>
           </div>
           <p className="muted small">更新時間 {showDateTime(user.dupr_synced_at)}</p>
           <div className="admin-actions">

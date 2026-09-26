@@ -20,8 +20,10 @@ export default function Login() {
   const [mode, setMode] = useState('login')
   const [form, setForm] = useState({ name: '', login: '', email: '', phone: '', password: '' })
   const [busy, setBusy] = useState(false)
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value })
+  const [error, setError] = useState('')
+  const set = (k) => (e) => { setError(''); setForm({ ...form, [k]: e.target.value }) }
   const from = location.state?.from
+  const forEvent = location.state?.forEvent
 
   const submit = async (e) => {
     e.preventDefault()
@@ -35,7 +37,7 @@ export default function Login() {
       showToast(mode === 'login' ? '登入成功' : '註冊成功，歡迎加入！')
       navigate(from || (r.user.role === 'owner' ? '/admin' : '/'), { replace: true })
     } catch (err) {
-      showToast(err.message)
+      setError(err.message)
     } finally {
       setBusy(false)
     }
@@ -43,20 +45,23 @@ export default function Login() {
 
   return (
     <>
-      <TopBar title="註冊登入" />
+      <TopBar title="登入" />
       <main className="page">
         <form className="card login-card" onSubmit={submit}>
           <h2 className="detail-title center">{venue?.name}</h2>
-          <p className="muted center small">{mode === 'login' ? '登入帳號以預約課程' : '建立帳號，開始預約課程'}</p>
+          {forEvent
+            ? <p className="center login-for">登入後就會幫你報名<br /><b>{forEvent}</b></p>
+            : <p className="muted center small">{mode === 'login' ? '登入後就能報名活動' : '建立帳號，開始報名活動'}</p>}
           {auth.line_enabled && (
             <>
-              <LineButton next={from || '/'} label={mode === 'login' ? '使用 LINE 登入' : '使用 LINE 快速註冊'} />
-              <div className="or"><span>或使用信箱</span></div>
+              <LineButton next={from || '/'} label="用 LINE 一鍵登入" />
+              <p className="muted center small nomargin">第一次用 LINE 登入會自動建立帳號，不用另外註冊</p>
+              <div className="or"><span>或用信箱</span></div>
             </>
           )}
           <div className="seg">
-            <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => setMode('login')}>登入</button>
-            <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => setMode('register')}>註冊</button>
+            <button type="button" aria-pressed={mode === 'login'} className={mode === 'login' ? 'active' : ''} onClick={() => { setError(''); setMode('login') }}>登入</button>
+            <button type="button" aria-pressed={mode === 'register'} className={mode === 'register' ? 'active' : ''} onClick={() => { setError(''); setMode('register') }}>註冊</button>
           </div>
           {mode === 'login' ? (
             <Field label="信箱或手機號碼">
@@ -66,7 +71,7 @@ export default function Login() {
             <>
               <Field label="姓名"><input className="input" value={form.name} onChange={set('name')} required autoComplete="name" /></Field>
               <Field label="信箱"><input className="input" type="email" value={form.email} onChange={set('email')} required autoComplete="email" placeholder="you@example.com" /></Field>
-              <Field label="手機號碼（選填）" hint="方便場館臨時聯絡您">
+              <Field label="手機號碼（選填）" hint="方便主辦臨時聯絡您">
                 <input className="input" type="tel" inputMode="numeric" value={form.phone} onChange={set('phone')} autoComplete="tel" placeholder="09xxxxxxxx" />
               </Field>
             </>
@@ -74,8 +79,9 @@ export default function Login() {
           <Field label="密碼" hint={mode === 'register' ? '至少 6 碼' : undefined}>
             <input className="input" type="password" value={form.password} onChange={set('password')} required minLength={mode === 'register' ? 6 : 1} autoComplete={mode === 'login' ? 'current-password' : 'new-password'} />
           </Field>
+          {error && <p className="alert danger small" role="alert">{error}</p>}
           <button className="btn btn-block btn-lg" disabled={busy}>{busy ? '處理中…' : mode === 'login' ? '登入' : '註冊'}</button>
-          <p className="muted small center">登入即代表您同意本場館的使用者條款與隱私權政策</p>
+          <p className="muted small center">你的資料只用來處理報名與通知，不會提供給其他人。</p>
         </form>
       </main>
     </>
