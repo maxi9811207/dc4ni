@@ -44,7 +44,7 @@ export default function AdminCourses() {
           <Link to={`/admin/courses/${c.id}`} className="row gap">
             <Avatar src={c.teacher?.photo_url} name={c.teacher?.name} />
             <div className="flex1 min0">
-              <h2 className="course-name">{c.name}{c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}</h2>
+              <h2 className="course-name">{c.name}{c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}{!c.listed && <Badge tone="warn">只限連結</Badge>}</h2>
               <p className="course-meta"><b className="course-time">{c.start_time}~{c.end_time}</b> · {c.category}</p>
               <p className="small">{c.teacher?.name || '未指定老師'}{c.substitute && '（代課）'}</p>
             </div>

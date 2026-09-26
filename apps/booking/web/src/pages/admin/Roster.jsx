@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useApp } from '../../App'
 import { api } from '../../api'
+import { ShareBox } from '../../components/Share'
 import { Badge, Confirm, Empty, Loading, Modal } from '../../components/ui'
 import { duprRange, rating, showDate } from '../../util'
 
@@ -50,6 +51,8 @@ export default function Roster() {
           <div className="stat"><span>候補</span><b>{c.waitlist_count}</b></div>
         </div>
       </section>
+
+      {c.share_code && <ShareBox c={c} />}
 
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>

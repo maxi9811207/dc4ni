@@ -3,12 +3,15 @@ import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
-import { Avatar, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
+import { ShareButton } from '../components/Share'
+import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
 import { cardRemain, duprRange, hours, rating, showDate } from '../util'
 
+// /course/:id 是課表裡的課程頁；/e/:code 是分享出去的一頁式活動頁（沒有場館導覽，只有報名）
 export default function CourseDetail() {
-  const { id } = useParams()
-  const { user, refreshUser, handleError, showToast } = useApp()
+  const { id, code } = useParams()
+  const standalone = Boolean(code)
+  const { user, venue, refreshUser, handleError, showToast } = useApp()
   const navigate = useNavigate()
   const location = useLocation()
   const [c, setC] = useState(null)
@@ -16,14 +19,22 @@ export default function CourseDetail() {
   const [dialog, setDialog] = useState(null)
   const [busy, setBusy] = useState(false)
 
-  const load = useCallback(() => api(`courses/${id}`).then((d) => {
+  const [missing, setMissing] = useState(false)
+  const load = useCallback(() => api(code ? `e/${code}` : `courses/${id}`).then((d) => {
     setC(d)
     setCardId(d.cards[0]?.id ?? null)
-  }).catch(handleError), [id, handleError])
+  }).catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => {
+    if (standalone && c) document.title = `${c.name}｜${venue?.name || '報名'}`
+  }, [standalone, c, venue])
 
-  if (!c) return <><TopBar title="課程資訊" /><Loading /></>
+  const header = standalone
+    ? <StandaloneBar />
+    : <TopBar title="課程資訊" back={-1} right={c?.share_code && <ShareButton c={c} className="icon-btn share-btn" />} />
+  if (missing) return <>{header}<main className="page"><section className="card center"><h3 className="card-title">找不到這個活動</h3><p className="muted small">連結可能已失效，請向主辦單位確認。</p></section></main></>
+  if (!c) return <>{header}<Loading /></>
 
   const requireLogin = () => {
     if (user) return false
@@ -37,13 +48,13 @@ export default function CourseDetail() {
   }
 
   const reserve = () => act(async () => {
-    const r = await api(`courses/${id}/reserve`, { method: 'POST', body: { card_id: cardId } })
+    const r = await api(`courses/${c.id}/reserve`, { method: 'POST', body: { card_id: cardId, code: c.share_code } })
     setDialog(r.result === 'booked' ? 'booked' : 'waitlisted')
     await Promise.all([load(), refreshUser()])
   })
 
   const cancel = () => act(async () => {
-    await api(`courses/${id}/cancel`, { method: 'POST' })
+    await api(`courses/${c.id}/cancel`, { method: 'POST' })
     setDialog(null)
     showToast(c.state === 'waiting' ? '已取消候補' : '已取消預約，課卡已退還')
     await Promise.all([load(), refreshUser()])
@@ -78,7 +89,7 @@ export default function CourseDetail() {
 
   return (
     <>
-      <TopBar title="課程資訊" back={-1} />
+      {header}
       <main className="page">
         <section className="card detail-card">
           <div className="row gap-sm wrap">
@@ -87,7 +98,10 @@ export default function CourseDetail() {
             {c.beginner && <Badge tone="danger">新手友善</Badge>}
             {c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}
           </div>
-          <h2 className="detail-title">{c.name}</h2>
+          <div className="row between gap">
+            <h2 className="detail-title">{c.name}</h2>
+            {standalone && <ShareButton c={c} />}
+          </div>
           <dl className="info-list">
             <div><dt>日期</dt><dd>{showDate(c.date)}</dd></div>
             <div><dt>時間</dt><dd className="text-brand strong">{c.start_time} ~ {c.end_time}</dd></div>
@@ -128,6 +142,16 @@ export default function CourseDetail() {
         )}
 
         {c.dupr_required && <EventSection c={c} />}
+
+        {standalone && venue && (venue.address || venue.phone || venue.line_url) && (
+          <section className="card">
+            <h3 className="card-title">主辦單位</h3>
+            <p><b>{venue.name}</b></p>
+            {venue.address && <p className="small"><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.address)}`} target="_blank" rel="noreferrer">{venue.address}</a></p>}
+            {venue.phone && <p className="small"><a href={`tel:${venue.phone}`}>{venue.phone}</a></p>}
+            {venue.line_url && <p className="small"><a href={venue.line_url} target="_blank" rel="noreferrer">LINE 聯絡主辦</a></p>}
+          </section>
+        )}
 
         {c.description && (
           <section className="card">
@@ -198,7 +222,9 @@ export default function CourseDetail() {
           <div className="dialog-icon success">✓</div>
           <h3 className="dialog-title">預約成功</h3>
           <p className="dialog-text">{showDate(c.date)} {c.start_time}<br />{c.name}</p>
-          <button className="btn btn-block" onClick={() => navigate('/me')}>查看預約紀錄</button>
+          {standalone
+            ? <button className="btn btn-block" onClick={() => setDialog(null)}>好</button>
+            : <button className="btn btn-block" onClick={() => navigate('/me')}>查看預約紀錄</button>}
         </Modal>
       )}
       {dialog === 'waitlisted' && (
@@ -206,7 +232,9 @@ export default function CourseDetail() {
           <div className="dialog-icon warn">⏳</div>
           <h3 className="dialog-title">已加入候補</h3>
           <p className="dialog-text">您目前是候補第 {c.waitlist_position} 位，<br />釋出名額會自動遞補並通知您。</p>
-          <button className="btn btn-block" onClick={() => navigate('/me')}>查看預約紀錄</button>
+          {standalone
+            ? <button className="btn btn-block" onClick={() => setDialog(null)}>好</button>
+            : <button className="btn btn-block" onClick={() => navigate('/me')}>查看預約紀錄</button>}
         </Modal>
       )}
       {dialog === 'full' && (
@@ -240,7 +268,7 @@ function EventSection({ c }) {
   const { user, handleError, showToast } = useApp()
   const [event, setEvent] = useState(undefined)
   const [scoring, setScoring] = useState(null)
-  const load = useCallback(() => api(`courses/${c.id}/event`).then((d) => setEvent(d.event)).catch(handleError), [c.id, handleError])
+  const load = useCallback(() => api(`courses/${c.id}/event?code=${c.share_code}`).then((d) => setEvent(d.event)).catch(handleError), [c.id, c.share_code, handleError])
   useEffect(() => { load() }, [load])
   if (event === undefined) return null
   const booked = ['booked', 'attended', 'absent'].includes(c.my_reservation?.status)
@@ -311,5 +339,22 @@ function PartnerBox({ courseId }) {
       )}
       {info.chosen_by.length > 0 && <p className="small text-brand">{info.chosen_by.map((u) => u.name).join('、')} 指定您為隊友</p>}
     </div>
+  )
+}
+
+// 一頁式活動頁的頂列：主辦名稱＋登入狀態（沒有返回與場館導覽）
+function StandaloneBar() {
+  const { venue, user } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  return (
+    <header className="topbar standalone-bar">
+      <span className="standalone-venue">{venue?.name || ''}</span>
+      <div className="topbar-right">
+        {user
+          ? <span className="standalone-user"><span className="player-avatar"><AvatarImg src={user.avatar_url} name={user.name} /></span>{user.name}</span>
+          : <button className="btn btn-small" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
+      </div>
+    </header>
   )
 }

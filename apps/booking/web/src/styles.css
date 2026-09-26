@@ -629,3 +629,11 @@ textarea.input { resize: vertical; }
 }
 .plan-player.picked { border-color: var(--brand); background: var(--brand-soft); box-shadow: 0 0 0 2px var(--brand-soft); }
 .input-small { width: auto; flex: none; padding: 6px 8px; font-size: 13px; }
+
+/* ---------------------------------------------------------------- 分享連結與一頁式活動頁 */
+
+.share-btn { width: 44px; padding: 0; font-size: 14px; font-weight: 600; color: var(--brand); }
+.share-box .share-url .input { font-size: 13px; color: var(--muted); }
+.standalone-bar { grid-template-columns: 1fr auto; }
+.standalone-venue { font-weight: 700; font-size: 15px; padding-left: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.standalone-user { display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; }

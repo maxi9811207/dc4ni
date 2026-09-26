@@ -4,6 +4,7 @@
 場主：排課、名單點名、老師、課卡方案、訂單、會員、場館設定。
 """
 import hashlib
+import html
 import json
 import os
 import re
@@ -147,8 +148,11 @@ MIGRATIONS = {
         "template_id": "INTEGER",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
+        "listed": "INTEGER NOT NULL DEFAULT 1",
+        "share_code": "TEXT NOT NULL DEFAULT ''",
     },
     "course_templates": {
+        "listed": "INTEGER NOT NULL DEFAULT 1",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
     },
@@ -331,6 +335,20 @@ def startup():
                 (os.getenv("BOOKING_OWNER_NAME", "場主"), phone, hash_password(password), "owner", stamp()))
         if os.getenv("BOOKING_SEED_DEMO") == "1" and not one(conn.execute("SELECT id FROM courses LIMIT 1")):
             seed_demo(conn)
+        for r in rows(conn.execute("SELECT id FROM courses WHERE share_code=''")):
+            conn.execute("UPDATE courses SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
+
+
+SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o、1/l/i
+
+
+def new_share_code(conn) -> str:
+    """課程的分享代碼（8 碼，不可猜），網址 /e/<代碼>。"""
+    while True:
+        code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
+        if not one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,))):
+            return code
 
 
 def seed_demo(conn):
@@ -470,6 +488,8 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "dupr_problem": dupr_problem(c, user) if user and not mine else None,
         "match_format": event_format(c),
         "games_to": c["games_to"],
+        "listed": bool(c["listed"]),
+        "share_code": c["share_code"],
     }
 
 
@@ -576,24 +596,50 @@ def list_courses(request: Request, user=Depends(current_user)):
     day = request.query_params.get("date") or now().date().isoformat()
     with db() as conn:
         s = get_settings(conn)
-        cs = rows(conn.execute("SELECT * FROM courses WHERE date=? ORDER BY start_time, id", (day,)))
+        cs = rows(conn.execute("SELECT * FROM courses WHERE date=? AND listed=1 ORDER BY start_time, id", (day,)))
         d = date.fromisoformat(day)
         return {"date": day, "weekday": WEEKDAYS[d.weekday()],
                 "show_reservation_count": s["show_reservation_count"],
                 "courses": [{**course_view(conn, c, user, s), "attendees": attendees(conn, c, 6)} for c in cs]}
 
 
+def can_see(conn, c: dict, user: dict | None, code: str | None = None) -> bool:
+    """不公開（只限連結）的課程：拿到分享代碼、場主、已報名／候補過的人才看得到。"""
+    if c["listed"] or (code and secrets.compare_digest(code, c["share_code"])):
+        return True
+    if user and user["role"] == "owner":
+        return True
+    return bool(user and one(conn.execute("SELECT id FROM reservations WHERE course_id=? AND user_id=?", (c["id"], user["id"]))))
+
+
+def detail_view(conn, c: dict, user: dict | None) -> dict:
+    v = course_view(conn, c, user, get_settings(conn))
+    allowed = v["plan_ids"]
+    plans = rows(conn.execute("SELECT id, name, type FROM plans WHERE active=1 ORDER BY sort, id"))
+    v["plans"] = [p for p in plans if not allowed or p["id"] in allowed]
+    v["cards"] = eligible_cards(conn, user["id"], c) if user else []
+    v["attendees"] = attendees(conn, c)
+    return v
+
+
+@app.get("/api/e/{code}")
+def share_detail(code: str, user=Depends(current_user)):
+    """分享網址 /e/<代碼> 的一頁式活動頁資料。"""
+    with db() as conn:
+        c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
+        if not c:
+            fail(404, "找不到這個活動，請確認連結是否正確")
+        return detail_view(conn, c, user)
+
+
 @app.get("/api/courses/{course_id}")
 def course_detail(course_id: int, user=Depends(current_user)):
     with db() as conn:
         c = get_course(conn, course_id)
-        v = course_view(conn, c, user, get_settings(conn))
-        allowed = v["plan_ids"]
-        plans = rows(conn.execute("SELECT id, name, type FROM plans WHERE active=1 ORDER BY sort, id"))
-        v["plans"] = [p for p in plans if not allowed or p["id"] in allowed]
-        v["cards"] = eligible_cards(conn, user["id"], c) if user else []
-        v["attendees"] = attendees(conn, c)
-        return v
+        if not can_see(conn, c, user):
+            fail(404, "找不到課程")
+        return detail_view(conn, c, user)
+
 
 
 @app.get("/api/teachers")
@@ -615,7 +661,7 @@ def teacher_detail(teacher_id: int, user=Depends(current_user)):
             fail(404, "找不到老師")
         s = get_settings(conn)
         today = now().date().isoformat()
-        cs = rows(conn.execute("SELECT * FROM courses WHERE teacher_id=? AND date>=? AND status='open'"
+        cs = rows(conn.execute("SELECT * FROM courses WHERE teacher_id=? AND date>=? AND status='open' AND listed=1"
                                " ORDER BY date, start_time LIMIT 20", (teacher_id, today)))
         return {**t, "courses": [course_view(conn, c, user, s) for c in cs],
                 "reviews": review_list(conn, "WHERE r.teacher_id=? AND r.hidden=0", (teacher_id,))}
@@ -929,6 +975,8 @@ async def reserve(course_id: int, request: Request, user=Depends(require_user)):
     with db() as conn:
         conn.execute("BEGIN IMMEDIATE")
         c = get_course(conn, course_id)
+        if not can_see(conn, c, user, str(b.get("code") or "")):
+            fail(404, "找不到課程")
         v = course_view(conn, c, user, get_settings(conn))
         if v["state"] not in ("book", "waitlist"):
             fail(400, f"此課程目前無法預約（{v['button']}）")
@@ -1159,9 +1207,12 @@ def game_label(c: dict, g: dict) -> str:
 
 
 @app.get("/api/courses/{course_id}/event")
-def course_event(course_id: int, user=Depends(current_user)):
+def course_event(course_id: int, request: Request, user=Depends(current_user)):
     with db() as conn:
-        return {"event": event_view(conn, get_course(conn, course_id), user)}
+        c = get_course(conn, course_id)
+        if not can_see(conn, c, user, request.query_params.get("code")):
+            fail(404, "找不到課程")
+        return {"event": event_view(conn, c, user)}
 
 
 @app.put("/api/courses/{course_id}/partner")
@@ -1398,7 +1449,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to")
+                 "match_format", "games_to", "listed")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -1416,7 +1467,7 @@ def clean_course(b: dict) -> dict:
         out["match_format"] = "rotating"
     if "games_to" in out:
         out["games_to"] = min(max(int(out["games_to"] or 11), 5), 25)
-    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only"):
+    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed"):
         if k in out:
             out[k] = 1 if out[k] else 0
     for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min"):
@@ -1441,7 +1492,8 @@ async def create_course(request: Request, owner=Depends(require_owner)):
     ids = []
     with db() as conn:
         for w in range(repeat):
-            row = {**data, "date": (first + timedelta(weeks=w)).isoformat(), "created_at": stamp()}
+            row = {**data, "date": (first + timedelta(weeks=w)).isoformat(), "created_at": stamp(),
+                   "share_code": new_share_code(conn)}
             cols = ",".join(row)
             cur = conn.execute(f"INSERT INTO courses ({cols}) VALUES ({','.join('?' * len(row))})",
                                tuple(row.values()))
@@ -1561,7 +1613,7 @@ async def schedule_template(template_id: int, request: Request, owner=Depends(re
                     skipped += 1
                 else:
                     row = {**base, "date": d.isoformat(), "start_time": start_time, "end_time": end_time,
-                           "template_id": template_id, "created_at": stamp()}
+                           "template_id": template_id, "created_at": stamp(), "share_code": new_share_code(conn)}
                     cur = conn.execute(f"INSERT INTO courses ({','.join(row)}) VALUES ({','.join('?' * len(row))})",
                                        tuple(row.values()))
                     created.append(cur.lastrowid)
@@ -2002,6 +2054,38 @@ def uploaded(name: str):
     if not path.is_file():
         fail(404, "not found")
     return FileResponse(path)
+
+
+@app.get("/e/{code}", include_in_schema=False)
+def share_page(code: str, request: Request):
+    """分享連結：給 LINE／FB 抓預覽（活動名稱、時間、封面），瀏覽器立即轉到一頁式活動頁。"""
+    base = public_base(request)
+    with db() as conn:
+        c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
+        s = get_settings(conn)
+        if not c:
+            return RedirectResponse(base, status_code=302)
+        booked, _ = course_counts(conn, c["id"])
+    d = date.fromisoformat(c["date"])
+    parts = [f"{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}", c["location"] or s["name"]]
+    if c["status"] == "cancelled":
+        parts.append("已停課")
+    elif s["show_reservation_count"]:
+        parts.append(f"已報名 {booked}/{c['capacity']}")
+    image = s["cover_url"]
+    if image and not re.match(r"^https?:", image):
+        image = base + image.lstrip("/")
+    target = f"{base}#/e/{c['share_code']}"
+    e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
+    meta = "".join(f'<meta property="{k}" content="{e(v)}">' for k, v in (
+        ("og:type", "website"), ("og:site_name", s["name"]), ("og:title", c["name"]),
+        ("og:description", "｜".join(parts)), ("og:url", f"{base}e/{c['share_code']}"), ("og:image", image)) if v)
+    page = (f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(c["name"])}｜{e(s["name"])}</title>'
+            f'<meta name="description" content="{e("｜".join(parts))}">{meta}<meta name="twitter:card" content="summary_large_image">'
+            f'<meta http-equiv="refresh" content="0;url={e(target)}"><script>location.replace({json.dumps(target)})</script>'
+            f'</head><body><a href="{e(target)}">前往報名頁</a></body></html>')
+    return Response(page, media_type="text/html; charset=utf-8")
 
 
 if STATIC_DIR.is_dir():

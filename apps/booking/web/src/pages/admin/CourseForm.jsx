@@ -10,7 +10,7 @@ const EMPTY = {
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11,
+  match_format: 'rotating', games_to: 11, listed: true,
 }
 
 // template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
@@ -143,6 +143,10 @@ export default function CourseForm({ template = false }) {
         <Field label="點數卡扣點" hint="堂數卡固定扣 1 堂；填 0 為免費課程"><input className="input" type="number" min="0" value={form.cost} onChange={set('cost', Number)} /></Field>
       </div>
       <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>
+      <label className="check">
+        <input type="checkbox" checked={!form.listed} onChange={(e) => setForm({ ...form, listed: !e.target.checked })} />
+        只限連結報名（不出現在課表，適合一次性活動；建立後到名單頁複製報名連結）
+      </label>
       <div className={`dupr-box ${form.dupr_required ? 'on' : ''}`}>
         <label className="check strong">
           <input type="checkbox" checked={form.dupr_required} onChange={(e) => setForm({ ...form, dupr_required: e.target.checked, category: e.target.checked && categories.includes('DUPR 場') ? 'DUPR 場' : form.category })} />
