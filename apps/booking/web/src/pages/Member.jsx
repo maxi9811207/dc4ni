@@ -233,3 +233,71 @@ function Account() {
     </>
   )
 }
+
+function Dupr() {
+  const { user, refreshUser, handleError, showToast } = useApp()
+  const [config, setConfig] = useState(null)
+  const [editing, setEditing] = useState(!user.dupr_id)
+  const [form, setForm] = useState({ dupr_id: user.dupr_id, doubles: user.dupr_doubles ?? '', singles: user.dupr_singles ?? '' })
+  const [busy, setBusy] = useState(false)
+  useEffect(() => { api('dupr/config').then(setConfig).catch(handleError) }, [handleError])
+  if (!config) return <Loading />
+
+  const run = async (fn, msg) => {
+    setBusy(true)
+    try { await fn(); await refreshUser(); showToast(msg); setEditing(false) } catch (e) { handleError(e) } finally { setBusy(false) }
+  }
+  const save = (e) => {
+    e.preventDefault()
+    run(() => api('me/dupr', { method: 'PUT', body: form }), '已綁定 DUPR 帳號')
+  }
+  const status = user.dupr_verified ? ['已驗證', 'success'] : user.dupr_source === 'api' ? ['DUPR 官方資料', 'brand'] : ['待場館核對', 'warn']
+
+  return (
+    <>
+      {user.dupr_id && !editing && (
+        <section className="card dupr-card">
+          <div className="row between">
+            <b className="big">DUPR 帳號</b>
+            <Badge tone={status[1]}>{status[0]}</Badge>
+          </div>
+          <p className="muted small">DUPR ID：<b className="text-brand">{user.dupr_id}</b>{user.dupr_name && ` · ${user.dupr_name}`}</p>
+          <div className="stats stats-2">
+            <div className="stat"><span>雙打 Doubles</span><b>{rating(user.dupr_doubles)}</b></div>
+            <div className="stat"><span>單打 Singles</span><b>{rating(user.dupr_singles)}</b></div>
+          </div>
+          <p className="muted small">更新時間 {showDateTime(user.dupr_synced_at)}</p>
+          <div className="admin-actions">
+            {config.api_enabled && <button className="btn btn-small" disabled={busy} onClick={() => run(() => api('me/dupr/refresh', { method: 'POST' }), '已從 DUPR 更新分數')}>從 DUPR 更新分數</button>}
+            <button className="btn btn-small btn-light" onClick={() => setEditing(true)}>{config.api_enabled ? '更換帳號' : '修改'}</button>
+            <button className="btn btn-small btn-light text-danger" disabled={busy} onClick={() => run(() => api('me/dupr', { method: 'PUT', body: { dupr_id: '' } }), '已解除綁定')}>解除綁定</button>
+          </div>
+        </section>
+      )}
+      {editing && (
+        <form className="card form" onSubmit={save}>
+          <h3 className="card-title nomargin">綁定 DUPR 帳號</h3>
+          <p className="muted small">綁定後即可報名「DUPR 場」，系統會依您的 DUPR 分數判斷是否符合該場的分數範圍。</p>
+          <Field label="DUPR ID" hint="打開 DUPR App → 個人頁面，名字下方的 8 碼英數字（例如 GB0NV05E）">
+            <input className="input" value={form.dupr_id} onChange={(e) => setForm({ ...form, dupr_id: e.target.value.toUpperCase() })} required placeholder="GB0NV05E" autoCapitalize="characters" />
+          </Field>
+          {config.api_enabled ? (
+            <p className="pay-info small">送出後會向 DUPR 取得您的姓名與最新單打、雙打分數。</p>
+          ) : (
+            <>
+              <div className="grid2">
+                <Field label="雙打分數"><input className="input" type="number" step="0.001" min="1" max="8" value={form.doubles} onChange={(e) => setForm({ ...form, doubles: e.target.value })} placeholder="3.500" /></Field>
+                <Field label="單打分數"><input className="input" type="number" step="0.001" min="1" max="8" value={form.singles} onChange={(e) => setForm({ ...form, singles: e.target.value })} placeholder="沒有請留空" /></Field>
+              </div>
+              <p className="alert warn small">請填寫 DUPR App 上顯示的分數，場館會核對您的 DUPR 帳號與分數。</p>
+            </>
+          )}
+          <div className="row gap">
+            {user.dupr_id && <button type="button" className="btn btn-light flex1" onClick={() => setEditing(false)}>取消</button>}
+            <button className="btn flex1" disabled={busy}>{busy ? '處理中…' : '綁定'}</button>
+          </div>
+        </form>
+      )}
+    </>
+  )
+}
