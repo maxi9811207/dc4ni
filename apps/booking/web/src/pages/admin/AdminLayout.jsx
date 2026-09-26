@@ -46,6 +46,7 @@ function pageTitle(pathname) {
   if (pathname === '/admin/notifications') return '通知'
   if (/^\/admin\/courses\/new/.test(pathname)) return '新增課程'
   if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯課程'
+  if (/^\/admin\/courses\/\d+\/event/.test(pathname)) return 'DUPR 賽事'
   if (/^\/admin\/courses\/\d+/.test(pathname)) return '名單點名'
   if (pathname === '/admin/courses') return '課程管理'
   if (pathname === '/admin/templates/new') return '新增課程範本'

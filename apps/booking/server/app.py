@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 
 import dupr
 import line_login
+import matches
 import reports
 
 DATA_DIR = Path(os.getenv("BOOKING_DATA_DIR", Path(__file__).parent / "data"))
@@ -107,6 +108,17 @@ CREATE TABLE IF NOT EXISTS course_templates (
 CREATE TABLE IF NOT EXISTS admin_notifications (
   id INTEGER PRIMARY KEY, kind TEXT NOT NULL, text TEXT NOT NULL, link TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS events (
+  id INTEGER PRIMARY KEY, course_id INTEGER NOT NULL UNIQUE, format TEXT NOT NULL, games_to INTEGER NOT NULL DEFAULT 11,
+  created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS event_groups (
+  id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0,
+  entries TEXT NOT NULL DEFAULT '[]');
+CREATE TABLE IF NOT EXISTS event_games (
+  id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL, group_id INTEGER NOT NULL, round INTEGER NOT NULL,
+  side_a TEXT NOT NULL, side_b TEXT NOT NULL, bye TEXT NOT NULL DEFAULT '[]', score_a INTEGER, score_b INTEGER,
+  status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
+CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, text TEXT NOT NULL,
   read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
@@ -133,6 +145,15 @@ MIGRATIONS = {
         "dupr_max": "REAL",
         "dupr_verified_only": "INTEGER NOT NULL DEFAULT 0",
         "template_id": "INTEGER",
+        "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
+        "games_to": "INTEGER NOT NULL DEFAULT 11",
+    },
+    "course_templates": {
+        "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
+        "games_to": "INTEGER NOT NULL DEFAULT 11",
+    },
+    "reservations": {
+        "partner_id": "INTEGER",
     },
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
@@ -401,6 +422,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
     start = course_start(c)
     t = now()
     remain = max(c["capacity"] - booked, 0)
+    event = bool(c["dupr_required"]) and has_event(conn, c["id"])
     if c["status"] == "cancelled":
         button, state = "停課", "disabled"
     elif mine and mine["status"] in ("booked", "attended", "absent"):
@@ -437,7 +459,8 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "my_reservation": mine,
         "waitlist_position": position,
         "can_cancel": bool(mine) and (mine["status"] == "waitlist" or
-                                      t < start - timedelta(minutes=c["cancel_deadline_min"])),
+                                      (t < start - timedelta(minutes=c["cancel_deadline_min"]) and not event)),
+        "has_event": event,
         "template_id": c["template_id"],
         "dupr_required": bool(c["dupr_required"]),
         "dupr_format": c["dupr_format"],
@@ -445,6 +468,8 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "dupr_max": c["dupr_max"],
         "dupr_verified_only": bool(c["dupr_verified_only"]),
         "dupr_problem": dupr_problem(c, user) if user and not mine else None,
+        "match_format": event_format(c),
+        "games_to": c["games_to"],
     }
 
 
@@ -935,6 +960,8 @@ def cancel(course_id: int, user=Depends(require_user)):
         if not r:
             fail(400, "您沒有預約這堂課")
         if not v["can_cancel"]:
+            if r["status"] != "waitlist" and has_event(conn, course_id):
+                fail(400, "團主已生成賽事，無法自行取消，請聯絡團主")
             fail(400, "已超過可自行取消的時間，請聯絡場館")
         conn.execute("UPDATE reservations SET status='cancelled', updated_at=? WHERE id=?", (stamp(), r["id"]))
         refund(conn, r)
@@ -1044,6 +1071,297 @@ def refresh_dupr(user=Depends(require_user)):
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
+# ---------------------------------------------------------------- DUPR 賽事（分組、賽程、比分）
+
+def event_format(c: dict) -> str:
+    """單打場一律單打循環賽；雙打場依團主選的輪換／固定搭檔。"""
+    if c["dupr_format"] == "singles":
+        return "singles"
+    return c["match_format"] if c["match_format"] in ("rotating", "fixed") else "rotating"
+
+
+def has_event(conn, course_id: int) -> bool:
+    return bool(conn.execute("SELECT 1 FROM events WHERE course_id=?", (course_id,)).fetchone())
+
+
+def course_players(conn, c: dict) -> list[dict]:
+    """已報名（含已點名）的球員，依該場依據的 DUPR 分數由高到低。"""
+    col = f"dupr_{c['dupr_format']}"
+    return rows(conn.execute(
+        f"SELECT u.id, u.name, u.avatar_url, u.{col} rating, u.dupr_verified, r.partner_id FROM reservations r"
+        " JOIN users u ON u.id=r.user_id WHERE r.course_id=? AND r.status IN ('booked','attended','absent')"
+        f" ORDER BY u.{col} IS NULL, u.{col} DESC, r.id", (c["id"],)))
+
+
+def game_row(g: dict) -> dict:
+    return {**g, "a": json.loads(g["side_a"]), "b": json.loads(g["side_b"]), "bye": json.loads(g["bye"])}
+
+
+def event_view(conn, c: dict, viewer: dict | None) -> dict | None:
+    ev = one(conn.execute("SELECT * FROM events WHERE course_id=?", (c["id"],)))
+    if not ev:
+        return None
+    groups = rows(conn.execute("SELECT * FROM event_groups WHERE event_id=? ORDER BY sort", (ev["id"],)))
+    games = [game_row(g) for g in rows(conn.execute(
+        "SELECT * FROM event_games WHERE event_id=? ORDER BY group_id, round", (ev["id"],)))]
+    ids = {p for g in groups for e in json.loads(g["entries"]) for p in e}
+    col = f"dupr_{c['dupr_format']}"
+    people = {u["id"]: u for u in rows(conn.execute(
+        f"SELECT id, name, avatar_url, {col} rating FROM users WHERE id IN ({','.join('?' * len(ids))})", tuple(ids)))} if ids else {}
+    is_owner = bool(viewer and viewer["role"] == "owner")
+    full = is_owner or bool(viewer and viewer["id"] in ids)  # 參賽者和團主看全名，其他人看遮罩姓名
+
+    def person(uid):
+        u = people.get(uid)
+        if not u:
+            return {"id": uid, "name": "（已刪除）", "avatar_url": "", "rating": None}
+        return {"id": uid, "name": u["name"] if full else mask_name(u["name"]), "avatar_url": u["avatar_url"],
+                "rating": u["rating"]}
+
+    me = viewer["id"] if viewer else None
+    out_groups = []
+    for grp in groups:
+        entries = json.loads(grp["entries"])
+        gg = [g for g in games if g["group_id"] == grp["id"]]
+        view_games = []
+        for g in gg:
+            mine = "a" if me in g["a"] else "b" if me in g["b"] else None
+            reporter_side = "a" if g["reported_by"] in g["a"] else "b" if g["reported_by"] in g["b"] else None
+            view_games.append({
+                "id": g["id"], "round": g["round"], "status": g["status"], "score_a": g["score_a"], "score_b": g["score_b"],
+                "a": [person(p) for p in g["a"]], "b": [person(p) for p in g["b"]], "bye": [person(p) for p in g["bye"]],
+                "mine": mine,
+                "reported_by": person(g["reported_by"])["name"] if g["reported_by"] else None,
+                "can_report": bool(mine) and g["status"] != "confirmed",
+                "can_confirm": bool(mine) and g["status"] == "reported" and reporter_side not in (None, mine),
+            })
+        table = matches.standings(ev["format"], entries, gg)
+        for r in table:
+            r["players"] = [person(p) for p in r["players"]]
+        out_groups.append({"id": grp["id"], "name": grp["name"], "entries": [[person(p) for p in e] for e in entries],
+                           "games": view_games, "standings": table})
+    done = sum(1 for g in games if g["status"] == "confirmed")
+    return {"id": ev["id"], "format": ev["format"], "format_name": matches.FORMATS[ev["format"]],
+            "games_to": ev["games_to"], "created_at": ev["created_at"], "groups": out_groups,
+            "progress": {"confirmed": done, "total": len(games)}, "is_player": bool(me in ids)}
+
+
+def get_game(conn, game_id: int) -> tuple[dict, dict, dict]:
+    g = one(conn.execute("SELECT * FROM event_games WHERE id=?", (game_id,)))
+    if not g:
+        fail(404, "找不到這場比賽")
+    ev = one(conn.execute("SELECT * FROM events WHERE id=?", (g["event_id"],)))
+    return game_row(g), ev, get_course(conn, ev["course_id"])
+
+
+def game_label(c: dict, g: dict) -> str:
+    return f"{course_label(c)} 第 {g['round']} 局"
+
+
+@app.get("/api/courses/{course_id}/event")
+def course_event(course_id: int, user=Depends(current_user)):
+    with db() as conn:
+        return {"event": event_view(conn, get_course(conn, course_id), user)}
+
+
+@app.put("/api/courses/{course_id}/partner")
+async def set_partner(course_id: int, request: Request, user=Depends(require_user)):
+    """固定搭檔場：已報名的學員用對方的手機或信箱指定隊友（對方也要已報名）。"""
+    b = await request.json()
+    contact = str(b.get("contact", "")).strip()
+    with db() as conn:
+        c = get_course(conn, course_id)
+        if event_format(c) != "fixed":
+            fail(400, "這場不是固定搭檔賽制")
+        if has_event(conn, course_id):
+            fail(400, "團主已生成賽事，無法更改隊友")
+        mine = one(conn.execute("SELECT * FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')",
+                                (course_id, user["id"])))
+        if not mine:
+            fail(400, "報名這場之後才能指定隊友")
+        partner = None
+        if contact:
+            partner = one(conn.execute("SELECT id, name FROM users WHERE email=? OR phone=?",
+                                       (contact.lower(), clean_phone(contact))))
+            if not partner or partner["id"] == user["id"]:
+                fail(400, "找不到這位球員，請確認手機或信箱")
+            if not one(conn.execute("SELECT id FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')",
+                                    (course_id, partner["id"]))):
+                fail(400, f"{partner['name']} 還沒有報名這場")
+            notify(conn, partner["id"], f"{user['name']} 在{course_label(c)}指定您為隊友。")
+        conn.execute("UPDATE reservations SET partner_id=? WHERE id=?", (partner["id"] if partner else None, mine["id"]))
+        return {"partner": partner}
+
+
+@app.get("/api/courses/{course_id}/partner")
+def get_partner(course_id: int, user=Depends(require_user)):
+    with db() as conn:
+        r = one(conn.execute("SELECT partner_id FROM reservations WHERE course_id=? AND user_id=? AND status IN ('booked','attended','absent')",
+                             (course_id, user["id"])))
+        pid = r["partner_id"] if r else None
+        partner = one(conn.execute("SELECT id, name FROM users WHERE id=?", (pid,))) if pid else None
+        chosen_by = rows(conn.execute(
+            "SELECT u.id, u.name FROM reservations r JOIN users u ON u.id=r.user_id WHERE r.course_id=? AND r.partner_id=?"
+            " AND r.status IN ('booked','attended','absent')", (course_id, user["id"])))
+        return {"partner": partner, "chosen_by": chosen_by}
+
+
+def check_score_side(g: dict, user: dict) -> str:
+    side = "a" if user["id"] in g["a"] else "b" if user["id"] in g["b"] else None
+    if not side:
+        fail(403, "只有這場的球員可以回報比分")
+    return side
+
+
+@app.post("/api/event-games/{game_id}/report")
+async def report_score(game_id: int, request: Request, user=Depends(require_user)):
+    """球員回報比分；由對手確認後才算數。回報後改分也要重新確認。"""
+    b = await request.json()
+    with db() as conn:
+        g, ev, c = get_game(conn, game_id)
+        side = check_score_side(g, user)
+        if g["status"] == "confirmed":
+            fail(400, "這場比分已確認，如需修改請聯絡團主")
+        problem = matches.score_problem(b.get("score_a"), b.get("score_b"), ev["games_to"], strict=True)
+        if problem:
+            fail(400, problem)
+        conn.execute("UPDATE event_games SET score_a=?, score_b=?, status='reported', reported_by=?, confirmed_by=NULL,"
+                     " updated_at=? WHERE id=?", (int(b["score_a"]), int(b["score_b"]), user["id"], stamp(), game_id))
+        other = g["b"] if side == "a" else g["a"]
+        for uid in other:
+            notify(conn, uid, f"{user['name']} 回報了{game_label(c, g)}的比分 {b['score_a']}:{b['score_b']}，請確認。")
+        return {"ok": True}
+
+
+@app.post("/api/event-games/{game_id}/confirm")
+def confirm_score(game_id: int, user=Depends(require_user)):
+    with db() as conn:
+        g, ev, c = get_game(conn, game_id)
+        side = check_score_side(g, user)
+        if g["status"] != "reported":
+            fail(400, "這場還沒有人回報比分" if g["status"] == "pending" else "這場比分已確認")
+        if g["reported_by"] in (g["a"] if side == "a" else g["b"]):
+            fail(400, "需由對手確認比分")
+        conn.execute("UPDATE event_games SET status='confirmed', confirmed_by=?, updated_at=? WHERE id=?",
+                     (user["id"], stamp(), game_id))
+        return {"ok": True}
+
+
+def event_admin_view(conn, c: dict, owner: dict) -> dict:
+    fmt = event_format(c)
+    players = course_players(conn, c)
+    return {"course": {k: c[k] for k in ("id", "name", "date", "start_time", "end_time", "dupr_format", "games_to")},
+            "format": fmt, "format_name": matches.FORMATS[fmt],
+            "players": [{k: p[k] for k in ("id", "name", "avatar_url", "rating", "dupr_verified", "partner_id")} for p in players],
+            "event": event_view(conn, c, owner)}
+
+
+@app.get("/api/admin/courses/{course_id}/event")
+def admin_event(course_id: int, owner=Depends(require_owner)):
+    """賽事現況；還沒生成時附上建議分組（依 DUPR 分數），團主可調整後再生成。"""
+    with db() as conn:
+        c = get_course(conn, course_id)
+        out = event_admin_view(conn, c, owner)
+        out["plan"], out["plan_error"] = None, None
+        if not out["event"]:
+            players = course_players(conn, c)
+            rating = {p["id"]: p["rating"] for p in players}
+            ids = [p["id"] for p in players]
+            try:
+                if out["format"] == "fixed":
+                    entries = matches.pair_teams(ids, rating, {p["id"]: p["partner_id"] for p in players})
+                else:
+                    entries = [[i] for i in ids]
+                out["plan"] = matches.plan_groups(out["format"], entries, rating)
+            except ValueError as e:
+                out["plan_error"] = str(e)
+        return out
+
+
+@app.post("/api/admin/courses/{course_id}/event")
+async def create_event(course_id: int, request: Request, owner=Depends(require_owner)):
+    """依團主確認的分組生成賽程。groups：[[參賽單位, …], …]，參賽單位是 [球員] 或 [球員, 隊友]。"""
+    b = await request.json()
+    with db() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        c = get_course(conn, course_id)
+        if not c["dupr_required"]:
+            fail(400, "只有 DUPR 場可以生成賽事")
+        if has_event(conn, course_id):
+            fail(400, "這場已經有賽事，要重新生成請先刪除")
+        fmt = event_format(c)
+        size = matches.entry_size(fmt)
+        try:
+            groups = [[[int(p) for p in e] for e in grp] for grp in b.get("groups") or [] if grp]
+        except (TypeError, ValueError):
+            fail(400, "分組資料格式錯誤")
+        if not groups:
+            fail(400, "請先分組")
+        booked = {p["id"]: p for p in course_players(conn, c)}
+        seen = [p for grp in groups for e in grp for p in e]
+        if len(seen) != len(set(seen)):
+            fail(400, "同一位球員不能出現兩次")
+        if set(seen) != set(booked):
+            missing = [booked[i]["name"] for i in booked if i not in seen]
+            fail(400, f"還有人沒有分組：{'、'.join(missing)}" if missing else "分組中有人沒有報名這場")
+        for i, grp in enumerate(groups):
+            if any(len(e) != size for e in grp):
+                fail(400, "固定搭檔每隊需要 2 人" if size == 2 else "分組資料格式錯誤")
+            if len(grp) < matches.min_group(fmt):
+                fail(400, f"{matches.GROUP_NAMES[i]} 組人數不足（{matches.FORMATS[fmt]}每組至少 {matches.min_group(fmt)} {'隊' if size == 2 else '人'}）")
+            if fmt == "rotating" and len(grp) > 7:
+                fail(400, f"{matches.GROUP_NAMES[i]} 組超過 7 人，請再分一組")
+        cur = conn.execute("INSERT INTO events (course_id, format, games_to, created_at) VALUES (?,?,?,?)",
+                           (course_id, fmt, c["games_to"] or 11, stamp()))
+        ev_id = cur.lastrowid
+        for i, grp in enumerate(groups):
+            gid = conn.execute("INSERT INTO event_groups (event_id, name, sort, entries) VALUES (?,?,?,?)",
+                               (ev_id, f"{matches.GROUP_NAMES[i]} 組", i, json.dumps(grp))).lastrowid
+            try:
+                sched = matches.schedule(fmt, grp)
+            except ValueError as e:
+                fail(400, str(e))
+            for n, g in enumerate(sched, 1):
+                conn.execute("INSERT INTO event_games (event_id, group_id, round, side_a, side_b, bye, updated_at)"
+                             " VALUES (?,?,?,?,?,?,?)", (ev_id, gid, n, json.dumps(g["a"]), json.dumps(g["b"]),
+                                                         json.dumps(g["bye"]), stamp()))
+            for e in grp:
+                for p in e:
+                    notify(conn, p, f"{course_label(c)}賽事已生成，您在 {matches.GROUP_NAMES[i]} 組，"
+                                    f"共 {sum(1 for g in sched if p in g['a'] + g['b'])} 局。")
+        return event_admin_view(conn, c, owner)
+
+
+@app.delete("/api/admin/courses/{course_id}/event")
+def delete_event(course_id: int, owner=Depends(require_owner)):
+    with db() as conn:
+        ev = one(conn.execute("SELECT id FROM events WHERE course_id=?", (course_id,)))
+        if not ev:
+            fail(404, "這場還沒有賽事")
+        conn.execute("DELETE FROM event_games WHERE event_id=?", (ev["id"],))
+        conn.execute("DELETE FROM event_groups WHERE event_id=?", (ev["id"],))
+        conn.execute("DELETE FROM events WHERE id=?", (ev["id"],))
+        return {"ok": True}
+
+
+@app.put("/api/admin/event-games/{game_id}")
+async def admin_score(game_id: int, request: Request, owner=Depends(require_owner)):
+    """團主登錄或修改比分，直接算確認；clear=true 清除比分。"""
+    b = await request.json()
+    with db() as conn:
+        g, ev, c = get_game(conn, game_id)
+        if b.get("clear"):
+            conn.execute("UPDATE event_games SET score_a=NULL, score_b=NULL, status='pending', reported_by=NULL,"
+                         " confirmed_by=NULL, updated_at=? WHERE id=?", (stamp(), game_id))
+            return {"ok": True}
+        problem = matches.score_problem(b.get("score_a"), b.get("score_b"), ev["games_to"], strict=False)
+        if problem:
+            fail(400, problem)
+        conn.execute("UPDATE event_games SET score_a=?, score_b=?, status='confirmed', confirmed_by=?, updated_at=?"
+                     " WHERE id=?", (int(b["score_a"]), int(b["score_b"]), owner["id"], stamp(), game_id))
+        return {"ok": True}
+
+
 # ---------------------------------------------------------------- owner API
 
 @app.get("/api/admin/dashboard")
@@ -1079,7 +1397,8 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
-                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id")
+                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
+                 "match_format", "games_to")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -1093,6 +1412,10 @@ def clean_course(b: dict) -> dict:
             out[k] = round(float(out[k]), 3) if out[k] not in (None, "") else None
     if out.get("dupr_format") not in (None, "doubles", "singles"):
         out["dupr_format"] = "doubles"
+    if out.get("match_format") not in (None, "rotating", "fixed"):
+        out["match_format"] = "rotating"
+    if "games_to" in out:
+        out["games_to"] = min(max(int(out["games_to"] or 11), 5), 25)
     for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only"):
         if k in out:
             out[k] = 1 if out[k] else 0
@@ -1389,6 +1712,8 @@ async def update_reservation(res_id: int, request: Request, owner=Depends(requir
         if not r:
             fail(404, "找不到預約")
         c = get_course(conn, r["course_id"])
+        if status == "cancelled" and r["status"] != "waitlist" and has_event(conn, c["id"]):
+            fail(400, "這場已生成賽事，請先到「賽事」刪除賽事再取消預約")
         if r["status"] == "waitlist" and status == "booked":
             card_id, charged = charge(conn, r["user_id"], c, None)
             conn.execute("UPDATE reservations SET card_id=?, charged=? WHERE id=?", (card_id, charged, res_id))
@@ -1576,6 +1901,7 @@ def delete_member(user_id: int, owner=Depends(require_owner)):
             fail(404, "找不到會員")
         freed = [r["course_id"] for r in conn.execute(
             "SELECT course_id FROM reservations WHERE user_id=? AND status='booked'", (user_id,))]
+        conn.execute("UPDATE reservations SET partner_id=NULL WHERE partner_id=?", (user_id,))
         for table in ("tokens", "reservations", "cards", "orders", "reviews", "notifications"):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
         conn.execute("DELETE FROM users WHERE id=?", (user_id,))

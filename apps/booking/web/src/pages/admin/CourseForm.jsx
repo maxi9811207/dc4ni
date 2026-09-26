@@ -10,6 +10,7 @@ const EMPTY = {
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
+  match_format: 'rotating', games_to: 11,
 }
 
 // template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
@@ -161,6 +162,20 @@ export default function CourseForm({ template = false }) {
               <Field label="最高分" hint="留空＝不限"><input className="input" type="number" step="0.001" min="1" max="8" value={form.dupr_max} onChange={set('dupr_max')} placeholder="4.000" /></Field>
             </div>
             <label className="check"><input type="checkbox" checked={form.dupr_verified_only} onChange={set('dupr_verified_only')} /> 只限場館已驗證的 DUPR 帳號</label>
+            <div className="grid2">
+              <Field label="賽制" hint={form.dupr_format === 'singles' ? '單打場固定為單打循環賽' : form.match_format === 'fixed' ? '兩人一隊，學員可指定隊友' : '每局換搭檔，每組 4～7 人'}>
+                <select className="input" value={form.dupr_format === 'singles' ? 'singles' : form.match_format} onChange={set('match_format')} disabled={form.dupr_format === 'singles'}>
+                  {form.dupr_format === 'singles' && <option value="singles">單打循環賽</option>}
+                  <option value="rotating">輪換搭檔</option>
+                  <option value="fixed">固定搭檔</option>
+                </select>
+              </Field>
+              <Field label="每局分數" hint="領先 2 分獲勝">
+                <select className="input" value={form.games_to} onChange={set('games_to', Number)}>
+                  {[11, 15, 21].map((n) => <option key={n} value={n}>打到 {n} 分</option>)}
+                </select>
+              </Field>
+            </div>
           </>
         )}
       </div>

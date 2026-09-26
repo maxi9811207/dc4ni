@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api } from '../api'
-import { Avatar, Badge, Confirm, Loading, Modal, TopBar } from '../components/ui'
+import EventBoard, { ScoreModal } from '../components/EventBoard'
+import { Avatar, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
 import { cardRemain, duprRange, hours, rating, showDate } from '../util'
 
 export default function CourseDetail() {
@@ -61,7 +62,7 @@ export default function CourseDetail() {
       return setDialog('full')
     }
     if (c.state === 'booked' || c.state === 'waiting') {
-      if (!c.can_cancel) return showToast('已超過可自行取消的時間，請聯絡場館')
+      if (!c.can_cancel) return showToast(c.has_event && c.state === 'booked' ? '團主已生成賽事，無法自行取消，請聯絡團主' : '已超過可自行取消的時間，請聯絡場館')
       return setDialog('cancel')
     }
   }
@@ -69,7 +70,7 @@ export default function CourseDetail() {
   const primaryLabel = {
     book: c.cost === 0 ? '立即預約（免費）' : '立即預約',
     waitlist: '額滿，加入候補',
-    booked: '取消預約',
+    booked: c.has_event ? '已排入賽事' : '取消預約',
     waiting: `取消候補（第 ${c.waitlist_position} 位）`,
   }[c.state] || c.button
 
@@ -125,6 +126,8 @@ export default function CourseDetail() {
             )}
           </section>
         )}
+
+        {c.dupr_required && <EventSection c={c} />}
 
         {c.description && (
           <section className="card">
@@ -182,8 +185,8 @@ export default function CourseDetail() {
 
       <div className="action-bar">
         <button
-          className={`btn btn-block btn-lg ${c.state === 'waitlist' ? 'btn-warn' : ''} ${['booked', 'waiting'].includes(c.state) ? 'btn-outline-danger' : ''}`}
-          disabled={busy || c.state === 'disabled'}
+          className={`btn btn-block btn-lg ${c.state === 'waitlist' ? 'btn-warn' : ''} ${['booked', 'waiting'].includes(c.state) && !(c.has_event && c.state === 'booked') ? 'btn-outline-danger' : ''}`}
+          disabled={busy || c.state === 'disabled' || (c.has_event && c.state === 'booked')}
           onClick={onPrimary}
         >
           {busy ? '處理中…' : primaryLabel}
@@ -224,5 +227,89 @@ export default function CourseDetail() {
           onClose={() => setDialog(null)} onOk={() => navigate('/plans')} />
       )}
     </>
+  )
+}
+
+const FORMAT_TEXT = {
+  rotating: '輪換搭檔：每組 4～7 人一面場，每局換搭檔，和同組每個人盡量都搭檔一次',
+  fixed: '固定搭檔：兩人一隊，同組隊伍互打一輪',
+  singles: '單打循環賽：同組每人互打一場',
+}
+
+function EventSection({ c }) {
+  const { user, handleError, showToast } = useApp()
+  const [event, setEvent] = useState(undefined)
+  const [scoring, setScoring] = useState(null)
+  const load = useCallback(() => api(`courses/${c.id}/event`).then((d) => setEvent(d.event)).catch(handleError), [c.id, handleError])
+  useEffect(() => { load() }, [load])
+  if (event === undefined) return null
+  const booked = ['booked', 'attended', 'absent'].includes(c.my_reservation?.status)
+
+  const report = async (a, b) => {
+    try {
+      await api(`event-games/${scoring.id}/report`, { method: 'POST', body: { score_a: a, score_b: b } })
+      setScoring(null)
+      showToast('已送出，等待對手確認')
+      load()
+    } catch (e) { handleError(e) }
+  }
+  const confirm = async (g) => {
+    try {
+      await api(`event-games/${g.id}/confirm`, { method: 'POST' })
+      showToast('比分已確認')
+      load()
+    } catch (e) { handleError(e) }
+  }
+
+  return (
+    <>
+      <section className="card">
+        <div className="row between">
+          <h3 className="card-title nomargin">賽事</h3>
+          {event && <span className="muted small">已確認 {event.progress.confirmed} / {event.progress.total} 局</span>}
+        </div>
+        <p className="small">{FORMAT_TEXT[c.match_format]}；每局打到 {c.games_to} 分、領先 2 分獲勝。</p>
+        {!event && <p className="muted small">報名人數到齊後，團主會依 DUPR 分數分組並生成賽程，屆時會通知您。</p>}
+        {event?.is_player && <p className="muted small">打完後由任一方回報比分，對手按「確認比分」才算數。</p>}
+        {!event && c.match_format === 'fixed' && booked && user && <PartnerBox courseId={c.id} />}
+      </section>
+      {event && <EventBoard event={event} me={user?.id} onScore={setScoring} onConfirm={confirm} />}
+      {scoring && <ScoreModal game={scoring} gamesTo={event.games_to} onClose={() => setScoring(null)} onSave={report} />}
+    </>
+  )
+}
+
+function PartnerBox({ courseId }) {
+  const { handleError, showToast } = useApp()
+  const [info, setInfo] = useState(null)
+  const [contact, setContact] = useState('')
+  const load = useCallback(() => api(`courses/${courseId}/partner`).then(setInfo).catch(handleError), [courseId, handleError])
+  useEffect(() => { load() }, [load])
+  if (!info) return null
+  const save = async (value) => {
+    try {
+      const r = await api(`courses/${courseId}/partner`, { method: 'PUT', body: { contact: value } })
+      showToast(r.partner ? `已指定隊友：${r.partner.name}` : '已取消指定隊友')
+      setContact('')
+      load()
+    } catch (e) { handleError(e) }
+  }
+  return (
+    <div className="partner-box">
+      {info.partner ? (
+        <div className="row between">
+          <span className="small">我的隊友：<b>{info.partner.name}</b></span>
+          <button className="btn btn-small btn-light" onClick={() => save('')}>取消指定</button>
+        </div>
+      ) : (
+        <form className="row gap" onSubmit={(e) => { e.preventDefault(); save(contact) }}>
+          <Field label="指定隊友（選填）" hint="輸入對方註冊的手機或信箱，對方也要報名這場；沒指定的由團主依分數配對">
+            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="手機或信箱" />
+          </Field>
+          <button className="btn btn-small" disabled={!contact.trim()}>指定</button>
+        </form>
+      )}
+      {info.chosen_by.length > 0 && <p className="small text-brand">{info.chosen_by.map((u) => u.name).join('、')} 指定您為隊友</p>}
+    </div>
   )
 }

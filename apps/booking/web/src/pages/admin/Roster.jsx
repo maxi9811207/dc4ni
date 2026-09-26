@@ -38,7 +38,12 @@ export default function Roster() {
         </div>
         <h2 className="detail-title">{c.name}</h2>
         <p className="course-meta"><b className="course-time">{showDate(c.date)} {c.start_time}~{c.end_time}</b> · {c.teacher?.name || '未指定老師'}</p>
-        {c.dupr_required && <p className="small"><Badge tone="dupr">DUPR 場</Badge> {duprRange(c)}</p>}
+        {c.dupr_required && (
+          <div className="row between">
+            <p className="small"><Badge tone="dupr">DUPR 場</Badge> {duprRange(c)}</p>
+            <Link to={`/admin/courses/${c.id}/event`} className="btn btn-small">賽事</Link>
+          </div>
+        )}
         <div className="stats stats-3">
           <div className="stat"><span>預約</span><b>{c.booked_count}/{c.capacity}</b></div>
           <div className="stat"><span>出席</span><b>{c.roster.filter((r) => r.status === 'attended').length}</b></div>

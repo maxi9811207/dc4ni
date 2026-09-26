@@ -16,6 +16,7 @@ import Dashboard from './pages/admin/Dashboard'
 import AdminCourses from './pages/admin/AdminCourses'
 import CourseForm from './pages/admin/CourseForm'
 import Roster from './pages/admin/Roster'
+import EventAdmin from './pages/admin/EventAdmin'
 import AdminTeachers from './pages/admin/AdminTeachers'
 import AdminPlans from './pages/admin/AdminPlans'
 import AdminOrders from './pages/admin/AdminOrders'
@@ -124,6 +125,7 @@ export default function App() {
             <Route path="courses/new" element={<CourseForm />} />
             <Route path="courses/:id/edit" element={<CourseForm />} />
             <Route path="courses/:id" element={<Roster />} />
+            <Route path="courses/:id/event" element={<EventAdmin />} />
             <Route path="teachers" element={<AdminTeachers />} />
             <Route path="plans" element={<AdminPlans />} />
             <Route path="orders" element={<AdminOrders />} />
