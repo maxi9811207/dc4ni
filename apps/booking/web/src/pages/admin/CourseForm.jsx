@@ -3,8 +3,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../../App'
 import { BASE, api } from '../../api'
 import ImageInput from '../../components/ImageInput'
-import { Field, Loading } from '../../components/ui'
-import { PLAN_TYPES, addDays, fromISO, today } from '../../util'
+import { Field, Loading, UpgradeNote } from '../../components/ui'
+import { PLAN_TYPES, addDays, fromISO, planOf, today } from '../../util'
 
 const EMPTY = {
   name: '', category: '', teacher_id: '', substitute: false, date: today(), start_time: '19:00', end_time: '21:00',
@@ -172,6 +172,8 @@ export default function CourseForm({ template = false, slotId }) {
   }
 
   const types = TYPES.filter(([k]) => !(template && k === 'slots'))
+  const plan = planOf(venue)
+  const typeFeature = { dupr: 'dupr', slots: 'slots' }
   let n = 0
   const step = () => ++n
 
@@ -189,8 +191,10 @@ export default function CourseForm({ template = false, slotId }) {
         <Step n={step()} title="這是哪一種活動？">
           <div className="type-picks">
             {types.map(([k, label, desc]) => (
-              <button key={k} type="button" className={`type-pick ${type === k ? 'on' : ''}`} onClick={() => pickType(k)} aria-pressed={type === k}>
+              <button key={k} type="button" className={`type-pick ${type === k ? 'on' : ''}`} onClick={() => pickType(k)} aria-pressed={type === k}
+                disabled={typeFeature[k] && !plan.has(typeFeature[k])}>
                 <b>{label}</b><span>{desc}</span>
+                {typeFeature[k] && !plan.has(typeFeature[k]) && <UpgradeNote compact need={plan.needs(typeFeature[k])} />}
               </button>
             ))}
           </div>
@@ -261,10 +265,11 @@ export default function CourseForm({ template = false, slotId }) {
       <Step n={step()} title="要收費嗎？" tag="必填">
         <div className="seg">
           <button type="button" className={payMode === 'free' ? 'active' : ''} onClick={() => setPayMode('free')}>免費</button>
-          <button type="button" className={payMode === 'fee' ? 'active' : ''} onClick={() => setPayMode('fee')}>付費（匯款）</button>
-          {plans.length > 0 && <button type="button" className={payMode === 'card' ? 'active' : ''} onClick={() => setPayMode('card')}>扣課卡</button>}
+          <button type="button" className={payMode === 'fee' ? 'active' : ''} disabled={!plan.has('fee')} onClick={() => setPayMode('fee')}>付費（匯款）</button>
+          {plans.length > 0 && plan.has('cards') && <button type="button" className={payMode === 'card' ? 'active' : ''} onClick={() => setPayMode('card')}>扣課卡</button>}
         </div>
         {payMode === 'free' && <p className="muted small">球友按報名就完成，不用付錢。</p>}
+        {!plan.has('fee') && <UpgradeNote feature="收費對帳" need={plan.needs('fee')} />}
         {payMode === 'fee' && (
           <>
             <Field label={isSlots ? '每個時段的費用（NT$）' : '報名費（NT$）'}>

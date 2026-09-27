@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>我的帳號｜Digital Court</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="/"><img src="/favicon.svg" alt="">Digital Court</a>
+  <a class="link" href="/console" id="console-link" hidden>平台管理</a><a class="link" href="#" id="logout" hidden>登出</a></div></header>
+<main class="narrow">
+  <!-- 登入 -->
+  <section class="card" id="login-box" hidden>
+    <h1>登入</h1>
+    <p class="lead">用註冊時的 Email 與密碼登入，管理你的場館與訂閱。</p>
+    <form id="login" novalidate class="card" style="padding:0;gap:12px">
+      <label>Email <input name="email" type="email" autocomplete="email" required></label>
+      <label>密碼 <input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn block">登入</button>
+    </form>
+    <p class="hint"><a href="#" id="forgot-link">忘記密碼？</a>　還沒有帳號？<a href="/signup">開始使用</a></p>
+  </section>
+  <!-- 忘記密碼 -->
+  <section class="card" id="forgot-box" hidden>
+    <h1>重設密碼</h1>
+    <form id="forgot" novalidate class="card" style="padding:0;gap:12px">
+      <div class="row"><label class="grow">Email <input name="email" type="email" required></label><button class="btn ghost small" type="button" id="fsend" style="align-self:flex-end">寄驗證碼</button></div>
+      <label>驗證碼 <input name="code" inputmode="numeric" maxlength="6"></label>
+      <label>新密碼 <small>至少 8 碼</small><input name="password" type="password" autocomplete="new-password"></label>
+      <button class="btn block">重設並登入</button>
+    </form>
+    <p class="hint"><a href="#" id="back-login">回登入</a></p>
+  </section>
+  <!-- 場館 -->
+  <section id="home" hidden style="display:grid;gap:14px">
+    <div><h1 id="hello">我的場館</h1><p class="lead">在這裡進後台、管理訂閱與付款方式。</p></div>
+    <div id="list" style="display:grid;gap:12px"></div>
+    <a class="btn ghost block" href="/signup">＋ 再開一個場館</a>
+  </section>
+  <p class="msg" id="msg" hidden></p>
+</main>
+<footer><a href="/terms">服務條款</a> · <a href="/privacy">隱私權政策</a> · 有問題請來信 dc@dc-tools.cc</footer>
+<script src="/platform.js"></script>
+<script>
+(function () {
+  var msg = DC.$('#msg')
+  var show = function (id) { ['#login-box', '#forgot-box', '#home'].forEach(function (x) { DC.$(x).hidden = x !== id }) }
+  var next = new URLSearchParams(location.search).get('next')
+
+  function tenantCard(t) {
+    var status = '<span class="badge ' + t.status + '">' + (DC.STATUS[t.status] || t.status) + '</span>'
+    var bill = t.comp ? 'Digital Court 提供，不需付費' : DC.money(t.price) + '／' + (t.billing_cycle === 'year' ? '年' : '月')
+    if (!t.comp && t.period_end && ['active', 'past_due'].indexOf(t.status) >= 0) bill += t.cancel_at_period_end ? '・' + DC.day(t.period_end) + ' 停止' : '・下次扣款 ' + DC.day(t.period_end)
+    var warn = ''
+    if (t.status === 'pending') warn = '<p class="msg bad">還沒完成付款，付款後場館就會開通。</p>'
+    if (t.status === 'past_due') warn = '<p class="msg bad">這期扣款失敗，請在 ' + DC.day(t.grace_until) + ' 前按「管理訂閱」更新付款方式，逾期場館會暫停。</p>'
+    if (t.status === 'suspended' || t.status === 'cancelled') warn = '<p class="msg err">場館暫停服務中（資料都還在），重新訂閱後馬上恢復。</p>'
+    var btns = []
+    if (['active', 'past_due', 'suspended', 'cancelled'].indexOf(t.status) >= 0) btns.push('<button class="btn small" data-act="enter" data-slug="' + t.slug + '">進入後台</button>')
+    if (t.status === 'pending') btns.push('<button class="btn small" data-act="pay" data-slug="' + t.slug + '">完成付款</button>')
+    if ((t.status === 'cancelled' || t.status === 'suspended') && !t.comp) btns.push('<button class="btn small" data-act="pay" data-slug="' + t.slug + '">重新訂閱</button>')
+    if (!t.comp && t.status !== 'pending') btns.push('<button class="btn ghost small" data-act="portal" data-slug="' + t.slug + '">管理訂閱（升級、付款方式、收據）</button>')
+    var domain = ''
+    if (t.features.indexOf('domain') >= 0) {
+      domain = '<details><summary class="hint" style="cursor:pointer">自訂網域' + (t.custom_domain ? '：' + DC.esc(t.custom_domain) + '（' + ({ pending: '等待設定', approved: '開通中', active: '已啟用', failed: '設定失敗' }[t.domain_status] || '') + '）' : '') + '</summary>' +
+        '<form data-domain="' + t.slug + '" class="row" style="margin-top:8px"><input class="grow" name="domain" placeholder="booking.yourclub.tw" value="' + DC.esc(t.custom_domain) + '"><button class="btn ghost small">儲存</button></form>' +
+        '<p class="hint">在你的網域 DNS 新增一筆 A 記錄指向 <b>172.237.11.215</b>，儲存後我們會確認並開通 HTTPS（通常一個工作天內）。還沒有網域的話來信 dc@dc-tools.cc，我們協助購買與設定。</p></details>'
+    }
+    return '<section class="card tenant"><div class="row" style="justify-content:space-between"><h2>' + DC.esc(t.name) + '</h2>' + status + '</div>' +
+      '<p class="meta">' + DC.esc(t.plan_name) + '方案・' + bill + (t.url ? '<br><a href="' + DC.esc(t.url) + '" target="_blank">' + DC.esc(t.url.replace(/^https?:\/\//, '')) + '</a>' : '') + '</p>' +
+      warn + '<div class="actions">' + btns.join('') + '</div>' + domain + '</section>'
+  }
+
+  function load() {
+    DC.api('me').then(function (me) {
+      if (next) { location.href = next; return }
+      show('#home')
+      DC.$('#logout').hidden = false
+      DC.$('#console-link').hidden = !me.is_admin
+      DC.$('#hello').textContent = (me.name ? me.name + '，' : '') + '你的場館'
+      DC.$('#list').innerHTML = me.tenants.length ? me.tenants.map(tenantCard).join('') : '<section class="card"><p>還沒有場館。</p></section>'
+    }).catch(function (e) { if (e.status === 401) { DC.setToken(''); show('#login-box') } else DC.msg(msg, e.message) })
+  }
+
+  DC.$('#list').addEventListener('click', function (e) {
+    var b = e.target.closest('[data-act]'); if (!b) return
+    var slug = b.dataset.slug, act = b.dataset.act
+    b.disabled = true
+    var done = function () { b.disabled = false }
+    if (act === 'enter') DC.api('tenants/' + slug + '/enter', { method: 'POST' }).then(function (d) { location.href = d.url }).catch(function (x) { DC.msg(msg, x.message); done() })
+    if (act === 'pay') DC.api('tenants/' + slug + '/checkout', { method: 'POST', body: {} }).then(function (d) { location.href = d.checkout_url }).catch(function (x) { DC.msg(msg, x.message); done() })
+    if (act === 'portal') DC.api('tenants/' + slug + '/portal', { method: 'POST' }).then(function (d) { location.href = d.url }).catch(function (x) { DC.msg(msg, x.message); done() })
+  })
+  DC.$('#list').addEventListener('submit', function (e) {
+    var f = e.target.closest('[data-domain]'); if (!f) return
+    e.preventDefault()
+    DC.api('tenants/' + f.dataset.domain + '/domain', { method: 'PUT', body: { domain: f.domain.value } }).then(function () { DC.msg(msg, '已送出，我們確認 DNS 後會開通並寄信通知你', 'ok'); load() })
+      .catch(function (x) { DC.msg(msg, x.message) })
+  })
+
+  DC.$('#login').addEventListener('submit', function (e) {
+    e.preventDefault()
+    DC.api('login', { method: 'POST', body: { email: e.target.email.value, password: e.target.password.value } })
+      .then(function (d) { DC.setToken(d.token); DC.msg(msg, ''); load() }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  DC.$('#forgot-link').addEventListener('click', function (e) { e.preventDefault(); show('#forgot-box') })
+  DC.$('#back-login').addEventListener('click', function (e) { e.preventDefault(); show('#login-box') })
+  DC.$('#fsend').addEventListener('click', function () {
+    DC.api('code', { method: 'POST', body: { email: DC.$('#forgot').email.value } }).then(function () { DC.msg(msg, '驗證碼已寄出', 'ok') }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  DC.$('#forgot').addEventListener('submit', function (e) {
+    e.preventDefault()
+    var f = e.target
+    DC.api('reset', { method: 'POST', body: { email: f.email.value, code: f.code.value, password: f.password.value } })
+      .then(function (d) { DC.setToken(d.token); DC.msg(msg, '密碼已重設', 'ok'); load() }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  DC.$('#logout').addEventListener('click', function (e) { e.preventDefault(); DC.setToken(''); location.href = '/account' })
+
+  if (DC.token()) load(); else show('#login-box')
+})()
+</script>
+</body>
+</html>

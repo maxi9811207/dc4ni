@@ -15,10 +15,14 @@
 - DUPR：可限制雙打或單打分數範圍；依分數自動分組；賽制有輪換搭檔（每組 4～7 人）、固定搭檔、單打循環；任一方回報比分、對手確認才算數；比分可匯出 CSV（含 DUPR ID）。Digital Court 與 DUPR 官方無隸屬關係
 - 網址：預設提供「dc-studio.cc/場館」；支援自訂網域（場館自己的網址），還沒有網域可協助購買與設定，已有網站或其他報名系統可協助轉移網址與舊連結
 - 其他：活動短網址與 LINE 分享預覽、可設不公開活動與自訂網址、名單下載 Excel、營收與出席報表、報名名單姓名遮罩
-- 費用：目前採個別開通，依場館規模與需求說明方案，請在首頁填寫申請表
+- 價格（新台幣／月）：基本 490（建立、查看單次活動與線上報名）、標準 1,500（加收費對帳、課卡、LINE 推播與開課提醒、缺席管理、名單下載）、進階 4,900（再加 DUPR 活動、時段預約、報表、自訂網域）。年繳送一個月（基本 5,390／標準 16,500／進階 53,900）。沒有試用期，註冊付款後自動開通、可隨時取消；付款由 Polar 處理
+- 開始使用：https://dc-studio.cc/signup（Email 驗證碼註冊 → 設定場館網址 → 信用卡訂閱 → 自動開通）
 
 ## 連結
 
-- 首頁與申請開通：https://dc-studio.cc/
+- 首頁：https://dc-studio.cc/
+- 註冊開通：https://dc-studio.cc/signup
+- 服務條款：https://dc-studio.cc/terms
+- 隱私權政策：https://dc-studio.cc/privacy
 - 示範場館（Active Pickleball Club，新北市中和區）：https://dc-studio.cc/active/
 - 場館公開活動清單（sitemap）：https://dc-studio.cc/active/sitemap.xml

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>檢舉｜Digital Court</title>
+<meta name="description" content="檢舉 Digital Court 上的可疑場館或活動（詐騙、不當內容）。">
+<link rel="canonical" href="https://dc-studio.cc/report">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="/"><img src="/favicon.svg" alt="">Digital Court</a><a class="link" href="/account">登入</a></div></header>
+<main class="narrow">
+<section class="card">
+  <h1>檢舉可疑的場館或活動</h1>
+  <p class="lead">發現疑似詐騙、冒名或不當內容，請告訴我們，我們會盡快查看並處理。</p>
+  <form id="f" novalidate style="display:grid;gap:12px">
+    <label>網址 <input name="url" required placeholder="https://dc-studio.cc/…"></label>
+    <label>原因 <textarea name="reason" rows="4" required maxlength="1000" placeholder="例：用別的場館名義收報名費"></textarea></label>
+    <label>你的聯絡方式 <small>選填，方便我們回覆你</small><input name="contact" maxlength="100"></label>
+    <button class="btn">送出</button>
+    <p class="msg" id="msg" hidden></p>
+  </form>
+</section>
+</main>
+<script src="/platform.js"></script>
+<script>
+(function () {
+  var f = DC.$('#f'), msg = DC.$('#msg')
+  var ref = new URLSearchParams(location.search).get('url'); if (ref) f.url.value = ref
+  f.addEventListener('submit', function (e) {
+    e.preventDefault()
+    DC.api('reports', { method: 'POST', body: { url: f.url.value, reason: f.reason.value, contact: f.contact.value } })
+      .then(function () { f.reset(); DC.msg(msg, '已收到，謝謝你。我們會盡快查看。', 'ok') }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+})()
+</script>
+<footer><a href="/terms">服務條款</a> · <a href="/privacy">隱私權政策</a> · <a href="/report">檢舉</a> · © 2026 Digital Court</footer>
+</body>
+</html>

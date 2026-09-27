@@ -4,13 +4,13 @@ import { useApp } from '../../App'
 import { api, downloadFile } from '../../api'
 import { ShareBox } from '../../components/Share'
 import { Badge, Confirm, Empty, Loading, Modal } from '../../components/ui'
-import { duprRange, noshowMessage, rating, showDate } from '../../util'
+import { duprRange, noshowMessage, planOf, rating, showDate } from '../../util'
 
 const STATUS = { booked: ['已預約', 'brand'], attended: ['出席', 'success'], absent: ['缺席', 'danger'], waitlist: ['候補', 'warn'] }
 
 export default function Roster() {
   const { id } = useParams()
-  const { handleError, showToast } = useApp()
+  const { venue, handleError, showToast } = useApp()
   const [c, setC] = useState(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState(null)
@@ -76,7 +76,7 @@ export default function Roster() {
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>
         <div className="row gap-sm">
-          <button className="btn btn-small btn-light" onClick={() => downloadFile(`admin/courses/${c.id}/roster/export`, `名單_${c.date}_${c.name}.xlsx`).catch(handleError)}>下載名單</button>
+          {planOf(venue).has('export') && <button className="btn btn-small btn-light" onClick={() => downloadFile(`admin/courses/${c.id}/roster/export`, `名單_${c.date}_${c.name}.xlsx`).catch(handleError)}>下載名單</button>}
           <button className="btn btn-small" onClick={() => setAdding(true)}>＋ 加人</button>
         </div>
       </div>

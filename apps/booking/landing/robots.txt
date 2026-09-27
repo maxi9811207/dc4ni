@@ -2,6 +2,10 @@
 User-agent: *
 Allow: /
 Disallow: /active/api/
+Disallow: /platform/
+Disallow: /account
+Disallow: /console
+Disallow: /signup/done
 
 # AI 搜尋與助理（GEO）：公開頁面可引用
 User-agent: GPTBot

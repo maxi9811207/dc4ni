@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useApp } from '../../App'
+import { UpgradeNote } from '../../components/ui'
+import { FEATURE_NAMES, planOf } from '../../util'
 
 const I = {
   dashboard: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
@@ -13,6 +15,7 @@ const I = {
   orders: 'M12 3v18M16 7H10a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H7',
   reports: 'M3 3v18h18M7 15l4-4 3 3 5-6',
   reviews: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
+  billing: 'M3 6h18v12H3zM3 10h18M7 15h4',
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
 }
 
@@ -22,15 +25,16 @@ export const MENU = [
     ['/admin/attendance', '出席管理', 'attendance'],
     ['/admin/calendar', '課表行事曆', 'calendar'],
     ['/admin/templates', '活動管理', 'courses'],
-    ['/admin/plans', '課卡方案', 'plans'],
+    ['/admin/plans', '課卡方案', 'plans', 'cards'],
     ['/admin/members', '會員管理', 'members'],
     ['/admin/teachers', '師資團隊', 'teachers'],
-    ['/admin/orders', '付款審核', 'orders'],
-    ['/admin/reports', '分析與報表', 'reports'],
+    ['/admin/orders', '付款審核', 'orders', 'fee'],
+    ['/admin/reports', '分析與報表', 'reports', 'reports'],
     ['/admin/reviews', '評價管理', 'reviews'],
   ] },
   { title: '系統設定', items: [
     ['/admin/settings', '場館設定', 'settings'],
+    ['/admin/billing', '方案與帳單', 'billing'],
   ] },
 ]
 
@@ -44,6 +48,7 @@ function Icon({ name }) {
 
 function pageTitle(pathname) {
   if (pathname === '/admin/notifications') return '通知'
+  if (pathname === '/admin/billing') return '方案與帳單'
   if (/^\/admin\/courses\/new/.test(pathname)) return '建立活動'
   if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯活動'
   if (/^\/admin\/slots\/\d+\/edit/.test(pathname)) return '時段預約設定'
@@ -73,6 +78,8 @@ export default function AdminLayout() {
   if (!user) return <Navigate to="/login" replace state={{ from: pathname }} />
   if (user.role !== 'owner') return <Navigate to="/" replace />
   const unread = user.admin_unread || 0
+  const plan = planOf(venue)
+  const lockedFeature = MENU.flatMap((g) => g.items).find(([to, , , f]) => f && pathname.startsWith(to) && !plan.has(f))?.[3]
 
   return (
     <>
@@ -100,9 +107,9 @@ export default function AdminLayout() {
           {MENU.map((g) => (
             <div key={g.title || 'main'}>
               {g.title && <p className="drawer-group">{g.title}</p>}
-              {g.items.map(([to, label, icon]) => (
+              {g.items.map(([to, label, icon, feature]) => (
                 <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `drawer-link ${isActive ? 'active' : ''}`}>
-                  <Icon name={icon} />{label}
+                  <Icon name={icon} />{label}{feature && !plan.has(feature) && <span className="lock-tag">{plan.needs(feature)}</span>}
                 </NavLink>
               ))}
             </div>
@@ -115,7 +122,9 @@ export default function AdminLayout() {
       </aside>
 
       <main className="page">
-        <Outlet />
+        {plan.status === 'past_due' && <a href="#/admin/billing" className="alert warn">這期訂閱扣款失敗，請在 {plan.grace_until?.slice(0, 10).replaceAll('-', '/')} 前更新付款方式 ›</a>}
+        {plan.paused && <a href="#/admin/billing" className="alert danger">場館暫停服務中：球友不能報名，後台只能查看與匯出。續訂後馬上恢復 ›</a>}
+        {lockedFeature ? <UpgradeNote feature={FEATURE_NAMES[lockedFeature]} need={plan.needs(lockedFeature)} /> : <Outlet />}
       </main>
     </>
   )

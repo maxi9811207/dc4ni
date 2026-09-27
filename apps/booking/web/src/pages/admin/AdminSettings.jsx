@@ -2,11 +2,13 @@ import { useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import ImageInput from '../../components/ImageInput'
-import { Field } from '../../components/ui'
+import { Field, UpgradeNote } from '../../components/ui'
+import { planOf } from '../../util'
 
 export default function AdminSettings() {
   const { venue, loadVenue, handleError, showToast } = useApp()
   const [form, setForm] = useState(() => ({ ...venue, categories: (venue?.categories || []).join('\n') }))
+  const plan = planOf(venue)
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.type === 'checkbox' ? e.target.checked : e.target.value })
 
   const save = async (e) => {
@@ -52,6 +54,7 @@ export default function AdminSettings() {
       <label className="check"><input type="checkbox" checked={!!form.waitlist_enabled} onChange={set('waitlist_enabled')} /> 額滿時開放候補</label>
 
       <h3 className="card-title">開課前一天提醒</h3>
+      {!plan.has('reminder') && <UpgradeNote feature="開課前一天提醒" need={plan.needs('reminder')} />}
       <label className="check"><input type="checkbox" checked={form.reminder_enabled !== false} onChange={set('reminder_enabled')} /> 前一天提醒已報名的學員（網站通知＋有綁 LINE 的推到 LINE；未付款的會一併提醒付款）</label>
       {form.reminder_enabled !== false && (
         <Field label="提醒時間" hint="您也會在同一時間收到「明天有幾堂、幾個人」的總覽">
@@ -61,6 +64,7 @@ export default function AdminSettings() {
         </Field>
       )}
       <h3 className="card-title">缺席（No-show）管理</h3>
+      {!plan.has('noshow') && <UpgradeNote feature="缺席管理" need={plan.needs('noshow')} />}
       <label className="check"><input type="checkbox" checked={form.noshow_enabled !== false} onChange={set('noshow_enabled')} /> 報名後沒到（點名標「缺席」）累計太多次，自動暫停報名</label>
       {form.noshow_enabled !== false && (
         <>

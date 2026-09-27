@@ -146,3 +146,21 @@ export function AvatarStack({ people, total, size = 26 }) {
     </span>
   )
 }
+
+// 方案沒有的功能：說明要哪個方案、帶到「方案與帳單」
+export function UpgradeNote({ feature, need, compact }) {
+  const text = `「${feature}」是${need}方案以上的功能`
+  if (compact) return <span className="lock-tag" title={text}>{need}方案</span>
+  return (
+    <section className="card upgrade-note">
+      <span className="lock-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+      </span>
+      <div className="flex1">
+        <b>{text}</b>
+        <p className="muted small">升級後馬上就能用，已經建立的資料都會保留。</p>
+      </div>
+      <a className="btn btn-small" href="#/admin/billing">看方案</a>
+    </section>
+  )
+}

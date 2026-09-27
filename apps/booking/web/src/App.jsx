@@ -30,6 +30,7 @@ import Attendance from './pages/admin/Attendance'
 import AdminNotifications from './pages/admin/AdminNotifications'
 import AdminTemplates from './pages/admin/AdminTemplates'
 import Reports from './pages/admin/Reports'
+import AdminBilling from './pages/admin/AdminBilling'
 
 function SlotTopBar() {
   return <TopBar title="時段預約" back={-1} />
@@ -113,6 +114,7 @@ export default function App() {
   return (
     <AppContext.Provider value={ctx}>
       <div className="shell">
+        {venue?.platform && ['suspended', 'cancelled'].includes(venue.platform.status) && <div className="venue-paused">這個場館暫停服務中，目前不能報名</div>}
         <Routes>
           <Route path="/" element={<Courses />} />
           <Route path="/course/:id" element={<CourseDetail />} />
@@ -148,6 +150,7 @@ export default function App() {
             <Route path="members" element={<AdminMembers />} />
             <Route path="reviews" element={<AdminReviews />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="billing" element={<AdminBilling />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

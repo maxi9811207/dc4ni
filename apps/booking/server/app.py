@@ -30,10 +30,9 @@ import line_push
 import mailer
 import matches
 import reports
+import tenancy
 
-DATA_DIR = Path(os.getenv("BOOKING_DATA_DIR", Path(__file__).parent / "data"))
-DB_PATH = DATA_DIR / "booking.db"
-UPLOAD_DIR = DATA_DIR / "uploads"
+# 每個場館一個資料庫與上傳資料夾（見 tenancy.py）；這裡一律透過 tenancy.current() 取得目前場館
 STATIC_DIR = Path(os.getenv("BOOKING_STATIC_DIR", Path(__file__).parent / "static"))
 TZ = ZoneInfo(os.getenv("BOOKING_TZ", "Asia/Taipei"))
 WEEKDAYS = "一二三四五六日"
@@ -210,6 +209,7 @@ MIGRATIONS = {
 }
 
 app = FastAPI(title="約課系統 API", docs_url="/api/docs", openapi_url="/api/openapi.json")
+app.add_middleware(tenancy.TenantMiddleware)
 
 
 # ---------------------------------------------------------------- helpers
@@ -224,7 +224,7 @@ def stamp() -> str:
 
 @contextmanager
 def db():
-    conn = sqlite3.connect(DB_PATH, timeout=15)
+    conn = sqlite3.connect(tenancy.current().db_path, timeout=15)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
@@ -246,13 +246,13 @@ PENDING_PUSH: dict[int, list[tuple[str, str]]] = {}
 
 
 def site_url(path: str = "") -> str:
-    """對外網址（推播訊息裡的連結用）；沒設定網域時不附連結。"""
-    base = os.getenv("BOOKING_PUBLIC_URL") or (f"https://{os.getenv('BOOKING_DOMAIN')}" if os.getenv("BOOKING_DOMAIN") else "")
-    return (base.rstrip("/") + "/" + path.lstrip("/")) if base else ""
+    """目前場館的對外網址（推播訊息裡的連結用）；沒設定網域時不附連結。"""
+    base = tenancy.current().public_url
+    return (base + "/" + path.lstrip("/")) if base else ""
 
 
 def queue_push(conn, line_user_id: str | None, text: str, link: str = ""):
-    if line_user_id and line_push.enabled():
+    if line_user_id and line_push.enabled() and saas.has("push"):
         PENDING_PUSH.setdefault(id(conn), []).append((line_user_id, f"{text}\n{link}" if link else text))
 
 
@@ -370,9 +370,10 @@ def require_user(user=Depends(current_user)) -> dict:
     return user
 
 
-def require_owner(user=Depends(require_user)) -> dict:
+def require_owner(request: Request, user=Depends(require_user)) -> dict:
     if user["role"] != "owner":
         fail(403, "僅限場主使用")
+    saas.check_owner_request(request)  # 方案功能、暫停中的場館只能查看
     return user
 
 
@@ -407,12 +408,24 @@ CREATE TABLE users_new (
 
 @app.on_event("startup")
 def startup():
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-    wal = sqlite3.connect(DB_PATH)  # journal_mode 不能在交易中切換，另開一條連線設定
+    tenancy.init_platform(stamp())
+    init_tenant(tenancy.get(tenancy.DEFAULT_SLUG))  # 預設場館一定要有資料庫（全新安裝、本機測試）
+    for t in tenancy.all_with_data():
+        if t.slug != tenancy.DEFAULT_SLUG:
+            init_tenant(t)
+    threading.Thread(target=sweeper, name="sweeper", daemon=True).start()
+
+
+def init_tenant(t: "tenancy.Tenant", owner: dict | None = None, name: str = ""):
+    """建立或升級一個場館的資料庫（新場館開通、每次啟動都會跑；可重複執行）。
+    owner：新場館的第一位場主 {name, email, phone, password_hash}。"""
+    t.data_dir.mkdir(parents=True, exist_ok=True)
+    t.upload_dir.mkdir(parents=True, exist_ok=True)
+    wal = sqlite3.connect(t.db_path)  # journal_mode 不能在交易中切換，另開一條連線設定
     wal.execute("PRAGMA journal_mode = WAL")
     wal.close()
-    with db() as conn:
+    legacy = t.slug == tenancy.DEFAULT_SLUG
+    with tenancy.use(t), db() as conn:
         conn.executescript(SCHEMA)
         rebuild_users(conn)
         for r in rows(conn.execute("SELECT id, phone FROM users WHERE phone IS NOT NULL")):
@@ -426,7 +439,12 @@ def startup():
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
                     if (table, col) == ("slot_sets", "show_attendees"):  # 既有時段預約：時段跟著活動（預設不公開名單）
                         conn.execute("UPDATE courses SET show_attendees=0 WHERE slot_set_id IS NOT NULL")
-        phone = os.getenv("BOOKING_OWNER_PHONE")
+        if owner and not one(conn.execute("SELECT id FROM users WHERE role='owner' AND deleted=0")):
+            conn.execute("INSERT INTO users (name, phone, email, password_hash, role, created_at) VALUES (?,?,?,?,?,?)",
+                         (owner["name"] or "場主", clean_phone(owner.get("phone")) or None, owner["email"], owner["password_hash"], "owner", stamp()))
+        if name and not one(conn.execute("SELECT key FROM settings WHERE key='name'")):
+            conn.execute("INSERT INTO settings VALUES ('name', ?)", (json.dumps(name, ensure_ascii=False),))
+        phone = os.getenv("BOOKING_OWNER_PHONE") if legacy else None
         password = os.getenv("BOOKING_OWNER_PASSWORD")
         phone = clean_phone(phone)
         # 只在第一次安裝（還沒有任何場主）時建立；之後改手機、刪除或降級場主都不會被設定檔「長回來」
@@ -435,7 +453,7 @@ def startup():
             conn.execute(
                 "INSERT INTO users (name, phone, password_hash, role, created_at) VALUES (?,?,?,?,?)",
                 (os.getenv("BOOKING_OWNER_NAME", "場主"), phone, hash_password(password), "owner", stamp()))
-        if os.getenv("BOOKING_SEED_DEMO") == "1" and not one(conn.execute("SELECT id FROM courses LIMIT 1")):
+        if legacy and os.getenv("BOOKING_SEED_DEMO") == "1" and not one(conn.execute("SELECT id FROM courses LIMIT 1")):
             seed_demo(conn)
         for r in rows(conn.execute("SELECT id FROM courses WHERE share_code=''")):
             conn.execute("UPDATE courses SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
@@ -448,7 +466,6 @@ def startup():
             conn.execute("INSERT INTO kv VALUES ('share_codes_v2', ?)", (stamp(),))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_slot ON courses(slot_set_id, date)")
-    threading.Thread(target=sweeper, name="sweeper", daemon=True).start()
 
 
 SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o、1/l/i
@@ -778,7 +795,8 @@ def venue():
     with db() as conn:
         s = get_settings(conn)
         r = conn.execute("SELECT AVG(rating) a, COUNT(*) n FROM reviews WHERE hidden=0").fetchone()
-        return {**s, "payment_ready": payment_ready(s), "rating": round(r["a"], 1) if r["a"] else None, "review_count": r["n"]}
+        return {**s, "payment_ready": payment_ready(s), "rating": round(r["a"], 1) if r["a"] else None, "review_count": r["n"],
+                "platform": saas.venue_info()}
 
 
 def attendees(conn, c: dict, limit: int = 200) -> list[dict]:
@@ -963,7 +981,7 @@ def login(body: dict = Depends(json_body)):
     b = body
     key = str(b.get("login") or b.get("email") or b.get("phone") or "").strip()
     t = datetime.now().timestamp()
-    recent = [x for x in LOGIN_FAILS.get(key.lower(), []) if t - x < 600]
+    recent = [x for x in LOGIN_FAILS.get(f"{tenancy.current().slug}:{key.lower()}", []) if t - x < 600]
     if len(recent) >= 8:
         fail(429, "嘗試次數太多，請 10 分鐘後再試")
     with db() as conn:
@@ -971,19 +989,19 @@ def login(body: dict = Depends(json_body)):
         if u and not u["password_hash"]:
             fail(400, "這個帳號是用 LINE 註冊的，請按「使用 LINE 登入」")
         if not u or not check_password(str(b.get("password", "")), u["password_hash"]):
-            LOGIN_FAILS[key.lower()] = recent + [t]
+            LOGIN_FAILS[f"{tenancy.current().slug}:{key.lower()}"] = recent + [t]
             fail(400, "帳號或密碼錯誤")
-        LOGIN_FAILS.pop(key.lower(), None)
+        LOGIN_FAILS.pop(f"{tenancy.current().slug}:{key.lower()}", None)
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
 # ---------------------------------------------------------------- LINE 登入
 
 def public_base(request: Request) -> str:
-    """對外網址。有網域時一律用 https://網域/，從 IP:8080 進來的 LINE callback 才會和 LINE 後台設定的一致。"""
-    base = os.getenv("BOOKING_PUBLIC_URL") or (f"https://{os.getenv('BOOKING_DOMAIN')}" if os.getenv("BOOKING_DOMAIN") else "")
+    """目前場館的對外網址（結尾有斜線）。有網域時一律用設定的網址，LINE callback 才會和 LINE 後台設定的一致。"""
+    base = tenancy.current().public_url
     if base:
-        return base.rstrip("/") + "/"
+        return base + "/"
     proto = request.headers.get("x-forwarded-proto", request.url.scheme)
     return f"{proto}://{request.headers.get('host', request.url.netloc)}/"
 
@@ -1023,14 +1041,14 @@ LINE_STATE_COOKIE = "line_state"
 def with_state_cookie(response, state: str):
     """把這次授權的 state 綁在發起的瀏覽器上；callback 時比對，別人丟來的授權連結（CSRF）會被擋下。"""
     # 網站可能掛在子路徑（例如 https://dc-studio.cc/active/），cookie 路徑要跟著
-    prefix = urllib.parse.urlparse(os.getenv("BOOKING_PUBLIC_URL") or "/").path.rstrip("/")
+    prefix = urllib.parse.urlparse(tenancy.current().public_url or "/").path.rstrip("/")
     response.set_cookie(LINE_STATE_COOKIE, state, max_age=1800, httponly=True, samesite="lax",
                         secure=public_base_is_https(), path=f"{prefix}/api/auth/line")
     return response
 
 
 def public_base_is_https() -> bool:
-    return bool(os.getenv("BOOKING_DOMAIN")) or os.getenv("BOOKING_PUBLIC_URL", "").startswith("https://")
+    return tenancy.current().public_url.startswith("https://")
 
 
 def line_redirect(conn, request: Request, next_path: str, link_user_id: int | None = None) -> tuple[str, str]:
@@ -1240,7 +1258,7 @@ def noshow_status(conn, u: dict, s: dict | None = None) -> dict:
         " AND r.noshow_cleared=0 AND c.date>=?", (u["id"], since)).fetchone()[0]
     until = u.get("blocked_until") or ""
     blocked = bool(until) and until >= now().date().isoformat()
-    return {"enabled": bool(s["noshow_enabled"]), "count": count, "limit": int(s["noshow_limit"]), "days": int(s["noshow_days"] or 0),
+    return {"enabled": bool(s["noshow_enabled"]) and saas.has("noshow"), "count": count, "limit": int(s["noshow_limit"]), "days": int(s["noshow_days"] or 0),
             "block_days": int(s["noshow_block_days"] or 0), "blocked": blocked,
             "blocked_until": until if blocked else "", "forever": blocked and until == FOREVER,
             "reason": u.get("block_reason", "") if blocked else ""}
@@ -1260,7 +1278,7 @@ def check_noshow(conn, user_id: int, c: dict):
     """點名標記缺席後：快到上限先提醒，到上限自動暫停報名（計數歸零重算）並通知雙方。"""
     s = get_settings(conn)
     u = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
-    if not s["noshow_enabled"] or not u or u["role"] == "owner":
+    if not s["noshow_enabled"] or not saas.has("noshow") or not u or u["role"] == "owner":
         return None
     ns = noshow_status(conn, u, s)
     if ns["blocked"]:
@@ -1292,6 +1310,8 @@ def ensure_active(user: dict):
 @app.post("/api/courses/{course_id}/reserve")
 def reserve(course_id: int, body: dict = Depends(json_body), user=Depends(require_user)):
     ensure_active(user)
+    if tenancy.current().status in ("suspended", "cancelled"):
+        fail(403, "這個場館暫停服務中，暫時不能報名，請聯絡主辦")
     b = body
     with db() as conn:
         c = get_course(conn, course_id)
@@ -1498,7 +1518,7 @@ def release_overdue(conn) -> int:
 def send_reminders(conn) -> int:
     """開課前一天（設定的時間之後）提醒已報名的學員；每筆報名只提醒一次，場主收到一則明日總覽。"""
     s = get_settings(conn)
-    if not s.get("reminder_enabled", True):
+    if not s.get("reminder_enabled", True) or not saas.has("reminder"):
         return 0
     t = now()
     at = datetime.combine(t.date(), datetime.min.time()) + timedelta(hours=min(max(int(s.get("reminder_hour", 20)), 0), 23))
@@ -1545,17 +1565,26 @@ def sweeper():
     import time as _t
     while True:
         _t.sleep(300)
-        for job in (release_overdue, send_reminders):
-            try:
-                with db() as conn:
-                    job(conn)
-            except Exception:  # noqa: BLE001 — 背景工作不能讓服務掛掉
-                pass
+        try:
+            saas.sweep()
+        except Exception:  # noqa: BLE001
+            pass
+        for t in tenancy.all_with_data():  # 逐館處理；停用的場館不再提醒、釋出名額
+            if t.status not in ("active", "past_due"):
+                continue
+            for job in (release_overdue, send_reminders):
+                try:
+                    with tenancy.use(t), db() as conn:
+                        job(conn)
+                except Exception:  # noqa: BLE001 — 背景工作不能讓服務掛掉
+                    pass
 
 
 @app.post("/api/admin/sweep")
 def run_sweep(owner=Depends(require_owner)):
     """立即執行一次逾期檢查與開課提醒（背景每 5 分鐘也會自動跑）。"""
+    if tenancy.current().slug == tenancy.DEFAULT_SLUG:
+        saas.sweep()  # 平台的每日檢查（扣款寬限期、釋出沒付款的網址）只由主場館觸發
     with db() as conn:
         released = release_overdue(conn)
     with db() as conn:
@@ -2070,6 +2099,13 @@ def clean_course(b: dict) -> dict:
             out[k] = int(out[k]) if out[k] else None
     if "plan_ids" in out:
         out["plan_ids"] = json.dumps([int(x) for x in out["plan_ids"] or []])
+    # 方案功能：收費對帳、課卡、DUPR（依內容判斷；整組 API 的限制見 saas.FEATURE_RULES）
+    if out.get("fee"):
+        saas.need("fee")
+    if out.get("cost"):
+        saas.need("cards")
+    if out.get("dupr_required"):
+        saas.need("dupr")
     return out
 
 
@@ -2077,6 +2113,8 @@ def clean_course(b: dict) -> dict:
 def create_course(body: dict = Depends(json_body), owner=Depends(require_owner)):
     b = body
     data = clean_course(b)
+    if "cost" not in data and not saas.has("cards"):
+        data["cost"] = 0  # 沒有課卡功能的方案：預設免費（資料庫預設是扣 1 堂）
     if not data.get("name") or not data.get("date") or not data.get("start_time") or not data.get("end_time"):
         fail(400, "請填寫課程名稱、日期與時間")
     repeat = min(max(int(b.get("repeat_weeks", 1) or 1), 1), 26)
@@ -2948,7 +2986,7 @@ async def save_image(file: UploadFile, max_mb: int) -> str:
     if not content.startswith(IMAGE_MAGIC[ext]) or (ext == ".webp" and content[8:12] != b"WEBP"):
         fail(400, "這個檔案不是有效的圖片")
     name = uuid.uuid4().hex + ext
-    (UPLOAD_DIR / name).write_bytes(content)
+    (tenancy.current().upload_dir / name).write_bytes(content)
     return f"uploads/{name}"
 
 
@@ -2957,7 +2995,7 @@ async def upload_avatar(file: UploadFile = File(...), user=Depends(require_user)
     url = await save_image(file, 2)
     old = user["avatar_url"]
     if user["avatar_source"] == "upload" and old.startswith("uploads/"):
-        (UPLOAD_DIR / Path(old).name).unlink(missing_ok=True)
+        (tenancy.current().upload_dir / Path(old).name).unlink(missing_ok=True)
     with db() as conn:
         conn.execute("UPDATE users SET avatar_url=?, avatar_source='upload' WHERE id=?", (url, user["id"]))
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
@@ -2972,7 +3010,7 @@ def http_error(_request, exc: HTTPException):
 
 @app.get("/uploads/{name}")
 def uploaded(name: str):
-    path = UPLOAD_DIR / Path(name).name
+    path = tenancy.current().upload_dir / Path(name).name
     if not path.is_file():
         fail(404, "not found")
     return FileResponse(path, headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "public, max-age=604800"})
@@ -3139,47 +3177,12 @@ def sitemap(request: Request):
     return Response(xml, media_type="application/xml")
 
 
-# ---------------------------------------------------------------- 首頁的「申請開通」表單
-
-LEAD_HITS: dict[str, list[float]] = {}
+# 首頁的「申請開通」表單、自助註冊、訂閱付款：見 saas.py（/platform/api/…）
 
 
-@app.post("/api/leads")
-def create_lead(request: Request, body: dict = Depends(json_body)):
-    import time
-    if body.get("website"):  # 機器人才會填的隱藏欄位
-        return {"ok": True}
-    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
-    t = time.time()
-    recent = [x for x in LEAD_HITS.get(ip, []) if t - x < 3600]
-    if len(recent) >= 5:
-        fail(429, "送出太多次了，請稍後再試，或直接用 LINE 聯絡我們")
-    clean = lambda k, n: str(body.get(k) or "").strip()[:n]  # noqa: E731
-    name, contact = clean("name", 40), clean("contact", 100)
-    if not name or not contact:
-        fail(400, "請填寫稱呼與聯絡方式")
-    needs = body.get("needs") if isinstance(body.get("needs"), list) else []
-    needs = "、".join(str(x)[:20] for x in needs[:8])
-    data = (name, contact, clean("org", 80), clean("size", 30), needs, clean("message", 1000), ip, stamp())
-    LEAD_HITS[ip] = recent + [t]
-    with db() as conn:
-        lead_id = conn.execute("INSERT INTO leads (name, contact, org, size, needs, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?)", data).lastrowid
-        admin_notify(conn, "lead", f"新的開通申請：{name}（{contact}）" + (f"｜{data[2]}" if data[2] else "") + (f"｜{data[3]}" if data[3] else "")
-                     + (f"｜想用：{needs}" if needs else "") + (f"｜{data[5][:200]}" if data[5] else ""), "/admin/notifications")
-    # 寄一封信給平台（LEAD_EMAIL_TO，可多個以逗號分隔）；對方留的是 Email 就設成回覆對象，直接按回覆即可
-    to = [x.strip() for x in os.getenv("LEAD_EMAIL_TO", "").split(",") if x.strip()]
-    if to:
-        email = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", contact)
-        text = "\n".join([
-            f"有人在 Digital Court 首頁申請開通（#{lead_id}，{data[7].replace('T', ' ')}）", "",
-            f"稱呼：{name}", f"聯絡方式：{contact}", f"場館或球團：{data[2] or '（未填）'}", f"規模：{data[3] or '（未填）'}",
-            f"想用的功能：{needs or '（未填）'}", "", "想說的話：", data[5] or "（未填）", "",
-            "—", "這封信由 dc-studio.cc 自動寄出。" + ("直接回覆就會寄給對方。" if email else ""),
-        ])
-        mailer.send(to, f"【Digital Court】新的開通申請：{name}" + (f"（{data[2]}）" if data[2] else ""), text,
-                    reply_to=email.group(0) if email else None)
-    return {"ok": True}
+import saas  # noqa: E402 — 平台路由要在 SPA 的萬用路由之前註冊
 
+saas.register(app)
 
 if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")

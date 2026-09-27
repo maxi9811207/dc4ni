@@ -846,3 +846,23 @@ button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px
 .dstrip.slide-prev { animation: week-in-left 0.32s cubic-bezier(0.22, 0.8, 0.3, 1); }
 @keyframes week-in-right { from { transform: translateX(55%); opacity: 0; } }
 @keyframes week-in-left { from { transform: translateX(-55%); opacity: 0; } }
+
+/* ---------------------------------------------------------------- 方案與帳單、功能鎖 */
+.upgrade-note { display: flex; align-items: center; gap: 12px; }
+.lock-ico { width: 36px; height: 36px; border-radius: 50%; background: var(--gray-soft); display: grid; place-items: center; color: var(--ink); flex: none; }
+.lock-tag { display: inline-block; font-size: 11px; font-weight: 700; color: var(--muted); background: var(--gray-soft); border-radius: 6px; padding: 0 6px; margin-left: 6px; }
+.plan-compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+@media (max-width: 560px) { .plan-compare { grid-template-columns: 1fr; } }
+.plan-col.on { box-shadow: inset 0 0 0 2px var(--brand); }
+.plan-col b { font-size: 16px; }
+.plan-price { font-size: 22px; font-weight: 800; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.plan-price span { font-size: 13px; font-weight: 400; color: var(--muted); }
+.plan-col ul { margin: 8px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-2); display: grid; gap: 2px; }
+.feature-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.feature-list span { font-size: 13px; border-radius: 999px; padding: 3px 10px; background: var(--brand-soft); color: var(--brand-dark); }
+.feature-list span.off { background: var(--gray-soft); color: var(--muted); }
+.plan-banner { margin: 0 12px; }
+.drawer-link .lock-tag { margin-left: auto; background: rgba(255, 255, 255, 0.1); color: #c7c7cc; }
+.type-pick:disabled { opacity: 0.55; cursor: not-allowed; }
+.type-pick .lock-tag { margin-left: 0; margin-top: 4px; align-self: flex-start; }
+.venue-paused { background: var(--danger-soft); color: var(--danger); font-size: 14px; padding: 10px 14px; text-align: center; }

@@ -4,10 +4,10 @@ import { useApp } from '../../App'
 import { api } from '../../api'
 import CourseCard from '../../components/CourseCard'
 import { Empty, Loading } from '../../components/ui'
-import { money, showDate, today } from '../../util'
+import { money, planOf, showDate, today } from '../../util'
 
 export default function Dashboard() {
-  const { handleError } = useApp()
+  const { venue, handleError } = useApp()
   const [d, setD] = useState(null)
   useEffect(() => { api('admin/dashboard').then(setD).catch(handleError) }, [handleError])
   if (!d) return <Loading />
@@ -17,6 +17,8 @@ export default function Dashboard() {
     ['course', '建立第一個活動', '/admin/courses/new'],
     ['booking', '把報名連結分享到 LINE 群組，等第一位學員報名', '/admin/courses'],
   ]
+  const plan = planOf(venue)
+  if (!plan.has('fee')) steps.splice(1, 1)  // 沒有收費功能的方案不用填匯款資訊
   const todo = steps.filter(([k]) => !d.setup?.[k])
   return (
     <>

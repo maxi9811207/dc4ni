@@ -103,3 +103,16 @@ export function noshowRule(v) {
 export function blockUntil(ns) {
   return ns.forever ? '直到主辦解除' : `到 ${ns.blocked_until.slice(5).replace('-', '/')}`
 }
+
+// 平台方案：目前場館能用哪些功能（沒有平台資訊時＝單場館安裝，全部可用）
+export const PLAN_NAMES = { basic: '基本', standard: '標準', advanced: '進階' }
+export const FEATURE_NAMES = {
+  fee: '收費對帳', cards: '課卡方案', push: 'LINE 推播', reminder: '開課前一天提醒', noshow: '缺席管理',
+  export: '名單下載 Excel', dupr: 'DUPR 活動', slots: '時段預約', reports: '營收與出席報表', domain: '自訂網域',
+}
+export function planOf(venue) {
+  const p = venue?.platform
+  const has = (f) => !p || p.features.includes(f)
+  const needs = (f) => PLAN_NAMES[p?.feature_plans?.[f] || 'standard']
+  return { ...(p || {}), has, needs, paused: p && ['suspended', 'cancelled'].includes(p.status) }
+}
