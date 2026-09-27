@@ -839,3 +839,10 @@ a.alert { display: block; }
 button.standalone-user { position: relative; border: 0; background: var(--gray-soft); border-radius: 999px; padding: 4px 12px 4px 4px; cursor: pointer; color: var(--ink); }
 button.standalone-user:hover { background: #e7e7ea; }
 button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); border: 2px solid #fff; }
+
+/* 換週的滑動 */
+.dstrip-wrap { overflow: hidden; margin: 0 -2px; padding: 0 2px; touch-action: pan-y; }
+.dstrip.slide-next { animation: week-in-right 0.32s cubic-bezier(0.22, 0.8, 0.3, 1); }
+.dstrip.slide-prev { animation: week-in-left 0.32s cubic-bezier(0.22, 0.8, 0.3, 1); }
+@keyframes week-in-right { from { transform: translateX(55%); opacity: 0; } }
+@keyframes week-in-left { from { transform: translateX(-55%); opacity: 0; } }
