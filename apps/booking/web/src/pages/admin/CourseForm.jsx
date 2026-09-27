@@ -383,7 +383,7 @@ export default function CourseForm({ template = false, slotId }) {
           {!template && (
             <Field label="報名網址" hint={editing ? '改了之後，舊網址還是打得開' : '不填就自動產生 4 碼；自訂可用 4～18 碼英文或數字，例如 summer2026'}>
               <div className="url-input">
-                <span>{BASE.replace(/^https?:\/\//, '')}e/</span>
+                <span>{BASE.replace(/^https?:\/\//, '')}</span>
                 <input className="input" value={form.share_code} onChange={(e) => setForm({ ...form, share_code: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 18).toLowerCase() })}
                   placeholder="自動產生" inputMode="url" autoCapitalize="off" spellCheck={false} />
               </div>

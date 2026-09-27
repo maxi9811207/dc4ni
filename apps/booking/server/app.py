@@ -307,7 +307,7 @@ def notify(conn, user_id: int, text: str, course: dict | None = None):
                  (user_id, text, stamp()))
     u = conn.execute("SELECT line_user_id FROM users WHERE id=?", (user_id,)).fetchone()
     if u and u["line_user_id"]:
-        link = site_url(f"e/{course['share_code']}") if course and course.get("share_code") else site_url("#/me?tab=notifications")
+        link = site_url(course["share_code"]) if course and course.get("share_code") else site_url("#/me?tab=notifications")
         queue_push(conn, u["line_user_id"], text, link)
 
 
@@ -451,10 +451,12 @@ SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o�
 
 
 SHARE_CODE_RE = re.compile(r"^[a-z0-9]{4,18}$")
+# 活動網址是 <網站>/<代碼>，不能跟網站本身的路徑撞名
+SHARE_RESERVED = {"api", "assets", "uploads", "admin", "index", "static", "login", "slots", "course", "teachers", "plans", "about"}
 
 
 def code_taken(conn, code: str) -> bool:
-    return bool(one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,)))
+    return code in SHARE_RESERVED or bool(one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,)))
                 or one(conn.execute("SELECT id FROM slot_sets WHERE share_code=?", (code,)))
                 or one(conn.execute("SELECT code FROM share_aliases WHERE code=?", (code,))))
 
@@ -495,6 +497,8 @@ def set_share_code(conn, kind: str, row: dict, value) -> str:
         return code
     if not SHARE_CODE_RE.match(code):
         fail(400, "自訂網址只能用英文或數字，長度 4～18 碼")
+    if code in SHARE_RESERVED:
+        fail(400, "這個網址是系統保留字，換一個試試")
     a = one(conn.execute("SELECT * FROM share_aliases WHERE code=?", (code,)))
     if a and (a["kind"], a["target_id"]) == (kind, row["id"]):
         conn.execute("DELETE FROM share_aliases WHERE code=?", (code,))  # 改回自己以前用過的代碼
@@ -1014,8 +1018,10 @@ LINE_STATE_COOKIE = "line_state"
 
 def with_state_cookie(response, state: str):
     """把這次授權的 state 綁在發起的瀏覽器上；callback 時比對，別人丟來的授權連結（CSRF）會被擋下。"""
+    # 網站可能掛在子路徑（例如 https://dc-studio.cc/active/），cookie 路徑要跟著
+    prefix = urllib.parse.urlparse(os.getenv("BOOKING_PUBLIC_URL") or "/").path.rstrip("/")
     response.set_cookie(LINE_STATE_COOKIE, state, max_age=1800, httponly=True, samesite="lax",
-                        secure=public_base_is_https(), path="/api/auth/line")
+                        secure=public_base_is_https(), path=f"{prefix}/api/auth/line")
     return response
 
 
@@ -3002,11 +3008,11 @@ def share_page(code: str, request: Request):
     image = c["cover_url"] or s["cover_url"]  # 活動自己的封面優先，沒有就用場館封面
     if image and not re.match(r"^https?:", image):
         image = base + image.lstrip("/")
-    target = f"{base}#/e/{c['share_code']}"
+    target = f"{base}#/e/{c['share_code']}"  # 畫面仍由 hash 路由顯示；網址列會改回 {base}{代碼}
     e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
     meta = "".join(f'<meta property="{k}" content="{e(v)}">' for k, v in (
         ("og:type", "website"), ("og:site_name", s["name"]), ("og:title", c["name"]),
-        ("og:description", "｜".join(parts)), ("og:url", f"{base}e/{c['share_code']}"), ("og:image", image)) if v)
+        ("og:description", "｜".join(parts)), ("og:url", f"{base}{c['share_code']}"), ("og:image", image)) if v)
     page = (f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(c["name"])}｜{e(s["name"])}</title>'
             f'<meta name="description" content="{e("｜".join(parts))}">{meta}<meta name="twitter:card" content="summary_large_image">'
@@ -3019,9 +3025,11 @@ if STATIC_DIR.is_dir():
     app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
 
     @app.get("/{path:path}", include_in_schema=False)
-    def spa(path: str):
+    def spa(path: str, request: Request):
         if path.startswith("api/"):
             fail(404, "not found")
+        if SHARE_CODE_RE.match(path.lower()) and path.lower() not in SHARE_RESERVED:  # 活動網址 <網站>/<代碼>
+            return share_page(path, request)
         target = STATIC_DIR / path
         if path and target.is_file() and STATIC_DIR in target.resolve().parents:
             return FileResponse(target)
