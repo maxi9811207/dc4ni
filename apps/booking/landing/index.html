@@ -170,6 +170,61 @@ h2 { font-size: clamp(26px, 4vw, 34px); line-height: 1.3; letter-spacing: -0.01e
 .s-pill { background: var(--ink); color: #fff; border-radius: 5px; padding: 0 6px; font-weight: 700; font-size: 10px; font-variant-numeric: tabular-nums; }
 .s-cta { background: var(--g); color: #fff; font-weight: 800; text-align: center; border-radius: 9px; padding: 10px; font-size: 13px; }
 
+
+/* 手機畫面輪播 */
+.shots { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.screen { height: 560px; display: flex; flex-direction: column; }
+.track { flex: 1; display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; scroll-behavior: smooth; overscroll-behavior-x: contain; }
+.track::-webkit-scrollbar { display: none; }
+.track:focus-visible { outline: 2px solid var(--g); outline-offset: -2px; }
+.slide { flex: 0 0 100%; scroll-snap-align: start; overflow: hidden; background: var(--bg); }
+.shots-cap { display: flex; flex-direction: column; align-items: center; gap: 8px; font-size: 14px; color: var(--text-2); text-align: center; min-height: 3.2em; }
+.dots { display: flex; gap: 8px; }
+.dots button { width: 8px; height: 8px; border-radius: 999px; border: 0; padding: 0; background: #d1d1d6; cursor: pointer; transition: width 0.2s, background 0.2s; }
+.dots button[aria-selected="true"] { width: 22px; background: var(--g); }
+.s-tabs { display: flex; gap: 4px; background: #fff; padding: 0 10px 8px; border-bottom: 1px solid var(--line); }
+.s-tabs span { font-size: 10px; padding: 3px 8px; border-radius: 999px; background: #f1f1f2; color: var(--text-2); }
+.s-tabs .on { background: var(--ink); color: #fff; font-weight: 700; }
+.s-week { padding: 8px; }
+.s-week-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; }
+.s-week-top b { flex: 1; font-size: 12px; }
+.s-week-top span { width: 18px; height: 18px; border-radius: 50%; border: 1px solid #d8d8dc; display: grid; place-items: center; font-size: 11px; line-height: 1; }
+.s-days { display: flex; gap: 2px; }
+.s-days span { flex: 1; text-align: center; font-weight: 800; font-size: 13px; padding: 4px 0; border-radius: 7px; }
+.s-days i { display: block; font-style: normal; font-weight: 400; font-size: 9px; color: var(--muted); }
+.s-days .on { background: var(--g); color: #fff; }
+.s-days .on i { color: #d6efe3; }
+.s-group { font-size: 11px; font-weight: 800; padding: 2px 2px 0; }
+.s-group span { font-weight: 400; color: var(--muted); font-size: 9px; margin-left: 4px; }
+.s-course { display: grid; grid-template-columns: 22px 1fr auto; gap: 7px; align-items: start; background: #fff; border-radius: 9px; padding: 8px; }
+.s-org { width: 22px; height: 22px; border-radius: 50%; background: #e5e5ea; color: var(--text-2); font-style: normal; font-size: 10px; font-weight: 700; display: grid; place-items: center; }
+.s-course small { display: block; font-size: 8px; color: var(--muted); }
+.s-course b { display: block; font-size: 11px; }
+.s-course p { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 3px; }
+.s-course em { font-style: normal; font-size: 8px; background: #f1f1f2; border-radius: 4px; padding: 0 5px; color: var(--text-2); }
+.s-course em.dark { background: var(--ink); color: #fff; font-weight: 700; }
+.s-course em.warn { background: var(--warn-soft); color: var(--warn); }
+.s-cap { display: flex; flex-direction: column; align-items: center; gap: 1px; }
+.s-cap b { font-size: 10px; padding: 2px 6px; border-radius: 6px; background: #e6f4ec; color: #0a7a3e; white-space: nowrap; }
+.s-cap small { font-size: 7px; color: var(--muted); }
+.s-cap.near b { background: #fdf0dc; color: #a15c00; }
+.s-cap.mine b { background: var(--g); color: #fff; }
+.s-next { box-shadow: inset 0 0 0 2px var(--ink); }
+.s-vs { display: flex; align-items: center; gap: 6px; margin: 8px 0; font-size: 12px; }
+.s-vs i { font-style: normal; color: var(--muted); font-size: 10px; }
+.s-cta.small { padding: 7px; font-size: 11px; }
+.s-rank { display: grid; grid-template-columns: 16px 1fr 26px 30px; gap: 4px; padding: 4px 0; border-top: 1px solid var(--line); font-size: 11px; font-variant-numeric: tabular-nums; }
+.s-rank span { text-align: center; }
+.s-rank em { font-style: normal; }
+.s-rank.head { color: var(--muted); font-size: 9px; border-top: 0; }
+.s-rank.me { background: var(--g-soft); border-radius: 5px; font-weight: 700; }
+.s-game { display: flex; align-items: center; padding: 5px 7px; border-radius: 7px; background: #f1f1f2; margin-top: 4px; font-size: 11px; }
+.s-game em { flex: 1; font-style: normal; }
+.s-game b { font-size: 15px; }
+.s-game.win { background: #e6f4ec; }
+.s-game.win b { color: #0a7a3e; }
+.s-h .ok { color: #0a7a3e; font-weight: 700; }
+@media (prefers-reduced-motion: reduce) { .track { scroll-behavior: auto; } .dots button { transition: none; } }
 /* 定義 */
 .define { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
 .define dl { background: var(--card); border-radius: var(--r); padding: 8px 22px; }
@@ -294,30 +349,87 @@ footer a { color: var(--text-2); }
           <li>支援 DUPR 積分賽</li>
         </ul>
       </div>
-      <figure aria-label="活動報名頁畫面示意">
-        <div class="phone" aria-hidden="true">
+      <figure class="shots" aria-roledescription="輪播" aria-label="系統畫面示意">
+        <div class="phone">
           <div class="screen">
-            <div class="s-bar"><span class="s-av"></span><div><b>週六球敘團</b><small>活動報名</small></div></div>
-            <div class="s-body">
-              <img class="s-cover" src="/mock-cover.webp" alt="" width="360" height="203" loading="eager">
-              <div class="s-card">
-                <div class="s-title">週六下午分級球敘</div>
-                <div class="s-kpis">
-                  <div class="s-kpi"><span>日期</span><b>10/4（六）</b><small>14:00–17:00</small></div>
-                  <div class="s-kpi"><span>名額</span><b>14/16</b><small>剩 2 位</small></div>
-                  <div class="s-kpi"><span>費用</span><b>NT$ 250</b><small>報名後付款</small></div>
+            <div class="track" id="shots-track" tabindex="0" aria-live="off">
+              <!-- 1 課表列表 -->
+              <div class="slide" role="group" aria-roledescription="投影片" aria-label="1／3 課表列表">
+                <div class="s-bar"><span class="s-av"></span><div><b>中和匹克球俱樂部</b><small>中和區 · ★ 4.8</small></div></div>
+                <div class="s-tabs"><span class="on">課程報名</span><span>師資陣容</span><span>課卡方案</span></div>
+                <div class="s-body">
+                  <div class="s-card s-week">
+                    <div class="s-week-top"><b>2026 年 10 月</b><span>‹</span><span>›</span></div>
+                    <div class="s-days">
+                      <span><i>一</i>28</span><span><i>二</i>29</span><span><i>三</i>30</span><span><i>四</i>1</span><span><i>五</i>2</span><span class="on"><i>六</i>3</span><span><i>日</i>4</span>
+                    </div>
+                  </div>
+                  <p class="s-group">上午<span>1 場</span></p>
+                  <div class="s-course"><i class="s-org">M</i><div><small>Mark 教練</small><b>09:00 新手體驗課</b><p><em class="warn">新手友善</em><em>2 小時 · 到 11:00</em></p></div><span class="s-cap near"><b>6/8</b><small>剩 2</small></span></div>
+                  <p class="s-group">下午<span>2 場</span></p>
+                  <div class="s-course"><i class="s-org">小</i><div><small>小昱</small><b>14:00 週六分級球敘</b><p><em class="dark">DUPR 3.0–4.0</em><em>3 小時</em></p></div><span class="s-cap"><b>9/16</b><small>剩 7</small></span></div>
+                  <div class="s-course"><i class="s-org">A</i><div><small>中和匹克球俱樂部</small><b>15:00 場地租借</b><p><em class="dark">選時段</em><em>每段 NT$ 300</em></p></div><span class="s-cap"><b>5 段</b><small>可預約</small></span></div>
+                  <p class="s-group">晚上<span>1 場</span></p>
+                  <div class="s-course"><i class="s-org">M</i><div><small>Mark 教練</small><b>19:00 中階進階班</b><p><em>2 小時 · 到 21:00</em></p></div><span class="s-cap mine"><b>已報名</b></span></div>
                 </div>
               </div>
-              <div class="s-card">
-                <div class="s-h">要去的球友（14）<span>平均 DUPR 3.412</span></div>
-                <div class="s-row"><i></i><em>林**</em><span class="s-pill">3.652</span></div>
-                <div class="s-row"><i></i><em>陳**</em><span class="s-pill">3.488</span></div>
-                <div class="s-row"><i></i><em>王**</em><span class="s-pill">3.301</span></div>
+              <!-- 2 活動頁 -->
+              <div class="slide" role="group" aria-roledescription="投影片" aria-label="2／3 活動報名頁">
+                <div class="s-bar"><span class="s-av"></span><div><b>中和匹克球俱樂部</b><small>活動報名</small></div></div>
+                <div class="s-body">
+                  <img class="s-cover" src="/mock-cover.webp" alt="" width="360" height="203" loading="lazy">
+                  <div class="s-card">
+                    <div class="s-title">週六下午分級球敘</div>
+                    <div class="s-kpis">
+                      <div class="s-kpi"><span>日期</span><b>10/3（六）</b><small>14:00–17:00</small></div>
+                      <div class="s-kpi"><span>名額</span><b>9/16</b><small>剩 7 位</small></div>
+                      <div class="s-kpi"><span>費用</span><b>NT$ 250</b><small>報名後付款</small></div>
+                    </div>
+                  </div>
+                  <div class="s-card">
+                    <div class="s-h">要去的球友（9）<span>平均 DUPR 3.412</span></div>
+                    <div class="s-row"><i></i><em>林**</em><span class="s-pill">3.652</span></div>
+                    <div class="s-row"><i></i><em>陳**</em><span class="s-pill">3.488</span></div>
+                    <div class="s-row"><i></i><em>王**</em><span class="s-pill">3.301</span></div>
+                  </div>
+                  <div class="s-cta">立即報名（NT$ 250）</div>
+                </div>
               </div>
-              <div class="s-cta">立即報名（NT$ 250）</div>
+              <!-- 3 DUPR 賽事 -->
+              <div class="slide" role="group" aria-roledescription="投影片" aria-label="3／3 DUPR 賽事">
+                <div class="s-bar"><span class="s-av"></span><div><b>週六下午分級球敘</b><small>DUPR 賽事 · A 組</small></div></div>
+                <div class="s-body">
+                  <div class="s-card s-next">
+                    <div class="s-h">你的下一局<span>第 3 局 · 打到 11 分</span></div>
+                    <div class="s-vs"><b>你 · 陳**</b><i>vs</i><b>林** · 王**</b></div>
+                    <div class="s-cta small">回報比分</div>
+                  </div>
+                  <div class="s-card">
+                    <div class="s-h">A 組排名<span>已確認 4 / 6 局</span></div>
+                    <div class="s-rank head"><span>#</span><em>球友</em><span>勝</span><span>得失</span></div>
+                    <div class="s-rank me"><span>1</span><em>你</em><span>2</span><span>+9</span></div>
+                    <div class="s-rank"><span>2</span><em>林**</em><span>2</span><span>+5</span></div>
+                    <div class="s-rank"><span>3</span><em>陳**</em><span>1</span><span>−3</span></div>
+                    <div class="s-rank"><span>4</span><em>王**</em><span>0</span><span>−11</span></div>
+                  </div>
+                  <div class="s-card">
+                    <div class="s-h">第 2 局<span class="ok">已確認</span></div>
+                    <div class="s-game win"><em>你 · 林**</em><b>11</b></div>
+                    <div class="s-game"><em>陳** · 王**</em><b>7</b></div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
+        <figcaption class="shots-cap">
+          <span id="shots-text">課表：哪天有什麼、還剩幾位，一眼看完</span>
+          <span class="dots" role="tablist" aria-label="選擇畫面">
+            <button type="button" role="tab" aria-selected="true" aria-label="課表列表"></button>
+            <button type="button" role="tab" aria-selected="false" aria-label="活動報名頁"></button>
+            <button type="button" role="tab" aria-selected="false" aria-label="DUPR 賽事"></button>
+          </span>
+        </figcaption>
       </figure>
     </div>
   </section>
@@ -539,6 +651,38 @@ footer a { color: var(--text-2); }
 </footer>
 
 <script>
+(function () {
+  var track = document.getElementById('shots-track')
+  if (!track) return
+  var dots = [].slice.call(document.querySelectorAll('.dots button'))
+  var text = document.getElementById('shots-text')
+  var caps = ['課表：哪天有什麼、還剩幾位，一眼看完', '活動頁：日期、名額、費用、誰要去', 'DUPR 賽事：分組、比分、排名']
+  var cur = 0, timer = null, paused = false
+  var still = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  var mark = function (i) {
+    cur = i
+    dots.forEach(function (d, k) { d.setAttribute('aria-selected', k === i ? 'true' : 'false') })
+    text.textContent = caps[i]
+  }
+  var go = function (i) { track.scrollTo({ left: i * track.clientWidth, behavior: still ? 'auto' : 'smooth' }); mark(i) }
+  track.addEventListener('scroll', function () {
+    var i = Math.round(track.scrollLeft / track.clientWidth)
+    if (i !== cur && i >= 0 && i < dots.length) mark(i)
+  }, { passive: true })
+  dots.forEach(function (d, k) { d.addEventListener('click', function () { go(k); restart() }) })
+  var tick = function () { if (!paused && !document.hidden) go((cur + 1) % dots.length) }
+  var restart = function () { if (still) return; clearInterval(timer); timer = setInterval(tick, 4000) }
+  var box = track.closest('.shots')
+  box.addEventListener('mouseenter', function () { paused = true })
+  box.addEventListener('mouseleave', function () { paused = false })
+  track.addEventListener('touchstart', function () { paused = true }, { passive: true })
+  track.addEventListener('touchend', function () { paused = false; restart() }, { passive: true })
+  track.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') { go(Math.min(cur + 1, dots.length - 1)); restart() }
+    if (e.key === 'ArrowLeft') { go(Math.max(cur - 1, 0)); restart() }
+  })
+  restart()
+})()
 (function () {
   var form = document.getElementById('lead-form')
   var msg = document.getElementById('lead-msg')
