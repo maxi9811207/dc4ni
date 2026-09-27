@@ -418,13 +418,20 @@ function StandaloneBar() {
   return (
     <header className="vhead">
       <div className="vbar">
-        <VenueAvatar venue={venue} />
-        <div className="vbar-text">
-          <p className="vbar-name">{venue?.name || ''}</p>
-          <p className="vbar-sub">活動報名</p>
-        </div>
+        <Link to="/" className="vbar-home" aria-label={`${venue?.name || '場館'}首頁`}>
+          <VenueAvatar venue={venue} />
+          <div className="vbar-text">
+            <p className="vbar-name">{venue?.name || ''}</p>
+            <p className="vbar-sub">活動報名 · 看更多活動 ›</p>
+          </div>
+        </Link>
         {user
-          ? <span className="standalone-user"><span className="player-avatar"><AvatarImg src={user.avatar_url} name={user.name} /></span>{user.name}</span>
+          ? (
+            <button type="button" className="standalone-user" aria-label="會員中心" onClick={() => navigate('/me')}>
+              <span className="player-avatar"><AvatarImg src={user.avatar_url} name={user.name} /></span>{user.name}
+              {user.unread > 0 && <i className="dot" />}
+            </button>
+          )
           : <button className="btn btn-small btn-outline" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
       </div>
     </header>
