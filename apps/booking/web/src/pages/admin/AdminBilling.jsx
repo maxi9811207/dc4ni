@@ -5,12 +5,14 @@ import { FEATURE_NAMES, PLAN_NAMES, planOf } from '../../util'
 const STATUS = {
   active: ['使用中', 'success'], past_due: ['扣款失敗（寬限期）', 'warn'], suspended: ['已暫停', 'danger'], cancelled: ['已停止', 'gray'],
 }
-const ORDER = ['basic', 'standard', 'advanced']
-const PRICE = { basic: [490, 5390], standard: [1500, 16500], advanced: [4900, 53900] }
+const ORDER = ['lite', 'standard', 'pro', 'advanced', 'enterprise']
+const PRICE = { lite: [490, 5390], standard: [1490, 16390], pro: [4900, 53900], advanced: [12900, 141900] }
 const PLAN_FEATURES = {
-  basic: ['建立、查看單次活動', '球友線上報名、額滿候補'],
-  standard: ['基本方案全部功能', '收費對帳（匯款回填後五碼）', '課卡方案', 'LINE 推播、開課前一天提醒', '缺席管理', '名單下載 Excel'],
-  advanced: ['標準方案全部功能', 'DUPR 活動（分組、記分、匯出）', '時段預約（私人課、場地租借）', '營收與出席報表', '自訂網域'],
+  lite: ['建立、查看單次活動', '球友線上報名、額滿候補'],
+  standard: ['輕量方案全部功能', '收費對帳（匯款回填後五碼）', '課卡方案', '開課前一天提醒', '缺席管理'],
+  pro: ['標準方案全部功能', 'LINE 推播通知', '名單下載 Excel', 'DUPR 活動、時段預約', '營收與出席報表', '多位管理員與教練帳號'],
+  advanced: ['專業方案全部功能', '自訂網域', '多館管理（會員、課卡共用）', '優先客服與協助搬家'],
+  enterprise: ['進階方案全部功能', '場館專屬 App（iOS、Android 上架）', '專人報價、客製需求'],
 }
 
 function day(iso) {
@@ -32,7 +34,7 @@ export default function AdminBilling() {
         </div>
         {p.comp ? <p className="muted small mt">這個場館由 Digital Court 提供，不需付費。</p> : (
           <p className="small mt">
-            {p.billing_cycle === 'year' ? '年繳' : '月繳'} NT$ {PRICE[p.plan]?.[p.billing_cycle === 'year' ? 1 : 0].toLocaleString()}
+            {PRICE[p.plan] ? `${p.billing_cycle === 'year' ? '年繳' : '月繳'} NT$ ${PRICE[p.plan][p.billing_cycle === 'year' ? 1 : 0].toLocaleString()}` : '企業方案（專人報價）'}
             {p.period_end && (p.cancel_at_period_end ? `・將於 ${day(p.period_end)} 停止` : `・下次扣款 ${day(p.period_end)}`)}
           </p>
         )}
@@ -45,9 +47,14 @@ export default function AdminBilling() {
         {ORDER.map((k) => (
           <section key={k} className={`card plan-col ${k === p.plan ? 'on' : ''}`}>
             <div className="row between"><b>{PLAN_NAMES[k]}</b>{k === p.plan && <Badge tone="success">目前方案</Badge>}</div>
-            <p className="plan-price">NT$ {PRICE[k][0].toLocaleString()}<span>／月</span></p>
-            <p className="muted small">年繳 NT$ {PRICE[k][1].toLocaleString()}（送一個月）</p>
+            {PRICE[k] ? (
+              <>
+                <p className="plan-price">NT$ {PRICE[k][0].toLocaleString()}<span>／月</span></p>
+                <p className="muted small">年繳 NT$ {PRICE[k][1].toLocaleString()}（送一個月）</p>
+              </>
+            ) : <p className="plan-price">專人報價</p>}
             <ul>{PLAN_FEATURES[k].map((f) => <li key={f}>{f}</li>)}</ul>
+            {k === 'enterprise' && k !== p.plan && <a className="btn btn-small btn-light mt" href="https://dc-studio.cc/#apply" target="_blank" rel="noreferrer">聯絡我們</a>}
           </section>
         ))}
       </div>

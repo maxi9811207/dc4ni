@@ -92,7 +92,7 @@ def use(t: Tenant | None):
 PLATFORM_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tenants (
   slug TEXT PRIMARY KEY, name TEXT NOT NULL, data_dir TEXT NOT NULL,
-  plan TEXT NOT NULL DEFAULT 'basic', billing_cycle TEXT NOT NULL DEFAULT 'month',
+  plan TEXT NOT NULL DEFAULT 'lite', billing_cycle TEXT NOT NULL DEFAULT 'month',
   status TEXT NOT NULL DEFAULT 'pending',        -- pending 等付款／active／past_due／suspended／cancelled
   account_id INTEGER, custom_domain TEXT NOT NULL DEFAULT '', domain_status TEXT NOT NULL DEFAULT '', comp INTEGER NOT NULL DEFAULT 0,
   polar_customer_id TEXT NOT NULL DEFAULT '', polar_subscription_id TEXT NOT NULL DEFAULT '',
@@ -145,6 +145,7 @@ def init_platform(stamp: str):
     wal.close()
     with platform_db() as conn:
         conn.executescript(PLATFORM_SCHEMA)
+        conn.execute("UPDATE tenants SET plan='lite' WHERE plan='basic'")  # 2026-09-28 方案改名
         # 升級前的單場館安裝：把原本的資料夾登記成預設場館（資料原地不動、免費進階方案）
         if not conn.execute("SELECT slug FROM tenants WHERE slug=?", (DEFAULT_SLUG,)).fetchone():
             conn.execute("INSERT INTO tenants (slug, name, data_dir, plan, status, comp, created_at, activated_at)"

@@ -10,7 +10,8 @@ const STATUS = { booked: ['已預約', 'brand'], attended: ['出席', 'success']
 
 export default function Roster() {
   const { id } = useParams()
-  const { venue, handleError, showToast } = useApp()
+  const { user, venue, handleError, showToast } = useApp()
+  const coach = user?.role === 'coach'
   const [c, setC] = useState(null)
   const [adding, setAdding] = useState(false)
   const [removing, setRemoving] = useState(null)
@@ -44,17 +45,18 @@ export default function Roster() {
     <>
       <section className="card">
         <div className="row between">
-          {c.slot_set
-            ? <Link to={`/admin/slots/${c.slot_set.id}`} className="muted small">‹ 回「{c.slot_set.name}」</Link>
-            : <Link to={`/admin/courses?date=${c.date}`} className="muted small">‹ 回活動列表</Link>}
-          <Link to={`/admin/courses/${c.id}/edit`} className="small text-brand">編輯課程</Link>
+          {coach ? <Link to={`/admin/attendance?date=${c.date}`} className="muted small">‹ 回點名</Link>
+            : c.slot_set
+              ? <Link to={`/admin/slots/${c.slot_set.id}`} className="muted small">‹ 回「{c.slot_set.name}」</Link>
+              : <Link to={`/admin/courses?date=${c.date}`} className="muted small">‹ 回活動列表</Link>}
+          {!coach && <Link to={`/admin/courses/${c.id}/edit`} className="small text-brand">編輯課程</Link>}
         </div>
         <h2 className="detail-title">{c.name}</h2>
         <p className="course-meta"><b className="course-time">{showDate(c.date)} {c.start_time}~{c.end_time}</b> · {c.teacher?.name || '未指定老師'}</p>
         {c.dupr_required && (
           <div className="row between">
             <p className="small"><Badge tone="dupr">DUPR 場</Badge> {duprRange(c)}</p>
-            <Link to={`/admin/courses/${c.id}/event`} className="btn btn-small">賽事</Link>
+            {!coach && <Link to={`/admin/courses/${c.id}/event`} className="btn btn-small">賽事</Link>}
           </div>
         )}
         <div className="stats stats-3">
@@ -71,13 +73,13 @@ export default function Roster() {
         )}
       </section>
 
-      {c.share_code && !c.slot_set && <ShareBox c={c} saveUrl={`admin/courses/${c.id}`} onSaved={load} />}
+      {c.share_code && !c.slot_set && !coach && <ShareBox c={c} saveUrl={`admin/courses/${c.id}`} onSaved={load} />}
 
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>
         <div className="row gap-sm">
-          {planOf(venue).has('export') && <button className="btn btn-small btn-light" onClick={() => downloadFile(`admin/courses/${c.id}/roster/export`, `名單_${c.date}_${c.name}.xlsx`).catch(handleError)}>下載名單</button>}
-          <button className="btn btn-small" onClick={() => setAdding(true)}>＋ 加人</button>
+          {planOf(venue).has('export') && !coach && <button className="btn btn-small btn-light" onClick={() => downloadFile(`admin/courses/${c.id}/roster/export`, `名單_${c.date}_${c.name}.xlsx`).catch(handleError)}>下載名單</button>}
+          {!coach && <button className="btn btn-small" onClick={() => setAdding(true)}>＋ 加人</button>}
         </div>
       </div>
       {booked.length === 0 ? <Empty text="還沒有人預約" /> : (
@@ -103,10 +105,10 @@ export default function Roster() {
               <div className="admin-actions">
                 <button className={`btn btn-small ${r.status === 'attended' ? '' : 'btn-light'}`} onClick={() => setStatus(r, r.status === 'attended' ? 'booked' : 'attended')}>出席</button>
                 <button className={`btn btn-small ${r.status === 'absent' ? 'btn-danger' : 'btn-light'}`} onClick={() => setStatus(r, r.status === 'absent' ? 'booked' : 'absent')}>缺席</button>
-                {r.fee > 0 && (
+                {r.fee > 0 && !coach && (
                   <button className={`btn btn-small ${r.paid ? 'btn-light' : ''}`} onClick={() => setPaid(r, !r.paid)}>{r.paid ? '改為未付款' : '確認收款'}</button>
                 )}
-                <button className="btn btn-small btn-light text-danger" onClick={() => { setRefund(true); setRemoving(r) }}>取消預約</button>
+                {!coach && <button className="btn btn-small btn-light text-danger" onClick={() => { setRefund(true); setRemoving(r) }}>取消預約</button>}
               </div>
             </div>
           ))}

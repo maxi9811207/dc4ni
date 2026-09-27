@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import ImageInput from '../../components/ImageInput'
@@ -32,6 +32,7 @@ export default function AdminSettings() {
   }
 
   return (
+    <>
     <form className="card form" onSubmit={save}>
       <h3 className="card-title">場館資訊</h3>
       <Field label="場館名稱"><input className="input" value={form.name} onChange={set('name')} required /></Field>
@@ -90,5 +91,44 @@ export default function AdminSettings() {
       )}
       <button className="btn btn-block btn-lg">儲存設定</button>
     </form>
+    <BranchManager />
+    </>
+  )
+}
+
+// 多館管理：分館清單（會員、課卡在各分館共用；活動可以指定分館，前台課表依分館篩選）
+export function BranchManager() {
+  const { venue, handleError, showToast } = useApp()
+  const plan = planOf(venue)
+  const [list, setList] = useState(null)
+  const [name, setName] = useState('')
+  const [address, setAddress] = useState('')
+  const load = useCallback(() => api('admin/branches').then(setList).catch(handleError), [handleError])
+  const enabled = plan.has('multisite')
+  useEffect(() => { if (enabled) load() }, [load, enabled])
+  if (!enabled) return <UpgradeNote feature="多館管理" need={plan.needs('multisite')} />
+  const add = async (e) => {
+    e.preventDefault()
+    try { await api('admin/branches', { method: 'POST', body: { name, address, sort: list?.length || 0 } }); setName(''); setAddress(''); showToast('已新增分館'); load() } catch (err) { handleError(err) }
+  }
+  const toggle = async (b) => {
+    try { await api(`admin/branches/${b.id}`, { method: 'PUT', body: { active: b.active ? 0 : 1 } }); load() } catch (err) { handleError(err) }
+  }
+  return (
+    <section className="card form">
+      <h3 className="card-title">分館</h3>
+      <p className="muted small">會員、課卡在各分館共用。建立活動時可以選分館，前台課表會多一排分館篩選。</p>
+      {(list || []).map((b) => (
+        <div key={b.id} className={`row between list-row ${b.active ? '' : 'dim'}`}>
+          <div><b>{b.name}</b><p className="muted small">{b.address || '（沒有地址）'}</p></div>
+          <button type="button" className="btn btn-small btn-light" onClick={() => toggle(b)}>{b.active ? '停用' : '啟用'}</button>
+        </div>
+      ))}
+      <form className="grid2" onSubmit={add}>
+        <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="分館名稱，例：板橋館" required />
+        <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="地址（選填）" />
+        <button className="btn btn-small" disabled={!name.trim()}>＋ 新增分館</button>
+      </form>
+    </section>
   )
 }

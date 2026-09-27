@@ -35,20 +35,26 @@ import tenancy
 
 log = logging.getLogger("saas")
 
+# 年繳＝付 11 個月（送一個月）。企業方案專人報價，不在線上販售（平台管理手動設定）
 PLANS = {
-    "basic": {"name": "基本", "month": 490, "year": 5390},
-    "standard": {"name": "標準", "month": 1500, "year": 16500},
-    "advanced": {"name": "進階", "month": 4900, "year": 53900},
+    "lite": {"name": "輕量", "month": 490, "year": 5390},
+    "standard": {"name": "標準", "month": 1490, "year": 16390},
+    "pro": {"name": "專業", "month": 4900, "year": 53900},
+    "advanced": {"name": "進階", "month": 12900, "year": 141900},
+    "enterprise": {"name": "企業", "month": 0, "year": 0, "quote": True},
 }
-PLAN_ORDER = ["basic", "standard", "advanced"]
-FEATURES = {
-    "basic": set(),
-    "standard": {"fee", "cards", "push", "reminder", "noshow", "export"},
-}
-FEATURES["advanced"] = FEATURES["standard"] | {"dupr", "slots", "reports", "domain"}
+PLAN_ORDER = ["lite", "standard", "pro", "advanced", "enterprise"]
+SELLABLE = ["lite", "standard", "pro", "advanced"]
+FEATURES = {"lite": set()}
+FEATURES["standard"] = FEATURES["lite"] | {"fee", "cards", "reminder", "noshow"}
+FEATURES["pro"] = FEATURES["standard"] | {"push", "export", "dupr", "slots", "reports", "staff"}
+FEATURES["advanced"] = FEATURES["pro"] | {"domain", "multisite", "support"}
+FEATURES["enterprise"] = FEATURES["advanced"] | {"app"}
 FEATURE_NAMES = {
-    "fee": "收費對帳", "cards": "課卡方案", "push": "LINE 推播", "reminder": "開課前一天提醒", "noshow": "缺席管理",
-    "export": "名單下載 Excel", "dupr": "DUPR 活動", "slots": "時段預約", "reports": "營收與出席報表", "domain": "自訂網域",
+    "fee": "收費對帳", "cards": "課卡方案", "reminder": "開課前一天提醒", "noshow": "缺席管理",
+    "push": "LINE 推播通知", "export": "名單下載 Excel", "dupr": "DUPR 活動", "slots": "時段預約", "reports": "營收與出席報表",
+    "staff": "多位管理員與教練帳號", "domain": "自訂網域", "multisite": "多館管理", "support": "優先客服與協助搬家",
+    "app": "場館專屬 App",
 }
 GRACE_DAYS = 7          # 扣款失敗後的寬限期
 RETENTION_DAYS = 90     # 停止後保留資料的天數
@@ -80,6 +86,8 @@ FEATURE_RULES = [
     ("POST", re.compile(r"^/api/admin/slot-sets"), "slots"),
     ("PUT", re.compile(r"^/api/admin/slot-sets"), "slots"),
     ("GET", re.compile(r"^/api/admin/fees$"), "fee"),
+    ("POST", re.compile(r"^/api/admin/branches/?$"), "multisite"),
+    ("PUT", re.compile(r"^/api/admin/branches/\d+$"), "multisite"),
 ]
 # 暫停或停止的場館，後台只能看、匯出、改帳號，不能新增修改
 READONLY_ALLOW = [re.compile(r"^/api/admin/courses/\d+/roster/export$"), re.compile(r"^/api/admin/reports/export")]
@@ -255,7 +263,7 @@ def signup(body: dict, request: Request):
     venue_name = str(body.get("venue_name") or "").strip()[:60]
     slug = str(body.get("slug") or "").strip().lower()
     plan, cycle = str(body.get("plan") or ""), str(body.get("cycle") or "month")
-    if plan not in PLANS or cycle not in ("month", "year"):
+    if plan not in SELLABLE or cycle not in ("month", "year"):
         raise HTTPException(400, "請選擇方案")
     if not name or not venue_name:
         raise HTTPException(400, "請填寫你的稱呼與場館名稱")
@@ -344,7 +352,7 @@ def retry_checkout(a: dict, slug: str, body: dict):
         raise HTTPException(400, "這個場館訂閱中；要換方案或付款方式請按「管理訂閱」")
     plan = body.get("plan") or r["plan"]
     cycle = body.get("cycle") or r["billing_cycle"]
-    if plan not in PLANS or cycle not in ("month", "year"):
+    if plan not in SELLABLE or cycle not in ("month", "year"):
         raise HTTPException(400, "請選擇方案")
     with tenancy.platform_db() as conn:
         conn.execute("UPDATE tenants SET plan=?, billing_cycle=? WHERE slug=? AND status='pending'", (plan, cycle, slug))
@@ -398,7 +406,7 @@ def _products() -> dict[str, tuple[str, str]]:
     out = {}
     for pid, v in raw.items():
         plan, _, cycle = str(v).partition(":")
-        if plan in PLANS and cycle in ("month", "year"):
+        if plan in SELLABLE and cycle in ("month", "year"):
             out[pid] = (plan, cycle)
     return out
 
@@ -630,7 +638,7 @@ def admin_overview():
     mrr = 0
     for r in ts:
         v = tenant_view(r) | {"owner_email": r["owner_email"] or "", "owner_name": r["owner_name"] or ""}
-        if v["status"] in ("active", "past_due") and not r["comp"]:
+        if v["status"] in ("active", "past_due") and not r["comp"] and r["plan"] in SELLABLE:
             mrr += PLANS[r["plan"]]["month"] if r["billing_cycle"] == "month" else round(PLANS[r["plan"]]["year"] / 12)
         out.append(v)
     return {"tenants": out, "mrr": mrr, "leads": leads, "reports": reports, "events": events}
@@ -643,7 +651,7 @@ def admin_create_tenant(body: dict):
     if not st["ok"]:
         raise HTTPException(400, st["reason"])
     plan = body.get("plan") or "advanced"
-    if plan not in PLANS:
+    if plan not in PLANS:  # 企業方案也可以手動開
         raise HTTPException(400, "方案錯誤")
     email = _email(body.get("email"))
     name = str(body.get("name") or "").strip()[:60] or slug
@@ -693,7 +701,7 @@ DOMAIN_RE = re.compile(r"^(?=.{4,100}$)([a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+
 def set_domain(a: dict, slug: str, body: dict):
     r = _own_tenant(a, slug)
     if "domain" not in FEATURES.get(r["plan"], set()):
-        raise HTTPException(402, "自訂網域是進階方案的功能")
+        raise HTTPException(402, "自訂網域是進階方案以上的功能")
     domain = str(body.get("domain") or "").strip().lower().removeprefix("https://").removeprefix("http://").strip("/")
     if domain and (not DOMAIN_RE.match(domain) or domain.endswith("dc-studio.cc")):
         raise HTTPException(400, "網域格式不正確，例如 booking.yourclub.tw")
@@ -711,7 +719,8 @@ def set_domain(a: dict, slug: str, body: dict):
 def register(app):
     @app.get("/platform/api/plans", include_in_schema=False)
     def _plans():
-        return {"plans": [{"key": k, **PLANS[k], "features": sorted(FEATURES[k])} for k in PLAN_ORDER], "feature_names": FEATURE_NAMES}
+        return {"plans": [{"key": k, **PLANS[k], "features": sorted(FEATURES[k])} for k in PLAN_ORDER], "feature_names": FEATURE_NAMES,
+                "sellable": SELLABLE}
 
     @app.get("/platform/api/slug/{slug}", include_in_schema=False)
     def _slug(slug: str):

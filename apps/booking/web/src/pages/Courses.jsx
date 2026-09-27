@@ -20,6 +20,11 @@ export default function Courses() {
   const date = /^\d{4}-\d{2}-\d{2}$/.test(params.get('date') || '') ? params.get('date') : today()
   const [data, setData] = useState(null)
   const [kind, setKind] = useState('all')
+  const [branches, setBranches] = useState([])
+  const [branch, setBranch] = useState(() => { try { return localStorage.getItem('booking-branch') || 'all' } catch { return 'all' } })
+  useEffect(() => { api('branches').then(setBranches).catch(() => {}) }, [])
+  const pickBranch = (b) => { setBranch(b); try { localStorage.setItem('booking-branch', b) } catch { /* 無痕模式 */ } }
+  const inBranch = (x) => branch === 'all' || branches.length < 2 || String(x.branch?.id ?? x.branch_id ?? '') === branch
 
   useEffect(() => {
     let alive = true
@@ -31,13 +36,16 @@ export default function Courses() {
   const shown = [
     ...(data?.courses || []).filter((c) => kind === 'all' || (kind === 'dupr') === c.dupr_required),
     ...(kind === 'dupr' ? [] : (data?.slot_sets || []).map((x) => ({ ...x, slotSet: true }))),
-  ].sort((a, b) => a.start_time.localeCompare(b.start_time))
+  ].filter(inBranch).sort((a, b) => a.start_time.localeCompare(b.start_time))
   const maxDate = venue?.open_days ? addDays(today(), venue.open_days) : undefined
 
   return (
     <>
       <VenueHeader />
       <main className="page">
+        {branches.length > 1 && (
+          <Chips value={branch} onChange={pickBranch} options={[['all', '全部分館'], ...branches.map((b) => [String(b.id), b.name])]} />
+        )}
         <WeekPicker value={date} maxDate={maxDate} onChange={(d) => setParams({ date: d }, { replace: true })} />
         <div className="filter-row">
           <h3 className="date-title">{showDate(date)}</h3>

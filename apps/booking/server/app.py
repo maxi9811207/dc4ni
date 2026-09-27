@@ -131,6 +131,9 @@ CREATE TABLE IF NOT EXISTS event_games (
   status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS branches (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, address TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+  sort INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS leads (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, contact TEXT NOT NULL, org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '',
   needs TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '', ip TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
@@ -161,6 +164,7 @@ MIGRATIONS = {
         "deleted": "INTEGER NOT NULL DEFAULT 0",
         "avatar_url": "TEXT NOT NULL DEFAULT ''",
         "avatar_source": "TEXT NOT NULL DEFAULT ''",
+        "teacher_id": "INTEGER",                        # 教練帳號：綁定的老師（只能看、點這位老師的課）
         "blocked_until": "TEXT NOT NULL DEFAULT ''",   # 缺席太多次，暫停報名到這天（含）；9999-12-31＝直到場主解除
         "block_reason": "TEXT NOT NULL DEFAULT ''",
     },
@@ -179,9 +183,11 @@ MIGRATIONS = {
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
         "cover_url": "TEXT NOT NULL DEFAULT ''",
         "slot_set_id": "INTEGER",
+        "branch_id": "INTEGER",
         "show_attendees": "INTEGER NOT NULL DEFAULT 1",
     },
     "course_templates": {
+        "branch_id": "INTEGER",
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "show_attendees": "INTEGER NOT NULL DEFAULT 1",
         "fee": "INTEGER NOT NULL DEFAULT 0",
@@ -192,6 +198,10 @@ MIGRATIONS = {
     },
     "slot_sets": {
         "show_attendees": "INTEGER NOT NULL DEFAULT 0",
+        "branch_id": "INTEGER",
+    },
+    "teachers": {
+        "hourly_rate": "INTEGER NOT NULL DEFAULT 0",  # 鐘點費（每小時），給教練時數報表
     },
     "reservations": {
         "partner_id": "INTEGER",
@@ -251,8 +261,8 @@ def site_url(path: str = "") -> str:
     return (base + "/" + path.lstrip("/")) if base else ""
 
 
-def queue_push(conn, line_user_id: str | None, text: str, link: str = ""):
-    if line_user_id and line_push.enabled() and saas.has("push"):
+def queue_push(conn, line_user_id: str | None, text: str, link: str = "", force: bool = False):
+    if line_user_id and line_push.enabled() and (force or saas.has("push")):
         PENDING_PUSH.setdefault(id(conn), []).append((line_user_id, f"{text}\n{link}" if link else text))
 
 
@@ -298,21 +308,23 @@ def admin_notify(conn, kind: str, text: str, link: str = ""):
                  (kind, text, link, stamp()))
     if kind in OWNER_PUSH_KINDS:
         for o in conn.execute("SELECT line_user_id FROM users WHERE role='owner' AND deleted=0 AND line_user_id IS NOT NULL"):
-            queue_push(conn, o["line_user_id"], f"【後台】{text}", site_url("#/admin" + link.removeprefix("/admin")))
+            queue_push(conn, o["line_user_id"], f"【後台】{text}", site_url("#/admin" + link.removeprefix("/admin")),
+                       force=kind == "digest")  # 明日總覽屬於「開課前一天提醒」
 
 
 def course_label(c: dict) -> str:
     return f"「{c['name']}」{c['date'][5:].replace('-', '/')} {c['start_time']}"
 
 
-def notify(conn, user_id: int, text: str, course: dict | None = None):
-    """站內通知；有綁 LINE 的會員同時推到 LINE（附活動頁連結）。"""
+def notify(conn, user_id: int, text: str, course: dict | None = None, reminder: bool = False):
+    """站內通知；有綁 LINE 的會員同時推到 LINE（附活動頁連結）。
+    reminder：開課前一天提醒——標準方案沒有「LINE 推播通知」，但提醒本身一定要推到 LINE 才有用。"""
     conn.execute("INSERT INTO notifications (user_id, text, created_at) VALUES (?,?,?)",
                  (user_id, text, stamp()))
     u = conn.execute("SELECT line_user_id FROM users WHERE id=?", (user_id,)).fetchone()
     if u and u["line_user_id"]:
         link = site_url(course["share_code"]) if course and course.get("share_code") else site_url("#/me?tab=notifications")
-        queue_push(conn, u["line_user_id"], text, link)
+        queue_push(conn, u["line_user_id"], text, link, force=reminder)
 
 
 def course_start(c: dict) -> datetime:
@@ -320,7 +332,7 @@ def course_start(c: dict) -> datetime:
 
 
 USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "created_at", "dupr_id", "dupr_name",
-               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at", "avatar_url")
+               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at", "avatar_url", "teacher_id")
 
 
 def public_user(u: dict) -> dict:
@@ -368,6 +380,23 @@ def require_user(user=Depends(current_user)) -> dict:
     if not user:
         fail(401, "請先登入")
     return user
+
+
+def require_staff(request: Request, user=Depends(require_user)) -> dict:
+    """場主或教練（教練只能看、點自己的課，見 coach_course）。"""
+    if user["role"] == "owner":
+        saas.check_owner_request(request)
+        return user
+    if user["role"] == "coach" and user.get("teacher_id") and saas.has("staff"):
+        if tenancy.current().status in ("suspended", "cancelled") and request.method not in ("GET", "HEAD"):
+            fail(402, "場館已暫停服務，後台目前只能查看")
+        return user
+    fail(403, "僅限場主使用")
+
+
+def coach_course(user: dict, c: dict):
+    if user["role"] == "coach" and c.get("teacher_id") != user.get("teacher_id"):
+        fail(403, "這堂不是你的課")
 
 
 def require_owner(request: Request, user=Depends(require_user)) -> dict:
@@ -693,6 +722,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "pay_hours": c["pay_hours"],
         "cover_url": c["cover_url"],
         "slot_set": slot_ref(conn, c),
+        "branch": one(conn.execute("SELECT id, name, address FROM branches WHERE id=?", (c.get("branch_id"),))) if c.get("branch_id") else None,
     }
 
 
@@ -1545,7 +1575,7 @@ def send_reminders(conn) -> int:
                 text += f"賽程已排好，您在 {groups[r['user_id']]}。"
             if r["fee"] and not r["paid"]:
                 text += f"報名費 NT$ {r['fee']:,} 還沒完成付款，請記得付款並回報。"
-            notify(conn, r["user_id"], text, course=c)
+            notify(conn, r["user_id"], text, course=c, reminder=True)
             sent += 1
     key = f"digest:{tomorrow}"
     if courses and not one(conn.execute("SELECT key FROM kv WHERE key=?", (key,))):
@@ -2052,7 +2082,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url", "show_attendees")
+                 "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url", "show_attendees", "branch_id")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -2094,7 +2124,9 @@ def clean_course(b: dict) -> dict:
             out[k] = max(int(out[k] or 0), 0)
     if out.get("fee"):
         out["cost"] = 0  # 單次報名費的活動不扣課卡
-    for k in ("teacher_id", "template_id"):
+    if out.get("branch_id"):
+        saas.need("multisite")
+    for k in ("teacher_id", "template_id", "branch_id"):
         if k in out:
             out[k] = int(out[k]) if out[k] else None
     if "plan_ids" in out:
@@ -2269,7 +2301,7 @@ def delete_template(template_id: int, owner=Depends(require_owner)):
 # 每個時段就是一筆 courses（slot_set_id 指回活動），報名、候補、課卡、報名費、付款審核、提醒、名單、報表都共用原本的流程。
 
 SLOT_FIELDS = ("name", "category", "teacher_id", "description", "location", "cover_url", "capacity", "cost", "fee",
-               "pay_hours", "plan_ids", "booking_deadline_min", "cancel_deadline_min", "listed", "show_attendees")
+               "pay_hours", "plan_ids", "booking_deadline_min", "cancel_deadline_min", "listed", "show_attendees", "branch_id")
 # 修改活動時同步到尚未開始的時段（名額另外處理，不會少於已報名人數）
 SLOT_SYNC = tuple(k for k in SLOT_FIELDS if k != "capacity")
 
@@ -2355,7 +2387,7 @@ def slot_set_base(conn, ss: dict) -> dict:
     teacher = one(conn.execute("SELECT id, name, photo_url, title FROM teachers WHERE id=?", (ss["teacher_id"],)))
     return {**{k: ss[k] for k in ("id", "name", "category", "description", "location", "cover_url", "capacity", "cost", "fee",
                                   "pay_hours", "booking_deadline_min", "cancel_deadline_min", "share_code")},
-            "kind": "slots", "listed": bool(ss["listed"]), "show_attendees": bool(ss["show_attendees"]), "teacher": teacher, "plan_ids": json.loads(ss["plan_ids"])}
+            "kind": "slots", "listed": bool(ss["listed"]), "show_attendees": bool(ss["show_attendees"]), "branch_id": ss["branch_id"], "teacher": teacher, "plan_ids": json.loads(ss["plan_ids"])}
 
 
 def slot_day_summary(conn, ss: dict, day: str, user: dict | None, s: dict) -> dict:
@@ -2454,7 +2486,7 @@ def create_slot_set(body: dict = Depends(json_body), owner=Depends(require_owner
         return {"id": set_id, "created": n}
 
 
-DEFAULT_SLOT = {"category": "", "teacher_id": None, "description": "", "location": "", "cover_url": "", "capacity": 1,
+DEFAULT_SLOT = {"branch_id": None, "category": "", "teacher_id": None, "description": "", "location": "", "cover_url": "", "capacity": 1,
                 "cost": 0, "fee": 0, "pay_hours": 48, "plan_ids": "[]", "booking_deadline_min": 60,
                 "cancel_deadline_min": 1440, "listed": 1, "show_attendees": 0}
 
@@ -2584,14 +2616,15 @@ def roster_rows(conn, course_id: int) -> list[dict]:
 
 
 @app.get("/api/admin/attendance")
-def attendance(request: Request, owner=Depends(require_owner)):
-    """某一天所有課程與名單，集中點名用。"""
+def attendance(request: Request, owner=Depends(require_staff)):
+    """某一天所有課程與名單，集中點名用（教練只看到自己的課）。"""
     day = request.query_params.get("date") or now().date().isoformat()
+    mine = owner["teacher_id"] if owner["role"] == "coach" else None
     with db() as conn:
         s = get_settings(conn)
         out = []
-        for c in rows(conn.execute("SELECT * FROM courses WHERE date=? AND status='open' ORDER BY start_time, id",
-                                   (day,))):
+        for c in rows(conn.execute("SELECT * FROM courses WHERE date=? AND status='open' AND (? IS NULL OR teacher_id=?) ORDER BY start_time, id",
+                                   (day, mine, mine))):
             v = course_view(conn, c, None, s)
             v["roster"] = with_noshow(conn, [r for r in roster_rows(conn, c["id"]) if r["status"] != "waitlist"], s)
             v["started"] = now() >= course_start(c)
@@ -2600,10 +2633,11 @@ def attendance(request: Request, owner=Depends(require_owner)):
 
 
 @app.post("/api/admin/courses/{course_id}/attendance")
-def mark_all(course_id: int, owner=Depends(require_owner)):
+def mark_all(course_id: int, owner=Depends(require_staff)):
     """把尚未點名的學員全部標記為出席。"""
     with db() as conn:
         c = get_course(conn, course_id)
+        coach_course(owner, c)
         if now().date().isoformat() < c["date"]:
             fail(400, "開課當天才能點名")
         n = conn.execute("UPDATE reservations SET status='attended', updated_at=? WHERE course_id=? AND status='booked'",
@@ -2632,17 +2666,18 @@ def attendance_stats(request: Request, owner=Depends(require_owner)):
 
 
 @app.get("/api/admin/courses/{course_id}/roster")
-def roster(course_id: int, owner=Depends(require_owner)):
+def roster(course_id: int, owner=Depends(require_staff)):
     with db() as conn:
         c = get_course(conn, course_id)
+        coach_course(owner, c)
         v = course_view(conn, c, None, get_settings(conn))
         v["roster"] = with_noshow(conn, roster_rows(conn, course_id))
         return v
 
 
 @app.post("/api/admin/reservations/{res_id}")
-def update_reservation(res_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
-    """點名（attended/absent/booked）或場主取消（cancelled，退卡）。"""
+def update_reservation(res_id: int, body: dict = Depends(json_body), owner=Depends(require_staff)):
+    """點名（attended/absent/booked）或場主取消（cancelled，退卡）；教練只能點自己課的名。"""
     b = body
     status = b.get("status")
     if status not in ("attended", "absent", "booked", "cancelled"):
@@ -2652,6 +2687,9 @@ def update_reservation(res_id: int, body: dict = Depends(json_body), owner=Depen
         if not r:
             fail(404, "找不到預約")
         c = get_course(conn, r["course_id"])
+        coach_course(owner, c)
+        if owner["role"] == "coach" and (status == "cancelled" or r["status"] == "waitlist"):
+            fail(403, "教練只能點名，取消或候補請找場主")
         if r["status"] == "cancelled":
             fail(400, "這筆預約已取消；要恢復請用「代為預約」重新加入（會重新扣卡）")
         if status == "cancelled" and r["status"] != "waitlist" and has_event(conn, c["id"]):
@@ -2736,7 +2774,38 @@ def crud(table: str, fields: tuple, ints: tuple = ()):
             return {"ok": True}
 
 
-crud("teachers", ("name", "title", "bio", "photo_url", "active", "sort"), ("active", "sort"))
+crud("teachers", ("name", "title", "bio", "photo_url", "active", "sort", "hourly_rate"), ("active", "sort", "hourly_rate"))
+crud("branches", ("name", "address", "active", "sort"), ("active", "sort"))
+
+
+@app.get("/api/admin/coach-hours")
+def coach_hours(request: Request, user=Depends(require_staff)):
+    """教練時數與鐘點費：期間內每位老師已開始、未停課的課（堂數、時數、出席人次、鐘點費）。教練只看自己。"""
+    saas.need("staff")
+    end = request.query_params.get("to") or now().date().isoformat()
+    start = request.query_params.get("from") or end[:8] + "01"
+    mine = user["teacher_id"] if user["role"] == "coach" else None
+    with db() as conn:
+        out = []
+        for t in rows(conn.execute("SELECT * FROM teachers WHERE (? IS NULL OR id=?) ORDER BY sort, id", (mine, mine))):
+            cs = rows(conn.execute("SELECT * FROM courses WHERE teacher_id=? AND status='open' AND date BETWEEN ? AND ?"
+                                   " AND (date || 'T' || start_time) <= ? ORDER BY date, start_time",
+                                   (t["id"], start, end, now().isoformat(timespec="minutes"))))
+            minutes = sum(reports._minutes(c) for c in cs)
+            attended = sum(conn.execute("SELECT COUNT(*) FROM reservations WHERE course_id=? AND status='attended'", (c["id"],)).fetchone()[0] for c in cs)
+            if not cs and mine is None and not t["active"]:
+                continue
+            out.append({"teacher_id": t["id"], "name": t["name"], "sessions": len(cs), "hours": round(minutes / 60, 1), "attended": attended,
+                        "rate": t["hourly_rate"], "amount": round(minutes / 60 * t["hourly_rate"]),
+                        "courses": [{"id": c["id"], "date": c["date"], "start_time": c["start_time"], "end_time": c["end_time"], "name": c["name"]} for c in cs]})
+        return {"from": start, "to": end, "teachers": out}
+
+
+@app.get("/api/branches")
+def public_branches():
+    """分館（多館管理）：前台課表依分館篩選。"""
+    with db() as conn:
+        return rows(conn.execute("SELECT id, name, address FROM branches WHERE active=1 ORDER BY sort, id"))
 crud("plans", ("name", "type", "quantity", "valid_days", "price", "description", "active", "sort"),
      ("quantity", "valid_days", "price", "active", "sort"))
 
@@ -2878,8 +2947,19 @@ def update_member(user_id: int, body: dict = Depends(json_body), owner=Depends(r
             conn.execute("UPDATE users SET blocked_until=?, block_reason=? WHERE id=?", (until, reason, user_id))
             ns = noshow_status(conn, {**u, "blocked_until": until, "block_reason": reason})
             notify(conn, user_id, f"主辦已暫停您的報名{block_text(ns)}（{reason}）。已報名的活動不受影響。")
-        if b.get("role") in ("student", "owner") and u["id"] != owner["id"]:
-            conn.execute("UPDATE users SET role=? WHERE id=?", (b["role"], user_id))
+        if b.get("role") in ("student", "owner", "coach") and u["id"] != owner["id"]:
+            if b["role"] == "owner" and u["role"] != "owner" and not saas.has("staff") and \
+                    conn.execute("SELECT COUNT(*) FROM users WHERE role='owner' AND deleted=0").fetchone()[0] >= 1:
+                saas.need("staff")  # 沒有「多位管理員」的方案只能有一位場主
+            teacher = None
+            if b["role"] == "coach":
+                saas.need("staff")
+                teacher = int(b.get("teacher_id") or 0) or None
+                if not teacher or not one(conn.execute("SELECT id FROM teachers WHERE id=?", (teacher,))):
+                    fail(400, "請選擇這位教練對應的老師")
+            conn.execute("UPDATE users SET role=?, teacher_id=? WHERE id=?", (b["role"], teacher, user_id))
+            if b["role"] != "owner":
+                revoke_tokens(conn, user_id)  # 權限降低：其他裝置重新登入
         return {"ok": True}
 
 

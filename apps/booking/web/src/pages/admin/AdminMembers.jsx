@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import { Avatar, Badge, Chips, Empty, Field, Loading, Modal } from '../../components/ui'
-import { cardRemain, rating, showDateTime } from '../../util'
+import { cardRemain, planOf, rating, showDateTime } from '../../util'
 
 export default function AdminMembers() {
   const { handleError } = useApp()
@@ -30,6 +30,7 @@ export default function AdminMembers() {
           <div className="flex1 min0">
             <b>{m.name}</b>
             {m.role === 'owner' && <Badge>場主</Badge>}
+            {m.role === 'coach' && <Badge tone="brand">教練</Badge>}
             {m.suspended ? <Badge tone="danger">停權</Badge> : null}
             {m.noshow?.blocked && <Badge tone="warn">暫停報名</Badge>}
             {m.dupr_id && <Badge tone="dupr">DUPR {rating(m.dupr_doubles)}{m.dupr_verified ? ' ✓' : ''}</Badge>}
@@ -115,9 +116,7 @@ function MemberDialog({ m, onClose, onChanged }) {
               <button className="btn btn-block btn-outline-danger" onClick={() => update({ suspended: true, suspend_reason: reason }, '已停權')}>停權此帳號</button>
             </>
           )}
-          <button className="btn btn-block btn-light" onClick={() => update({ role: m.role === 'owner' ? 'student' : 'owner' }, '已更新權限')}>
-            {m.role === 'owner' ? '取消場主權限' : '設為場主（可管理後台）'}
-          </button>
+          <RoleEditor m={m} update={update} />
           {confirmDelete ? (
             <div className="alert danger">
               <p>確定刪除「{m.name}」？他的預約、課卡、訂單、評價都會一併刪除，無法復原。</p>
@@ -214,5 +213,37 @@ function NoShowAdmin({ m, run, onChanged }) {
         </div>
       )}
     </>
+  )
+}
+
+// 身分：學員／教練（綁老師，只能看、點自己的課）／場主（管理整個後台）；多位管理員與教練是專業方案以上
+function RoleEditor({ m, update }) {
+  const { venue, handleError } = useApp()
+  const plan = planOf(venue)
+  const [role, setRole] = useState(m.role)
+  const [teacher, setTeacher] = useState(m.teacher_id || '')
+  const [teachers, setTeachers] = useState([])
+  useEffect(() => { api('admin/teachers').then(setTeachers).catch(handleError) }, [handleError])
+  const changed = role !== m.role || (role === 'coach' && String(teacher) !== String(m.teacher_id || ''))
+  return (
+    <div className="form">
+      <Field label="身分" hint={role === 'coach' ? '教練登入後只看得到、點得到這位老師的課，也能看自己的時數' : role === 'owner' ? '場主可以管理整個後台' : ''}>
+        <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
+          <option value="student">學員</option>
+          <option value="coach" disabled={!plan.has('staff')}>教練{!plan.has('staff') ? `（${plan.needs('staff')}方案）` : ''}</option>
+          <option value="owner">場主{!plan.has('staff') && m.role !== 'owner' ? `（第二位場主需${plan.needs('staff')}方案）` : ''}</option>
+        </select>
+      </Field>
+      {role === 'coach' && (
+        <Field label="對應的老師">
+          <select className="input" value={teacher} onChange={(e) => setTeacher(e.target.value)}>
+            <option value="">請選擇</option>
+            {teachers.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </Field>
+      )}
+      <button className="btn btn-block btn-light" disabled={!changed || (role === 'coach' && !teacher)}
+        onClick={() => update({ role, teacher_id: teacher || null }, '已更新身分，對方需要重新登入')}>更新身分</button>
+    </div>
   )
 }

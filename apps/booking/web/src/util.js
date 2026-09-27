@@ -105,10 +105,11 @@ export function blockUntil(ns) {
 }
 
 // 平台方案：目前場館能用哪些功能（沒有平台資訊時＝單場館安裝，全部可用）
-export const PLAN_NAMES = { basic: '基本', standard: '標準', advanced: '進階' }
+export const PLAN_NAMES = { lite: '輕量', standard: '標準', pro: '專業', advanced: '進階', enterprise: '企業' }
 export const FEATURE_NAMES = {
-  fee: '收費對帳', cards: '課卡方案', push: 'LINE 推播', reminder: '開課前一天提醒', noshow: '缺席管理',
-  export: '名單下載 Excel', dupr: 'DUPR 活動', slots: '時段預約', reports: '營收與出席報表', domain: '自訂網域',
+  fee: '收費對帳', cards: '課卡方案', reminder: '開課前一天提醒', noshow: '缺席管理',
+  push: 'LINE 推播通知', export: '名單下載 Excel', dupr: 'DUPR 活動', slots: '時段預約', reports: '營收與出席報表',
+  staff: '多位管理員與教練帳號', domain: '自訂網域', multisite: '多館管理', support: '優先客服與協助搬家', app: '場館專屬 App',
 }
 export function planOf(venue) {
   const p = venue?.platform

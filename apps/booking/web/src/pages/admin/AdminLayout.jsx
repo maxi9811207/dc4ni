@@ -19,6 +19,10 @@ const I = {
   settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
 }
 
+// 教練帳號只能用點名、名單、自己的時數
+const COACH_PATHS = [/^\/admin\/attendance/, /^\/admin\/courses\/\d+$/, /^\/admin\/hours/]
+const COACH_MENU = [{ title: '', items: [['/admin/attendance', '出席管理', 'attendance'], ['/admin/hours', '我的時數', 'teachers']] }]
+
 export const MENU = [
   { title: '', items: [
     ['/admin', '營運總覽', 'dashboard'],
@@ -30,6 +34,7 @@ export const MENU = [
     ['/admin/teachers', '師資團隊', 'teachers'],
     ['/admin/orders', '付款審核', 'orders', 'fee'],
     ['/admin/reports', '分析與報表', 'reports', 'reports'],
+    ['/admin/hours', '教練時數', 'teachers', 'staff'],
     ['/admin/reviews', '評價管理', 'reviews'],
   ] },
   { title: '系統設定', items: [
@@ -49,6 +54,7 @@ function Icon({ name }) {
 function pageTitle(pathname) {
   if (pathname === '/admin/notifications') return '通知'
   if (pathname === '/admin/billing') return '方案與帳單'
+  if (pathname === '/admin/hours') return '教練時數'
   if (/^\/admin\/courses\/new/.test(pathname)) return '建立活動'
   if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯活動'
   if (/^\/admin\/slots\/\d+\/edit/.test(pathname)) return '時段預約設定'
@@ -76,7 +82,8 @@ export default function AdminLayout() {
   }, [refreshUser])
 
   if (!user) return <Navigate to="/login" replace state={{ from: pathname }} />
-  if (user.role !== 'owner') return <Navigate to="/" replace />
+  if (user.role === 'coach' && !COACH_PATHS.some((rx) => rx.test(pathname))) return <Navigate to="/admin/attendance" replace />
+  if (user.role !== 'owner' && user.role !== 'coach') return <Navigate to="/" replace />
   const unread = user.admin_unread || 0
   const plan = planOf(venue)
   const lockedFeature = MENU.flatMap((g) => g.items).find(([to, , , f]) => f && pathname.startsWith(to) && !plan.has(f))?.[3]
@@ -104,7 +111,7 @@ export default function AdminLayout() {
           <p className="drawer-user">{user.name}</p>
         </div>
         <nav>
-          {MENU.map((g) => (
+          {(user.role === 'coach' ? COACH_MENU : MENU).map((g) => (
             <div key={g.title || 'main'}>
               {g.title && <p className="drawer-group">{g.title}</p>}
               {g.items.map(([to, label, icon, feature]) => (

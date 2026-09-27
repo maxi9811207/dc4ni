@@ -866,3 +866,6 @@ button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px
 .type-pick:disabled { opacity: 0.55; cursor: not-allowed; }
 .type-pick .lock-tag { margin-left: 0; margin-top: 4px; align-self: flex-start; }
 .venue-paused { background: var(--danger-soft); color: var(--danger); font-size: 14px; padding: 10px 14px; text-align: center; }
+.hours-head { width: 100%; border: 0; background: none; padding: 0; font: inherit; color: inherit; cursor: pointer; text-align: left; }
+.hours-list { margin: 4px 0 0; padding-left: 18px; font-size: 13px; color: var(--text-2); display: grid; gap: 2px; }
+.hours-list span { font-variant-numeric: tabular-nums; margin-right: 8px; color: var(--muted); }

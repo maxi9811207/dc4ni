@@ -31,6 +31,7 @@ import AdminNotifications from './pages/admin/AdminNotifications'
 import AdminTemplates from './pages/admin/AdminTemplates'
 import Reports from './pages/admin/Reports'
 import AdminBilling from './pages/admin/AdminBilling'
+import AdminHours from './pages/admin/AdminHours'
 
 function SlotTopBar() {
   return <TopBar title="時段預約" back={-1} />
@@ -151,6 +152,7 @@ export default function App() {
             <Route path="reviews" element={<AdminReviews />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="billing" element={<AdminBilling />} />
+            <Route path="hours" element={<AdminHours />} />
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

@@ -38,6 +38,7 @@ export default function CourseCard({ course: c, showCount = true, showDate, to, 
     showDate && `${c.date.slice(5).replace('-', '/')}（${c.weekday}）`,
     dur ? `${dur} · 到 ${c.end_time}` : `到 ${c.end_time}`,
     c.category && c.category !== 'DUPR 場' && c.category,
+    c.branch?.name,
     c.location,
     c.fee > 0 && `NT$ ${c.fee.toLocaleString()}`,
   ].filter(Boolean)

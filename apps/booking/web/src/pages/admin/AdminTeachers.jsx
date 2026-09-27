@@ -3,11 +3,12 @@ import { useApp } from '../../App'
 import { api } from '../../api'
 import ImageInput from '../../components/ImageInput'
 import { Avatar, Badge, Empty, Field, Loading, Modal } from '../../components/ui'
+import { planOf } from '../../util'
 
-const EMPTY = { name: '', title: '', bio: '', photo_url: '', active: 1, sort: 0 }
+const EMPTY = { name: '', title: '', bio: '', photo_url: '', active: 1, sort: 0, hourly_rate: 0 }
 
 export default function AdminTeachers() {
-  const { handleError, showToast } = useApp()
+  const { venue, handleError, showToast } = useApp()
   const [list, setList] = useState(null)
   const [editing, setEditing] = useState(null)
   const load = useCallback(() => api('admin/teachers').then(setList).catch(handleError), [handleError])
@@ -50,6 +51,11 @@ export default function AdminTeachers() {
             <Field label="姓名"><input className="input" value={editing.name} onChange={set('name')} required /></Field>
             <Field label="頭銜"><input className="input" value={editing.title} onChange={set('title')} placeholder="例：USAPA 認證教練" /></Field>
             <Field label="介紹"><textarea className="input" rows={4} value={editing.bio} onChange={set('bio')} /></Field>
+            {planOf(venue).has('staff') && (
+              <Field label="鐘點費（每小時 NT$）" hint="給「教練時數」報表計算用，不會顯示在前台">
+                <input className="input" type="number" min="0" value={editing.hourly_rate || 0} onChange={set('hourly_rate')} />
+              </Field>
+            )}
             <Field label="排序" hint="數字小的排前面"><input className="input" type="number" value={editing.sort} onChange={set('sort')} /></Field>
             <label className="check"><input type="checkbox" checked={!!editing.active} onChange={set('active')} /> 在「師資陣容」顯示</label>
             <button className="btn btn-block">儲存</button>

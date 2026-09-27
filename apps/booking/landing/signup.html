@@ -59,12 +59,13 @@
 <script>
 (function () {
   var q = new URLSearchParams(location.search)
-  var st = { plan: ['basic', 'standard', 'advanced'].indexOf(q.get('plan')) >= 0 ? q.get('plan') : 'standard', cycle: q.get('cycle') === 'year' ? 'year' : 'month', plans: [] }
+  var st = { plan: ['lite', 'standard', 'pro', 'advanced'].indexOf(q.get('plan')) >= 0 ? q.get('plan') : 'standard', cycle: q.get('cycle') === 'year' ? 'year' : 'month', plans: [] }
   var f = DC.$('#f'), msg = DC.$('#msg')
   var DESC = {
-    basic: ['建立、查看單次活動', '球友線上報名、額滿候補'],
-    standard: ['基本方案全部功能', '收費對帳（匯款回填後五碼）', '課卡、LINE 推播、開課提醒', '缺席管理、名單下載'],
-    advanced: ['標準方案全部功能', 'DUPR 活動分組記分', '時段預約（私人課、租場）', '報表、自訂網域'],
+    lite: ['建立、查看單次活動', '球友線上報名、額滿候補'],
+    standard: ['輕量方案全部功能', '收費對帳（匯款回填後五碼）', '課卡方案、開課前一天提醒', '缺席管理'],
+    pro: ['標準方案全部功能', 'LINE 推播、DUPR 活動、時段預約', '報表、名單下載', '多位管理員與教練帳號'],
+    advanced: ['專業方案全部功能', '多館管理', '自訂網域', '優先客服與協助搬家'],
   }
   function draw() {
     DC.$('#plans').innerHTML = st.plans.map(function (p) {
@@ -78,7 +79,7 @@
     var sel = st.plans.filter(function (p) { return p.key === st.plan })[0]
     if (sel) DC.$('#go').textContent = '前往付款（' + DC.money(st.cycle === 'year' ? sel.year : sel.month) + '／' + (st.cycle === 'year' ? '年' : '月') + '）'
   }
-  DC.api('plans').then(function (d) { st.plans = d.plans; draw() })
+  DC.api('plans').then(function (d) { st.plans = d.plans.filter(function (p) { return d.sellable.indexOf(p.key) >= 0 }); draw() })
   DC.$('#plans').addEventListener('change', function (e) { if (e.target.name === 'plan') { st.plan = e.target.value; draw() } })
   document.querySelectorAll('[data-cycle]').forEach(function (b) { b.addEventListener('click', function () { st.cycle = b.dataset.cycle; draw() }) })
 

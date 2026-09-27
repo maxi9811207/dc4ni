@@ -55,15 +55,62 @@
       "publisher": { "@id": "https://dc-studio.cc/#org" },
       "audience": { "@type": "BusinessAudience", "audienceType": "匹克球團主、教練、球館、社團" },
       "offers": [
-        { "@type": "Offer", "name": "基本方案", "price": 490, "priceCurrency": "TWD", "url": "https://dc-studio.cc/signup?plan=basic",
-          "priceSpecification": { "@type": "UnitPriceSpecification", "price": 490, "priceCurrency": "TWD", "unitText": "月" },
-          "description": "建立、查看單次活動；球友線上報名、額滿候補" },
-        { "@type": "Offer", "name": "標準方案", "price": 1500, "priceCurrency": "TWD", "url": "https://dc-studio.cc/signup?plan=standard",
-          "priceSpecification": { "@type": "UnitPriceSpecification", "price": 1500, "priceCurrency": "TWD", "unitText": "月" },
-          "description": "基本方案＋收費對帳、課卡、LINE 推播與開課提醒、缺席管理、名單下載" },
-        { "@type": "Offer", "name": "進階方案", "price": 4900, "priceCurrency": "TWD", "url": "https://dc-studio.cc/signup?plan=advanced",
-          "priceSpecification": { "@type": "UnitPriceSpecification", "price": 4900, "priceCurrency": "TWD", "unitText": "月" },
-          "description": "標準方案＋DUPR 活動、時段預約（私人課、租場）、營收與出席報表、自訂網域" }
+        {
+          "@type": "Offer",
+          "name": "輕量方案",
+          "price": 490,
+          "priceCurrency": "TWD",
+          "url": "https://dc-studio.cc/signup?plan=lite",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": 490,
+            "priceCurrency": "TWD",
+            "unitText": "月"
+          },
+          "description": "建立、查看單次活動、球友 LINE 一鍵登入報名、額滿候補、自動遞補、活動短網址與 LINE 預覽"
+        },
+        {
+          "@type": "Offer",
+          "name": "標準方案",
+          "price": 1490,
+          "priceCurrency": "TWD",
+          "url": "https://dc-studio.cc/signup?plan=standard",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": 1490,
+            "priceCurrency": "TWD",
+            "unitText": "月"
+          },
+          "description": "輕量方案全部功能、收費對帳（匯款回填後五碼）、課卡方案（堂數、點數、無限）、開課前一天 LINE 提醒、缺席管理"
+        },
+        {
+          "@type": "Offer",
+          "name": "專業方案",
+          "price": 4900,
+          "priceCurrency": "TWD",
+          "url": "https://dc-studio.cc/signup?plan=pro",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": 4900,
+            "priceCurrency": "TWD",
+            "unitText": "月"
+          },
+          "description": "標準方案全部功能、LINE 推播通知（報名、候補、收款）、DUPR 活動（分組、記分、匯出）、時段預約（私人課、場地租借）、營收與出席報表、名單下載、多位管理員與教練帳號（鐘點費報表）"
+        },
+        {
+          "@type": "Offer",
+          "name": "進階方案",
+          "price": 12900,
+          "priceCurrency": "TWD",
+          "url": "https://dc-studio.cc/signup?plan=advanced",
+          "priceSpecification": {
+            "@type": "UnitPriceSpecification",
+            "price": 12900,
+            "priceCurrency": "TWD",
+            "unitText": "月"
+          },
+          "description": "專業方案全部功能、多館管理（會員、課卡共用）、自訂網域（協助購買與轉移）、優先客服、協助搬家匯入資料"
+        }
       ],
       "description": "匹克球活動線上報名系統：活動連結分享到 LINE 群組，球友用 LINE 一鍵登入報名；自動處理名額與候補遞補、報名費匯款對帳、開課前一天提醒、缺席管理，並支援 DUPR 分數限制、自動分組排賽程與記分。",
       "featureList": [
@@ -102,7 +149,7 @@
         { "@type": "Question", "name": "球友報名後沒來怎麼辦？", "acceptedAnswer": { "@type": "Answer", "text": "場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。" } },
         { "@type": "Question", "name": "可以用來租場地或約私人課嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。" } },
         { "@type": "Question", "name": "可以用我們自己的網域嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以。預設提供「dc-studio.cc/你的場館」的網址；也可以改用你自己的網域，例如 booking.你的球館.tw。還沒有網域的話，我們協助你購買與設定；原本已經有網站或其他報名系統，也可以協助把網址與舊連結轉移過來。" } },
-        { "@type": "Question", "name": "開始使用要多少錢？", "acceptedAnswer": { "@type": "Answer", "text": "方案分三種：基本 NT$490／月（建立、查看單次活動與線上報名）、標準 NT$1,500／月（加上收費對帳、課卡、LINE 推播與提醒、缺席管理、名單下載）、進階 NT$4,900／月（再加 DUPR 活動、時段預約、報表與自訂網域）。年繳送一個月。沒有試用期，註冊付款後馬上開通，可以隨時取消。" } },
+        { "@type": "Question", "name": "開始使用要多少錢？", "acceptedAnswer": { "@type": "Answer", "text": "方案分四種：輕量 NT$490／月（建立、查看單次活動與線上報名）、標準 NT$1,490／月（加收費對帳、課卡、開課前一天提醒、缺席管理）、專業 NT$4,900／月（再加 LINE 推播、DUPR 活動、時段預約、報表、名單下載、教練帳號）、進階 NT$12,900／月（再加多館管理、自訂網域、優先客服）。年繳送一個月；需要場館專屬 App 可洽企業方案專人報價。沒有試用期，註冊付款後馬上開通，可以隨時取消。" } },
         { "@type": "Question", "name": "球友的個人資料會公開嗎？", "acceptedAnswer": { "@type": "Answer", "text": "不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。" } }
       ]
     }
@@ -299,8 +346,13 @@ td.new::before { content: "✓ "; color: var(--g); font-weight: 800; }
 .cycle { display: inline-flex; background: #ececef; border-radius: 10px; padding: 3px; margin-top: 22px; }
 .cycle button { border: 0; background: none; font: inherit; font-size: 14px; padding: 7px 16px; border-radius: 8px; cursor: pointer; color: var(--text-2); }
 .cycle button.on { background: #fff; color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
-.price-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; align-items: stretch; }
-@media (max-width: 860px) { .price-grid { grid-template-columns: 1fr; } }
+.price-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 18px; align-items: stretch; }
+@media (max-width: 1020px) { .price-grid { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .price-grid { grid-template-columns: 1fr; } }
+.enterprise { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 24px; margin-top: 12px; background: var(--ink); color: #fff; }
+.enterprise p { color: #c7c7cc; font-size: 15px; margin-top: 4px; }
+.enterprise h3 { color: #fff; }
+.enterprise .btn { background: #fff; color: var(--ink); border-color: #fff; }
 .price-card { display: flex; flex-direction: column; gap: 6px; position: relative; }
 .price-card.hot { box-shadow: inset 0 0 0 2px var(--g); }
 .hot-tag { position: absolute; top: 18px; right: 18px; font-size: 12px; font-weight: 700; background: var(--g); color: #fff; border-radius: 6px; padding: 2px 8px; }
@@ -618,28 +670,39 @@ footer a { color: var(--text-2); }
       <div class="cycle" role="group" aria-label="繳費週期"><button type="button" data-cycle="month" class="on">月繳</button><button type="button" data-cycle="year">年繳（送一個月）</button></div>
       <div class="price-grid">
         <article class="card price-card">
-          <h3>基本</h3>
+          <h3>輕量</h3>
           <p class="price" data-month="490" data-year="5390"><b>NT$ 490</b><span>／月</span></p>
           <p class="price-note" data-year-note="每月約 NT$ 449">剛開始線上報名的小團</p>
           <ul><li>建立、查看單次活動</li><li>球友 LINE 一鍵登入報名</li><li>額滿候補、自動遞補</li><li>活動短網址與 LINE 預覽</li></ul>
-          <a class="btn ghost" href="/signup?plan=basic" data-plan="basic">選基本方案</a>
+          <a class="btn ghost" href="/signup?plan=lite" data-plan="lite">選輕量方案</a>
         </article>
         <article class="card price-card hot">
           <span class="hot-tag">最多人選</span>
           <h3>標準</h3>
-          <p class="price" data-month="1500" data-year="16500"><b>NT$ 1,500</b><span>／月</span></p>
-          <p class="price-note" data-year-note="每月約 NT$ 1,375">要收報名費、固定開課的團主</p>
-          <ul><li>基本方案全部功能</li><li>收費對帳（匯款回填後五碼）</li><li>課卡方案（堂數、點數、無限）</li><li>LINE 推播、開課前一天提醒</li><li>缺席管理、名單下載 Excel</li></ul>
+          <p class="price" data-month="1490" data-year="16390"><b>NT$ 1,490</b><span>／月</span></p>
+          <p class="price-note" data-year-note="每月約 NT$ 1,366">要收報名費、固定開課的團主</p>
+          <ul><li>輕量方案全部功能</li><li>收費對帳（匯款回填後五碼）</li><li>課卡方案（堂數、點數、無限）</li><li>開課前一天 LINE 提醒</li><li>缺席管理</li></ul>
           <a class="btn" href="/signup?plan=standard" data-plan="standard">選標準方案</a>
         </article>
         <article class="card price-card">
-          <h3>進階</h3>
+          <h3>專業</h3>
           <p class="price" data-month="4900" data-year="53900"><b>NT$ 4,900</b><span>／月</span></p>
-          <p class="price-note" data-year-note="每月約 NT$ 4,492">辦 DUPR 賽事、有自己球館的場主</p>
-          <ul><li>標準方案全部功能</li><li>DUPR 活動（分組、記分、匯出）</li><li>時段預約（私人課、場地租借）</li><li>營收與出席報表</li><li>自訂網域（協助購買與轉移）</li></ul>
+          <p class="price-note" data-year-note="每月約 NT$ 4,492">辦 DUPR 賽事、有教練團隊</p>
+          <ul><li>標準方案全部功能</li><li>LINE 推播通知（報名、候補、收款）</li><li>DUPR 活動（分組、記分、匯出）</li><li>時段預約（私人課、場地租借）</li><li>營收與出席報表、名單下載</li><li>多位管理員與教練帳號（鐘點費報表）</li></ul>
+          <a class="btn ghost" href="/signup?plan=pro" data-plan="pro">選專業方案</a>
+        </article>
+        <article class="card price-card">
+          <h3>進階</h3>
+          <p class="price" data-month="12900" data-year="141900"><b>NT$ 12,900</b><span>／月</span></p>
+          <p class="price-note" data-year-note="每月約 NT$ 11,825">多個分館的球館</p>
+          <ul><li>專業方案全部功能</li><li>多館管理（會員、課卡共用）</li><li>自訂網域（協助購買與轉移）</li><li>優先客服、協助搬家匯入資料</li></ul>
           <a class="btn ghost" href="/signup?plan=advanced" data-plan="advanced">選進階方案</a>
         </article>
       </div>
+      <article class="card enterprise">
+        <div><h3>企業方案・專人報價</h3><p>進階方案全部功能，再加上<b>場館專屬 App</b>（用你的名稱與圖示上架 iOS、Android），以及客製需求。</p></div>
+        <a class="btn" href="#apply">聯絡我們報價</a>
+      </article>
       <p class="note">價格為新台幣。付款由 Polar 處理（信用卡），收據由 Polar 開立。</p>
     </div>
   </section>
@@ -657,7 +720,7 @@ footer a { color: var(--text-2); }
         <details><summary>球友報名後沒來怎麼辦？</summary><p>場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。</p></details>
         <details><summary>可以用來租場地或約私人課嗎？</summary><p>可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。</p></details>
         <details><summary>可以用我們自己的網域嗎？</summary><p>可以。預設提供「dc-studio.cc/你的場館」的網址；也可以改用你自己的網域，例如 booking.你的球館.tw。還沒有網域的話，我們協助你購買與設定；原本已經有網站或其他報名系統，也可以協助把網址與舊連結轉移過來。</p></details>
-        <details><summary>開始使用要多少錢？</summary><p>方案分三種：基本 NT$490／月（建立、查看單次活動與線上報名）、標準 NT$1,500／月（加上收費對帳、課卡、LINE 推播與提醒、缺席管理、名單下載）、進階 NT$4,900／月（再加 DUPR 活動、時段預約、報表與自訂網域）。年繳送一個月。沒有試用期，註冊付款後馬上開通，可以隨時取消。</p></details>
+        <details><summary>開始使用要多少錢？</summary><p>方案分四種：輕量 NT$490／月（建立、查看單次活動與線上報名）、標準 NT$1,490／月（加收費對帳、課卡、開課前一天提醒、缺席管理）、專業 NT$4,900／月（再加 LINE 推播、DUPR 活動、時段預約、報表、名單下載、教練帳號）、進階 NT$12,900／月（再加多館管理、自訂網域、優先客服）。年繳送一個月；需要場館專屬 App 可洽企業方案專人報價。沒有試用期，註冊付款後馬上開通，可以隨時取消。</p></details>
         <details><summary>球友的個人資料會公開嗎？</summary><p>不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。</p></details>
       </div>
     </div>

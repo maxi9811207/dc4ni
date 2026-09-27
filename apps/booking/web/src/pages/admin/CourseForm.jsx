@@ -11,7 +11,7 @@ const EMPTY = {
   capacity: 10, cost: 0, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true, share_code: '',
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true, share_code: '', branch_id: '',
 }
 // 時段預約的產生設定
 const SLOT_GEN = { from: today(), to: addDays(today(), 13), weekdays: [0, 1, 2, 3, 4, 5, 6], open: '09:00', close: '21:00', minutes: 60 }
@@ -39,6 +39,7 @@ function fromSource(c) {
     ...EMPTY,
     ...Object.fromEntries(Object.keys(EMPTY).filter((k) => k in c && c[k] !== null).map((k) => [k, c[k]])),
     teacher_id: c.teacher?.id || c.teacher_id || '',
+    branch_id: c.branch?.id || c.branch_id || '',
     dupr_min: c.dupr_min ?? '',
     dupr_max: c.dupr_max ?? '',
   }
@@ -72,11 +73,13 @@ export default function CourseForm({ template = false, slotId }) {
   const [templates, setTemplates] = useState([])
   const [applyFuture, setApplyFuture] = useState(true)
   const [slotOf, setSlotOf] = useState(null)
+  const [branches, setBranches] = useState([])
   const editing = Boolean(id || slotId)
 
   useEffect(() => {
     api('admin/teachers').then((l) => setTeachers(l.filter((t) => t.active))).catch(handleError)
     api('admin/plans').then(setPlans).catch(handleError)
+    api('branches').then(setBranches).catch(() => setBranches([]))
     if (!template && !id && !slotId) api('admin/templates').then((l) => setTemplates(l.filter((t) => t.active))).catch(handleError)
     const fresh = { ...EMPTY, date: params.get('date') || today() }
     if (slotId) {
@@ -345,6 +348,14 @@ export default function CourseForm({ template = false, slotId }) {
           <span className="step-n muted-n">+</span><b>更多設定</b><span className="step-tag">選填，不填也可以</span>
         </summary>
         <div className="form">
+          {branches.length > 0 && planOf(venue).has('multisite') && (
+            <Field label="分館" hint="前台課表可以依分館篩選">
+              <select className="input" value={form.branch_id || ''} onChange={(e) => setForm({ ...form, branch_id: e.target.value ? Number(e.target.value) : '' })}>
+                <option value="">不指定</option>
+                {branches.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+              </select>
+            </Field>
+          )}
           <Field label="地點" hint="沒填就不顯示"><input className="input" value={form.location} onChange={set('location')} placeholder="例：自強國小體育館" /></Field>
           <Field label="介紹" hint="要帶什麼、怎麼集合、注意事項"><textarea className="input" rows={3} value={form.description} onChange={set('description')} /></Field>
           <Field label="封面圖片" hint="顯示在活動頁最上方，分享到 LINE 也會用這張；建議橫式 16:9">

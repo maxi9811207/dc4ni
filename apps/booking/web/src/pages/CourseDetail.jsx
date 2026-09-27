@@ -145,8 +145,9 @@ export default function CourseDetail() {
             <div className="kpi"><span>費用</span><b>{c.fee > 0 ? `NT$ ${c.fee.toLocaleString()}` : c.cost === 0 ? '免費' : '課卡'}</b>
               <small>{c.fee > 0 ? '報名後付款' : c.cost === 0 ? '不用課卡' : bestCard?.value > 0 ? `約 NT$ ${bestCard.value.toLocaleString()}` : bestCard?.type === 'points' ? `扣 ${c.cost} 點` : '扣 1 堂'}</small></div>
           </div>
-          {(c.location || c.cost > 0) && (
+          {(c.location || c.cost > 0 || c.branch) && (
             <dl className="ev-meta">
+              {c.branch && <div><dt>分館</dt><dd>{c.branch.name}{c.branch.address && `（${c.branch.address}）`}</dd></div>}
               {c.location && <div><dt>地點</dt><dd>{c.location}</dd></div>}
               {c.cost > 0 && <div><dt>費用</dt><dd>{costText}</dd></div>}
             </dl>
