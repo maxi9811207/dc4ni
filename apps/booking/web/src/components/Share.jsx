@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { useApp } from '../App'
 import { BASE } from '../api'
 import { showDate } from '../util'
@@ -62,4 +63,17 @@ export function ShareBox({ c }) {
       </div>
     </section>
   )
+}
+
+// 活動頁的網址列直接顯示分享連結（/e/<代碼>），從網址列複製出去也有 LINE 預覽、不公開的活動也打得開；
+// 畫面仍由 hash 路由控制，離開活動頁時網址列恢復原本的路徑
+export function useShareAddress(code) {
+  useEffect(() => {
+    if (!code) return undefined
+    const set = (path) => {
+      try { window.history.replaceState(window.history.state, '', path + window.location.hash) } catch { /* 部分內嵌瀏覽器不允許 */ }
+    }
+    set(`${BASE}e/${code}`)
+    return () => set(BASE)
+  }, [code])
 }

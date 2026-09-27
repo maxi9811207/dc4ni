@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useApp } from '../App'
 import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
-import { ShareButton } from '../components/Share'
+import { ShareButton, useShareAddress } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import SlotPage from './SlotPage'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
@@ -29,6 +29,7 @@ export default function CourseDetail() {
   }).catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
 
   useEffect(() => { setC(null); setMissing(false); load() }, [load])
+  useShareAddress(c?.share_code)
   useEffect(() => {
     if (standalone && c) document.title = `${c.name}｜${venue?.name || '報名'}`
   }, [standalone, c, venue])

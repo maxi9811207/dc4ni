@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api, asset } from '../api'
-import { ShareButton } from '../components/Share'
+import { ShareButton, useShareAddress } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import { Badge, Confirm, Loading, Modal } from '../components/ui'
 import { blockUntil, hours, noshowRule, showDate, today } from '../util'
@@ -32,6 +32,7 @@ export default function SlotPage({ code, header }) {
   const load = useCallback(() => api(code ? `e/${code}` : `slots/${id}`).then((x) => { setD(x); return x })
     .catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
   useEffect(() => { load() }, [load])
+  useShareAddress(code ? null : d?.share_code)  // 從 /e/ 進來時外層 CourseDetail 已處理
 
   const days = d?.days || []
   const firstOpen = days.find((x) => x.slots.some((s) => ['book', 'waitlist'].includes(s.state)))?.date || days[0]?.date
