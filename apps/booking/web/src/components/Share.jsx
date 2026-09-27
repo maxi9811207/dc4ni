@@ -8,6 +8,7 @@ export function shareUrl(code) {
 }
 
 function shareText(c) {
+  if (c.kind === 'slots') return `${c.name}\n線上選時段預約${c.location ? `｜${c.location}` : ''}`
   return `${c.name}\n${showDate(c.date)} ${c.start_time}~${c.end_time}${c.location ? `｜${c.location}` : ''}`
 }
 

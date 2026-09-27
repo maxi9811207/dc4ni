@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
 import { Badge, Chips, Confirm, Empty, Loading } from '../../components/ui'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { money, showDate, showDateTime } from '../../util'
 
 const STATUS = { pending: ['待確認', 'warn'], paid: ['已開通', 'success'], cancelled: ['已取消', 'gray'] }
@@ -10,7 +10,8 @@ const STATUS = { pending: ['待確認', 'warn'], paid: ['已開通', 'success'],
 export default function AdminOrders() {
   const { handleError, showToast } = useApp()
   const [list, setList] = useState(null)
-  const [filter, setFilter] = useState('pending')
+  const [params] = useSearchParams()
+  const [filter, setFilter] = useState(params.get('tab') === 'fees' ? 'fees' : 'pending')
   const [confirm, setConfirm] = useState(null)
   const [fees, setFees] = useState(null)
   const load = useCallback(() => {
@@ -40,7 +41,7 @@ export default function AdminOrders() {
   return (
     <>
       <Chips value={filter} onChange={setFilter}
-        options={[['pending', `課卡待確認（${(list || []).filter((o) => o.status === 'pending').length}）`], ['fees', `報名費待收（${unpaid.length}）`], ['paid', '已開通'], ['cancelled', '已取消'], ['all', '全部']]} />
+        options={[['pending', `課卡待確認（${(list || []).filter((o) => o.status === 'pending').length}）`], ['fees', `匯款待審核（${unpaid.length}）`], ['paid', '已開通'], ['cancelled', '已取消'], ['all', '全部']]} />
       {filter === 'fees' ? (
         !fees ? <Loading /> : fees.length === 0 ? <Empty text="沒有報名費紀錄" /> : fees.map((f) => (
           <div key={f.id} className="card">

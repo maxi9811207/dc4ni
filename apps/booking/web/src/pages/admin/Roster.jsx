@@ -42,7 +42,9 @@ export default function Roster() {
     <>
       <section className="card">
         <div className="row between">
-          <Link to={`/admin/courses?date=${c.date}`} className="muted small">‹ 回課程列表</Link>
+          {c.slot_set
+            ? <Link to={`/admin/slots/${c.slot_set.id}`} className="muted small">‹ 回「{c.slot_set.name}」</Link>
+            : <Link to={`/admin/courses?date=${c.date}`} className="muted small">‹ 回活動列表</Link>}
           <Link to={`/admin/courses/${c.id}/edit`} className="small text-brand">編輯課程</Link>
         </div>
         <h2 className="detail-title">{c.name}</h2>
@@ -67,7 +69,7 @@ export default function Roster() {
         )}
       </section>
 
-      {c.share_code && <ShareBox c={c} />}
+      {c.share_code && !c.slot_set && <ShareBox c={c} />}
 
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>

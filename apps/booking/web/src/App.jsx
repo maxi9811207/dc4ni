@@ -1,9 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react'
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useParams } from 'react-router-dom'
 import { api, getToken, setToken } from './api'
-import { Modal } from './components/ui'
+import { Modal, TopBar } from './components/ui'
 import Courses from './pages/Courses'
 import CourseDetail from './pages/CourseDetail'
+import SlotPage from './pages/SlotPage'
+import AdminSlots, { SlotAdmin } from './pages/admin/AdminSlots'
 import Teachers from './pages/Teachers'
 import TeacherDetail from './pages/TeacherDetail'
 import Plans from './pages/Plans'
@@ -28,6 +30,15 @@ import Attendance from './pages/admin/Attendance'
 import AdminNotifications from './pages/admin/AdminNotifications'
 import AdminTemplates from './pages/admin/AdminTemplates'
 import Reports from './pages/admin/Reports'
+
+function SlotTopBar() {
+  return <TopBar title="時段預約" back={-1} />
+}
+
+function SlotEdit() {
+  const { id } = useParams()
+  return <CourseForm slotId={id} />
+}
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -106,6 +117,7 @@ export default function App() {
           <Route path="/" element={<Courses />} />
           <Route path="/course/:id" element={<CourseDetail />} />
           <Route path="/e/:code" element={<CourseDetail />} />
+          <Route path="/slots/:id" element={<SlotPage header={<SlotTopBar />} />} />
           <Route path="/teachers" element={<Teachers />} />
           <Route path="/teachers/:id" element={<TeacherDetail />} />
           <Route path="/plans" element={<Plans />} />
@@ -127,6 +139,9 @@ export default function App() {
             <Route path="courses/:id/edit" element={<CourseForm />} />
             <Route path="courses/:id" element={<Roster />} />
             <Route path="courses/:id/event" element={<EventAdmin />} />
+            <Route path="slots" element={<AdminSlots />} />
+            <Route path="slots/:id" element={<SlotAdmin />} />
+            <Route path="slots/:id/edit" element={<SlotEdit />} />
             <Route path="teachers" element={<AdminTeachers />} />
             <Route path="plans" element={<AdminPlans />} />
             <Route path="orders" element={<AdminOrders />} />

@@ -43,7 +43,7 @@ export default function AdminCalendar() {
     <>
       <div className="row between section-head">
         <h3 className="date-title">{m.getMonth() + 1}/{m.getDate()} – {sunday.getMonth() + 1}/{sunday.getDate()}</h3>
-        <Link to={`/admin/courses/new?date=${days.includes(t) ? t : monday}`} className="btn btn-small">＋ 新增課程</Link>
+        <Link to={`/admin/courses/new?date=${days.includes(t) ? t : monday}`} className="btn btn-small">＋ 建立活動</Link>
       </div>
       <div className="grid2">
         <select className="input" value={teacher} onChange={(e) => setTeacher(e.target.value)} aria-label="篩選老師">

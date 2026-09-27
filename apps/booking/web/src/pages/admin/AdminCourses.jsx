@@ -37,7 +37,7 @@ export default function AdminCourses() {
       )}
       <div className="row between section-head">
         <h3 className="date-title">{showDate(date)}</h3>
-        <Link to={`/admin/courses/new?date=${date}`} className="btn btn-small">＋ 新增課程</Link>
+        <Link to={`/admin/courses/new?date=${date}`} className="btn btn-small">＋ 建立活動</Link>
       </div>
       {!week ? <Loading /> : dayCourses.length === 0 ? <Empty text="這天沒有課程" /> : dayCourses.map((c) => (
         <div key={c.id} className={`card admin-course ${c.status === 'cancelled' ? 'dim' : ''}`}>

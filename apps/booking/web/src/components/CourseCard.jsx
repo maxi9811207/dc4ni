@@ -66,3 +66,31 @@ export default function CourseCard({ course: c, showCount = true, showDate, to, 
     </Link>
   )
 }
+
+// 課表上的「時段預約」：一天一張卡，點進去選時段
+export function SlotSetCard({ s }) {
+  const { venue } = useApp()
+  const org = s.teacher?.name || venue?.name || ''
+  const cap = s.mine_count > 0 ? { tone: 'mine', big: `已約 ${s.mine_count}`, small: s.open_count ? `還有 ${s.open_count} 段` : '' }
+    : s.open_count > 0 ? { tone: s.open_count <= 2 ? 'near' : '', big: `${s.open_count} 段`, small: '可預約' }
+      : { tone: 'full', big: s.bookable ? '額滿' : '已結束', small: s.bookable ? '可候補' : '' }
+  return (
+    <Link to={`/slots/${s.id}?date=${s.date}`} className="card ccard">
+      <Avatar src={s.teacher?.photo_url} name={org} size={34} />
+      <div className="ccard-main">
+        {org && <p className="ccard-org">{org}</p>}
+        <h2 className="ccard-title"><time>{s.start_time}</time>{s.name}</h2>
+        <div className="ccard-chips">
+          <span className="cchip dupr">選時段</span>
+          <span className="cchip">{s.start_time}–{s.end_time} · {s.slot_count} 個時段</span>
+          {s.location && <span className="cchip">{s.location}</span>}
+          {s.fee > 0 && <span className="cchip">每段 NT$ {s.fee.toLocaleString()}</span>}
+        </div>
+      </div>
+      <div className={`cap ${cap.tone}`}>
+        <b>{cap.big}</b>
+        {cap.small && <small>{cap.small}</small>}
+      </div>
+    </Link>
+  )
+}

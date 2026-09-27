@@ -5,6 +5,7 @@ import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
 import { ShareButton } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
+import SlotPage from './SlotPage'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
 import { cardRemain, duprRange, hours, rating, showDate } from '../util'
 
@@ -27,7 +28,7 @@ export default function CourseDetail() {
     setCardId(d.cards[0]?.id ?? null)
   }).catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
 
-  useEffect(() => { load() }, [load])
+  useEffect(() => { setC(null); setMissing(false); load() }, [load])
   useEffect(() => {
     if (standalone && c) document.title = `${c.name}｜${venue?.name || '報名'}`
   }, [standalone, c, venue])
@@ -46,6 +47,7 @@ export default function CourseDetail() {
 
   if (missing) return <>{header}<main className="page"><section className="card center"><h3 className="card-title">找不到這個活動</h3><p className="muted small">連結可能已失效，請向主辦單位確認。</p></section></main></>
   if (!c) return <>{header}<Loading /></>
+  if (c.kind === 'slots') return <SlotPage key={code} code={code} header={header} />
 
   const requireLogin = () => {
     if (user) return false
@@ -99,7 +101,7 @@ export default function CourseDetail() {
   const primaryLabel = {
     book: c.fee > 0 ? `立即報名（NT$ ${c.fee.toLocaleString()}）` : c.cost === 0 ? '立即報名（免費）' : '立即報名',
     waitlist: '額滿，加入候補',
-  }[c.state] || (needsPay ? `付款回報（NT$ ${c.fee.toLocaleString()}）` : c.button)
+  }[c.state] || (needsPay ? (mine.pay_note ? '已回報後五碼，等主辦對帳' : `付款回報（NT$ ${c.fee.toLocaleString()}）`) : c.button)
   // 已報名／候補：主按鈕換成狀態，取消退到下面的文字連結
   const statusLine = c.state === 'booked' ? (c.has_event ? '✓ 已排入賽事' : mine?.paid || !c.fee ? '✓ 已報名' : null)
     : c.state === 'waiting' ? `候補第 ${c.waitlist_position} 位，有名額會自動遞補並通知您` : null
@@ -114,6 +116,9 @@ export default function CourseDetail() {
       {header}
       <main className="page">
         {c.cover_url && <img className="event-cover" src={asset(c.cover_url)} alt={c.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+        {c.slot_set && (
+          <Link className="back-link" to={c.slot_set.listed && !standalone ? `/slots/${c.slot_set.id}?date=${c.date}` : `/e/${c.slot_set.share_code}`}>‹ 「{c.slot_set.name}」其他時段</Link>
+        )}
         <section className="card ev-head">
           <p className="ev-host"><VenueAvatar venue={venue} /><span><b>{venue?.name}</b> 主辦</span></p>
           <div className="ev-title-row">
@@ -424,7 +429,7 @@ function StandaloneBar() {
 function PaymentBox({ c, onSaved }) {
   const { venue, handleError, showToast } = useApp()
   const r = c.my_reservation
-  const [note, setNote] = useState(r.pay_note || '')
+  const [note, setNote] = useState((r.pay_note || '').replace(/\D/g, '').slice(-5))
   const save = async (e) => {
     e.preventDefault()
     try {
@@ -446,12 +451,13 @@ function PaymentBox({ c, onSaved }) {
           <p className="pre small pay-info">{venue?.payment_ready ? venue.payment_info : '付款方式請直接詢問主辦。'}</p>
           {r.pay_due && <p className="small text-warn">請在 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')} 前付款，逾期名額會讓給候補。</p>}
           <form className="row gap" onSubmit={save}>
-            <Field label="付款回報" hint="例如匯款帳號末五碼、轉帳時間，或「現場付款」">
-              <input className="input" value={note} onChange={(e) => setNote(e.target.value)} maxLength={100} placeholder="末五碼 12345" />
+            <Field label="匯款帳號後五碼" hint="匯款完成後填寫，主辦用來對帳">
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric"
+                pattern="\d{5}" title="請填 5 位數字" placeholder="12345" />
             </Field>
-            <button className="btn btn-small" disabled={note === (r.pay_note || '')}>送出</button>
+            <button className="btn btn-small" disabled={note.length !== 5 || note === (r.pay_note || '')}>{r.pay_note ? '更新' : '送出'}</button>
           </form>
-          {r.pay_note && <p className="muted small">已回報：{r.pay_note}，等待場館確認</p>}
+          {r.pay_note && <p className="muted small">已回報後五碼：{r.pay_note}，等主辦對帳確認</p>}
         </>
       )}
     </section>

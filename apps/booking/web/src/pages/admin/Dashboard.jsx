@@ -14,7 +14,7 @@ export default function Dashboard() {
   const steps = [
     ['venue', '設定場館名稱與介紹', '/admin/settings'],
     ['payment', '填寫付款方式（學員報名後會看到）', '/admin/settings'],
-    ['course', '開第一堂課或一場活動', '/admin/courses/new'],
+    ['course', '建立第一個活動', '/admin/courses/new'],
     ['booking', '把報名連結分享到 LINE 群組，等第一位學員報名', '/admin/courses'],
   ]
   const todo = steps.filter(([k]) => !d.setup?.[k])
@@ -38,7 +38,7 @@ export default function Dashboard() {
       </div>
       <div className="row between section-head">
         <h3 className="date-title">今日課程 · {showDate(today())}</h3>
-        <Link to="/admin/courses/new" className="btn btn-small">＋ 新增課程</Link>
+        <Link to="/admin/courses/new" className="btn btn-small">＋ 建立活動</Link>
       </div>
       {d.today.length === 0 ? <Empty text="今天沒有課程" />
         : d.today.map((c) => <CourseCard key={c.id} course={c} admin to={`/admin/courses/${c.id}`} />)}

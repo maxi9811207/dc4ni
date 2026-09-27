@@ -4,7 +4,7 @@ import { useApp } from '../App'
 import { api } from '../api'
 import VenueHeader from '../components/VenueHeader'
 import WeekPicker from '../components/WeekPicker'
-import CourseCard from '../components/CourseCard'
+import CourseCard, { SlotSetCard } from '../components/CourseCard'
 import { Chips, Empty, Loading } from '../components/ui'
 import { addDays, showDate, today } from '../util'
 
@@ -28,7 +28,10 @@ export default function Courses() {
     return () => { alive = false }
   }, [date, handleError])
 
-  const shown = (data?.courses || []).filter((c) => kind === 'all' || (kind === 'dupr') === c.dupr_required)
+  const shown = [
+    ...(data?.courses || []).filter((c) => kind === 'all' || (kind === 'dupr') === c.dupr_required),
+    ...(kind === 'dupr' ? [] : (data?.slot_sets || []).map((x) => ({ ...x, slotSet: true }))),
+  ].sort((a, b) => a.start_time.localeCompare(b.start_time))
   const maxDate = venue?.open_days ? addDays(today(), venue.open_days) : undefined
 
   return (
@@ -50,7 +53,7 @@ export default function Courses() {
               return (
                 <section key={label} className="tgroup-wrap">
                   <h3 className="tgroup">{label}<span>{list.length} 場</span></h3>
-                  {list.map((c) => <CourseCard key={c.id} course={c} showCount={data.show_reservation_count} />)}
+                  {list.map((c) => (c.slotSet ? <SlotSetCard key={`s${c.id}`} s={c} /> : <CourseCard key={c.id} course={c} showCount={data.show_reservation_count} />))}
                 </section>
               )
             })}

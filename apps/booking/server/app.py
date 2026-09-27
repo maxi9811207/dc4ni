@@ -127,6 +127,13 @@ CREATE TABLE IF NOT EXISTS event_games (
   status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS slot_sets (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', teacher_id INTEGER,
+  description TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '', cover_url TEXT NOT NULL DEFAULT '',
+  capacity INTEGER NOT NULL DEFAULT 1, cost INTEGER NOT NULL DEFAULT 0, fee INTEGER NOT NULL DEFAULT 0,
+  pay_hours INTEGER NOT NULL DEFAULT 48, plan_ids TEXT NOT NULL DEFAULT '[]',
+  booking_deadline_min INTEGER NOT NULL DEFAULT 60, cancel_deadline_min INTEGER NOT NULL DEFAULT 1440,
+  listed INTEGER NOT NULL DEFAULT 1, share_code TEXT NOT NULL UNIQUE, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, text TEXT NOT NULL,
   read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
@@ -161,6 +168,7 @@ MIGRATIONS = {
         "fee": "INTEGER NOT NULL DEFAULT 0",
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
         "cover_url": "TEXT NOT NULL DEFAULT ''",
+        "slot_set_id": "INTEGER",
     },
     "course_templates": {
         "listed": "INTEGER NOT NULL DEFAULT 1",
@@ -413,6 +421,7 @@ def startup():
         for r in rows(conn.execute("SELECT id FROM courses WHERE share_code=''")):
             conn.execute("UPDATE courses SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_slot ON courses(slot_set_id, date)")
     threading.Thread(target=sweeper, name="sweeper", daemon=True).start()
 
 
@@ -423,7 +432,8 @@ def new_share_code(conn) -> str:
     """課程的分享代碼（8 碼，不可猜），網址 /e/<代碼>。"""
     while True:
         code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
-        if not one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,))):
+        if not one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,))) \
+                and not one(conn.execute("SELECT id FROM slot_sets WHERE share_code=?", (code,))):
             return code
 
 
@@ -569,7 +579,15 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "fee": c["fee"],
         "pay_hours": c["pay_hours"],
         "cover_url": c["cover_url"],
+        "slot_set": slot_ref(conn, c),
     }
+
+
+def slot_ref(conn, c: dict) -> dict | None:
+    """時段預約的單一時段：附上所屬活動（回選時段頁用）。"""
+    if not c.get("slot_set_id"):
+        return None
+    return one(conn.execute("SELECT id, name, share_code, listed FROM slot_sets WHERE id=?", (c["slot_set_id"],)))
 
 
 def eligible_cards(conn, user_id: int, c: dict) -> list[dict]:
@@ -684,11 +702,14 @@ def list_courses(request: Request, user=Depends(current_user)):
     day = request.query_params.get("date") or now().date().isoformat()
     with db() as conn:
         s = get_settings(conn)
-        cs = rows(conn.execute("SELECT * FROM courses WHERE date=? AND listed=1 ORDER BY start_time, id", (day,)))
+        cs = rows(conn.execute("SELECT * FROM courses WHERE date=? AND listed=1 AND slot_set_id IS NULL ORDER BY start_time, id", (day,)))
         d = date.fromisoformat(day)
+        sets = rows(conn.execute("SELECT * FROM slot_sets WHERE listed=1 AND id IN (SELECT slot_set_id FROM courses"
+                                 " WHERE date=? AND status='open' AND slot_set_id IS NOT NULL) ORDER BY id", (day,)))
         return {"date": day, "weekday": WEEKDAYS[d.weekday()],
                 "show_reservation_count": s["show_reservation_count"],
-                "courses": [{**course_view(conn, c, user, s), "attendees": attendees(conn, c, 6)} for c in cs]}
+                "courses": [{**course_view(conn, c, user, s), "attendees": attendees(conn, c, 6)} for c in cs],
+                "slot_sets": [slot_day_summary(conn, x, day, user, s) for x in sets]}
 
 
 def can_see(conn, c: dict, user: dict | None, code: str | None = None) -> bool:
@@ -716,6 +737,9 @@ def share_detail(code: str, user=Depends(current_user)):
     with db() as conn:
         c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
         if not c:
+            ss = one(conn.execute("SELECT * FROM slot_sets WHERE share_code=?", (code.strip().lower(),)))
+            if ss:
+                return slot_set_view(conn, ss, user)
             fail(404, "找不到這個活動，請確認連結是否正確")
         return detail_view(conn, c, user)
 
@@ -2012,6 +2036,245 @@ def delete_template(template_id: int, owner=Depends(require_owner)):
         return {"ok": True}
 
 
+# ---------------------------------------------------------------- 時段預約（場主先設定日期、時段與名額，學員選時段預約）
+# 每個時段就是一筆 courses（slot_set_id 指回活動），報名、候補、課卡、報名費、付款審核、提醒、名單、報表都共用原本的流程。
+
+SLOT_FIELDS = ("name", "category", "teacher_id", "description", "location", "cover_url", "capacity", "cost", "fee",
+               "pay_hours", "plan_ids", "booking_deadline_min", "cancel_deadline_min", "listed")
+# 修改活動時同步到尚未開始的時段（名額另外處理，不會少於已報名人數）
+SLOT_SYNC = tuple(k for k in SLOT_FIELDS if k != "capacity")
+
+
+def clean_slot_set(b: dict) -> dict:
+    out = {k: v for k, v in clean_course(b).items() if k in SLOT_FIELDS}
+    if "capacity" in out:
+        out["capacity"] = max(out["capacity"], 1)
+    return out
+
+
+def get_slot_set(conn, set_id: int) -> dict:
+    ss = one(conn.execute("SELECT * FROM slot_sets WHERE id=?", (set_id,)))
+    if not ss:
+        fail(404, "找不到這個時段預約活動")
+    return ss
+
+
+def slot_times(b: dict) -> list[tuple[str, str, str]]:
+    """依日期區間、星期、營業時間與每段長度產生 (日期, 開始, 結束)。"""
+    try:
+        d1 = date.fromisoformat(str(b.get("from") or ""))
+        d2 = date.fromisoformat(str(b.get("to") or b.get("from") or ""))
+    except ValueError:
+        fail(400, "請選擇開始與結束日期")
+    if d2 < d1:
+        fail(400, "結束日期不能早於開始日期")
+    if (d2 - d1).days > 180:
+        fail(400, "一次最多設定 180 天")
+    days = {int(x) for x in (b.get("weekdays") or range(7)) if str(x).isdigit() and 0 <= int(x) <= 6}
+    if not days:
+        fail(400, "請至少選一個星期")
+    open_t, close_t = str(b.get("open") or ""), str(b.get("close") or "")
+    if not TIME_RE.match(open_t) or not TIME_RE.match(close_t):
+        fail(400, "時間格式不正確（例如 09:00）")
+    minutes = int(b.get("minutes") or 60)
+    if not 15 <= minutes <= 480:
+        fail(400, "每個時段需在 15 分鐘到 8 小時之間")
+    to_min = lambda t: int(t[:2]) * 60 + int(t[3:])  # noqa: E731
+    start, end = to_min(open_t), to_min(close_t)
+    if end - start < minutes:
+        fail(400, "結束時間要比開始時間晚至少一個時段")
+    fmt = lambda m: f"{m // 60:02d}:{m % 60:02d}"  # noqa: E731
+    out = []
+    d = d1
+    while d <= d2:
+        if d.weekday() in days:
+            m = start
+            while m + minutes <= end:
+                out.append((d.isoformat(), fmt(m), fmt(m + minutes)))
+                m += minutes
+        d += timedelta(days=1)
+    if not out:
+        fail(400, "這個設定產生不出任何時段，請檢查日期與星期")
+    if len(out) > 1500:
+        fail(400, f"一次會產生 {len(out)} 個時段，太多了，請縮短日期區間（最多 1500 個）")
+    return out
+
+
+def add_slots(conn, ss: dict, times: list[tuple[str, str, str]], capacity: int | None = None) -> int:
+    have = {(r["date"], r["start_time"]) for r in conn.execute(
+        "SELECT date, start_time FROM courses WHERE slot_set_id=?", (ss["id"],))}
+    n = 0
+    for day, st, et in times:
+        if (day, st) in have:
+            continue
+        row = {**{k: ss[k] for k in SLOT_FIELDS}, "capacity": capacity or ss["capacity"], "slot_set_id": ss["id"],
+               "date": day, "start_time": st, "end_time": et, "share_code": new_share_code(conn), "created_at": stamp()}
+        conn.execute(f"INSERT INTO courses ({','.join(row)}) VALUES ({','.join('?' * len(row))})", tuple(row.values()))
+        n += 1
+    return n
+
+
+def slot_row(conn, c: dict, user: dict | None, s: dict) -> dict:
+    v = course_view(conn, c, user, s)
+    mine = v["my_reservation"]
+    return {k: v[k] for k in ("id", "date", "weekday", "start_time", "end_time", "capacity", "booked_count", "waitlist_count",
+                              "remain", "state", "button", "share_code", "status")} | {
+        "mine": {k: mine[k] for k in ("status", "fee", "paid", "pay_note")} if mine else None}
+
+
+def slot_set_base(conn, ss: dict) -> dict:
+    teacher = one(conn.execute("SELECT id, name, photo_url, title FROM teachers WHERE id=?", (ss["teacher_id"],)))
+    return {**{k: ss[k] for k in ("id", "name", "category", "description", "location", "cover_url", "capacity", "cost", "fee",
+                                  "pay_hours", "booking_deadline_min", "cancel_deadline_min", "share_code")},
+            "kind": "slots", "listed": bool(ss["listed"]), "teacher": teacher, "plan_ids": json.loads(ss["plan_ids"])}
+
+
+def slot_day_summary(conn, ss: dict, day: str, user: dict | None, s: dict) -> dict:
+    """課表上的一張卡：這天共有幾個時段、還剩多少名額。"""
+    slots = [slot_row(conn, c, user, s) for c in rows(conn.execute(
+        "SELECT * FROM courses WHERE slot_set_id=? AND date=? AND status='open' ORDER BY start_time", (ss["id"], day)))]
+    open_slots = [x for x in slots if x["state"] in ("book", "waitlist")]
+    return {**slot_set_base(conn, ss), "date": day, "slot_count": len(slots), "open_count": sum(x["state"] == "book" for x in slots),
+            "start_time": slots[0]["start_time"] if slots else "", "end_time": slots[-1]["end_time"] if slots else "",
+            "mine_count": sum(1 for x in slots if x["mine"]), "bookable": bool(open_slots)}
+
+
+def slot_set_view(conn, ss: dict, user: dict | None) -> dict:
+    s = get_settings(conn)
+    today = now().date().isoformat()
+    cs = rows(conn.execute("SELECT * FROM courses WHERE slot_set_id=? AND date>=? ORDER BY date, start_time", (ss["id"], today)))
+    days: dict[str, dict] = {}
+    for c in cs:
+        if c["status"] != "open":
+            continue
+        r = slot_row(conn, c, user, s)
+        days.setdefault(c["date"], {"date": c["date"], "weekday": r["weekday"], "slots": []})["slots"].append(r)
+    mine = []
+    if user:
+        mine = rows(conn.execute(
+            "SELECT r.status, r.fee, r.paid, r.pay_note, r.pay_due, c.id course_id, c.date, c.start_time, c.end_time, c.share_code"
+            " FROM reservations r JOIN courses c ON c.id=r.course_id WHERE c.slot_set_id=? AND r.user_id=?"
+            " AND r.status IN ('booked','waitlist') AND c.date>=? ORDER BY c.date, c.start_time", (ss["id"], user["id"], today)))
+    first = next((c for c in cs if c["status"] == "open"), None)
+    return {**slot_set_base(conn, ss), "days": list(days.values()), "mine": mine,
+            "cards": eligible_cards(conn, user["id"], first) if user and first and ss["cost"] else []}
+
+
+@app.get("/api/slots/{set_id}")
+def slot_set_detail(set_id: int, user=Depends(current_user)):
+    with db() as conn:
+        ss = get_slot_set(conn, set_id)
+        mine = user and one(conn.execute("SELECT r.id FROM reservations r JOIN courses c ON c.id=r.course_id"
+                                         " WHERE c.slot_set_id=? AND r.user_id=? LIMIT 1", (set_id, user["id"])))
+        if not ss["listed"] and not mine and not (user and user["role"] == "owner"):
+            fail(404, "找不到這個時段預約活動")
+        return slot_set_view(conn, ss, user)
+
+
+def slot_admin_summary(conn, ss: dict) -> dict:
+    today = now().date().isoformat()
+    r = conn.execute(
+        "SELECT COUNT(*), MIN(date), MAX(date), COALESCE(SUM(capacity),0) FROM courses WHERE slot_set_id=? AND date>=? AND status='open'",
+        (ss["id"], today)).fetchone()
+    booked = conn.execute(
+        "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE c.slot_set_id=? AND c.date>=?"
+        " AND r.status='booked'", (ss["id"], today)).fetchone()[0]
+    unpaid = conn.execute(
+        "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE c.slot_set_id=? AND r.fee>0 AND r.paid=0"
+        " AND r.status IN ('booked','attended','absent') AND c.status='open'", (ss["id"],)).fetchone()[0]
+    return {**slot_set_base(conn, ss), "slot_count": r[0], "first_date": r[1], "last_date": r[2], "total_capacity": r[3],
+            "booked": booked, "unpaid": unpaid}
+
+
+@app.get("/api/admin/slot-sets")
+def admin_slot_sets(owner=Depends(require_owner)):
+    with db() as conn:
+        return [slot_admin_summary(conn, ss) for ss in rows(conn.execute("SELECT * FROM slot_sets ORDER BY id DESC"))]
+
+
+@app.get("/api/admin/slot-sets/{set_id}")
+def admin_slot_set(set_id: int, request: Request, owner=Depends(require_owner)):
+    since = request.query_params.get("from") or now().date().isoformat()
+    with db() as conn:
+        ss = get_slot_set(conn, set_id)
+        s = get_settings(conn)
+        days: dict[str, dict] = {}
+        for c in rows(conn.execute("SELECT * FROM courses WHERE slot_set_id=? AND date>=? ORDER BY date, start_time", (set_id, since))):
+            v = course_view(conn, c, None, s)
+            unpaid = conn.execute("SELECT COUNT(*) FROM reservations WHERE course_id=? AND fee>0 AND paid=0"
+                                  " AND status IN ('booked','attended','absent')", (c["id"],)).fetchone()[0]
+            days.setdefault(c["date"], {"date": c["date"], "weekday": v["weekday"], "slots": []})["slots"].append(
+                {k: v[k] for k in ("id", "start_time", "end_time", "capacity", "booked_count", "waitlist_count", "status", "state")}
+                | {"unpaid": unpaid})
+        return {**slot_admin_summary(conn, ss), "days": list(days.values())}
+
+
+@app.post("/api/admin/slot-sets")
+def create_slot_set(body: dict = Depends(json_body), owner=Depends(require_owner)):
+    data = clean_slot_set(body)
+    if not data.get("name"):
+        fail(400, "請填寫活動名稱")
+    times = slot_times(body)
+    with db() as conn:
+        row = {**{k: DEFAULT_SLOT[k] for k in DEFAULT_SLOT}, **data, "share_code": new_share_code(conn), "created_at": stamp()}
+        set_id = conn.execute(f"INSERT INTO slot_sets ({','.join(row)}) VALUES ({','.join('?' * len(row))})",
+                              tuple(row.values())).lastrowid
+        n = add_slots(conn, get_slot_set(conn, set_id), times)
+        return {"id": set_id, "created": n}
+
+
+DEFAULT_SLOT = {"category": "", "teacher_id": None, "description": "", "location": "", "cover_url": "", "capacity": 1,
+                "cost": 0, "fee": 0, "pay_hours": 48, "plan_ids": "[]", "booking_deadline_min": 60,
+                "cancel_deadline_min": 1440, "listed": 1}
+
+
+@app.post("/api/admin/slot-sets/{set_id}/slots")
+def add_slot_times(set_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    times = slot_times(body)
+    cap = max(int(body.get("capacity") or 0), 0) or None
+    with db() as conn:
+        ss = get_slot_set(conn, set_id)
+        return {"created": add_slots(conn, ss, times, cap)}
+
+
+@app.put("/api/admin/slot-sets/{set_id}")
+def update_slot_set(set_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    data = clean_slot_set(body)
+    with db() as conn:
+        get_slot_set(conn, set_id)
+        if data:
+            conn.execute(f"UPDATE slot_sets SET {','.join(k + '=?' for k in data)} WHERE id=?", (*data.values(), set_id))
+        ss = get_slot_set(conn, set_id)
+        sync = {k: ss[k] for k in SLOT_SYNC if k in data}
+        updated = 0
+        for c in rows(conn.execute("SELECT * FROM courses WHERE slot_set_id=? AND date>=?", (set_id, now().date().isoformat()))):
+            if now() >= course_start(c):
+                continue
+            fields = dict(sync)
+            if "capacity" in data:
+                fields["capacity"] = max(ss["capacity"], course_counts(conn, c["id"])[0])
+            if fields:
+                conn.execute(f"UPDATE courses SET {','.join(k + '=?' for k in fields)} WHERE id=?", (*fields.values(), c["id"]))
+                updated += 1
+                promote_waitlist(conn, get_course(conn, c["id"]))
+        return {"ok": True, "updated": updated}
+
+
+@app.delete("/api/admin/slot-sets/{set_id}")
+def delete_slot_set(set_id: int, owner=Depends(require_owner)):
+    with db() as conn:
+        get_slot_set(conn, set_id)
+        n = conn.execute("SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE c.slot_set_id=?"
+                         " AND r.status!='cancelled'", (set_id,)).fetchone()[0]
+        if n:
+            fail(400, f"已有 {n} 筆預約，無法刪除整個活動；可以取消勾選「公開在課表」，或逐一停掉時段")
+        ids = [r[0] for r in conn.execute("SELECT id FROM courses WHERE slot_set_id=?", (set_id,))]
+        conn.executemany("DELETE FROM reservations WHERE course_id=?", [(i,) for i in ids])
+        conn.execute("DELETE FROM courses WHERE slot_set_id=?", (set_id,))
+        conn.execute("DELETE FROM slot_sets WHERE id=?", (set_id,))
+        return {"ok": True}
+
+
 @app.put("/api/admin/courses/{course_id}")
 def update_course(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     data = clean_course(body)
@@ -2478,15 +2741,26 @@ def share_page(code: str, request: Request):
         c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
         s = get_settings(conn)
         if not c:
-            return RedirectResponse(base, status_code=302)
-        booked, _ = course_counts(conn, c["id"])
+            ss = one(conn.execute("SELECT * FROM slot_sets WHERE share_code=?", (code.strip().lower(),)))
+            if not ss:
+                return RedirectResponse(base, status_code=302)
+            span = conn.execute("SELECT MIN(date), MAX(date), COUNT(*) FROM courses WHERE slot_set_id=? AND date>=? AND status='open'",
+                                (ss["id"], now().date().isoformat())).fetchone()
+            c = {**ss, "date": span[0] or now().date().isoformat(), "start_time": "", "end_time": "", "status": "open"}
+            booked = None
+        else:
+            booked, _ = course_counts(conn, c["id"])
     d = date.fromisoformat(c["date"])
-    parts = [f"{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}", c["location"] or s["name"]]
+    if booked is None:  # 時段預約
+        e2 = date.fromisoformat(span[1]) if span[1] else d
+        parts = [f"選時段預約 {d.month}/{d.day}" + (f"–{e2.month}/{e2.day}" if e2 != d else ""), c["location"] or s["name"]]
+    else:
+        parts = [f"{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}", c["location"] or s["name"]]
     if c["fee"]:
         parts.append(f"報名費 NT${c['fee']:,}")
     if c["status"] == "cancelled":
         parts.append("已停課")
-    elif s["show_reservation_count"]:
+    elif s["show_reservation_count"] and booked is not None:
         parts.append(f"已報名 {booked}/{c['capacity']}")
     image = c["cover_url"] or s["cover_url"]  # 活動自己的封面優先，沒有就用場館封面
     if image and not re.match(r"^https?:", image):

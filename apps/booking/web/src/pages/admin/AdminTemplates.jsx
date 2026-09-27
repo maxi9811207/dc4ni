@@ -11,7 +11,8 @@ export function CourseTabs({ value }) {
   return (
     <div className="chips">
       <Link to="/admin/templates" className={`chip ${value === 'templates' ? 'active' : ''}`}>課程範本</Link>
-      <Link to="/admin/courses" className={`chip ${value === 'daily' ? 'active' : ''}`}>每日課程</Link>
+      <Link to="/admin/courses" className={`chip ${value === 'daily' ? 'active' : ''}`}>每日活動</Link>
+      <Link to="/admin/slots" className={`chip ${value === 'slots' ? 'active' : ''}`}>時段預約</Link>
     </div>
   )
 }

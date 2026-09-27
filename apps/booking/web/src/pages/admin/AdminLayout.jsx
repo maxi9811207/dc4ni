@@ -21,7 +21,7 @@ export const MENU = [
     ['/admin', '營運總覽', 'dashboard'],
     ['/admin/attendance', '出席管理', 'attendance'],
     ['/admin/calendar', '課表行事曆', 'calendar'],
-    ['/admin/templates', '課程管理', 'courses'],
+    ['/admin/templates', '活動管理', 'courses'],
     ['/admin/plans', '課卡方案', 'plans'],
     ['/admin/members', '會員管理', 'members'],
     ['/admin/teachers', '師資團隊', 'teachers'],
@@ -44,11 +44,13 @@ function Icon({ name }) {
 
 function pageTitle(pathname) {
   if (pathname === '/admin/notifications') return '通知'
-  if (/^\/admin\/courses\/new/.test(pathname)) return '新增課程'
-  if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯課程'
+  if (/^\/admin\/courses\/new/.test(pathname)) return '建立活動'
+  if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯活動'
+  if (/^\/admin\/slots\/\d+\/edit/.test(pathname)) return '時段預約設定'
+  if (/^\/admin\/slots/.test(pathname)) return '時段預約'
   if (/^\/admin\/courses\/\d+\/event/.test(pathname)) return 'DUPR 賽事'
   if (/^\/admin\/courses\/\d+/.test(pathname)) return '名單點名'
-  if (pathname === '/admin/courses') return '課程管理'
+  if (pathname === '/admin/courses') return '活動管理'
   if (pathname === '/admin/templates/new') return '新增課程範本'
   if (/^\/admin\/templates\/\d+/.test(pathname)) return '編輯課程範本'
   const item = MENU.flatMap((g) => g.items).filter(([to]) => pathname === to || pathname.startsWith(to + '/'))
