@@ -64,7 +64,8 @@
         "缺席（No-show）累計自動暫停報名",
         "依 DUPR 分數分組，輪換搭檔、固定搭檔、單打循環，雙方確認比分",
         "名單下載 Excel、比分匯出 CSV、營收與出席報表",
-        "活動短網址、LINE 分享預覽、不公開活動"
+        "活動短網址、LINE 分享預覽、不公開活動",
+        "支援自訂網域（場館自己的網址），可協助購買網域與轉移"
       ]
     },
     {
@@ -89,6 +90,7 @@
         { "@type": "Question", "name": "可以開只給特定人報名的活動嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以。把活動設為不公開，就只有拿到報名連結的人看得到、能報名，也不會被搜尋引擎收錄；報名網址可以自訂成好記的英文或數字。" } },
         { "@type": "Question", "name": "球友報名後沒來怎麼辦？", "acceptedAnswer": { "@type": "Answer", "text": "場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。" } },
         { "@type": "Question", "name": "可以用來租場地或約私人課嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。" } },
+        { "@type": "Question", "name": "可以用我們自己的網域嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以。預設提供「dc-studio.cc/你的場館」的網址；也可以改用你自己的網域，例如 booking.你的球館.tw。還沒有網域的話，我們協助你購買與設定；原本已經有網站或其他報名系統，也可以協助把網址與舊連結轉移過來。" } },
         { "@type": "Question", "name": "開始使用要多少錢？", "acceptedAnswer": { "@type": "Answer", "text": "目前採個別開通，依場館規模與需求說明方案。請先在首頁填寫申請表，我們會與你聯絡。" } },
         { "@type": "Question", "name": "球友的個人資料會公開嗎？", "acceptedAnswer": { "@type": "Answer", "text": "不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。" } }
       ]
@@ -334,6 +336,7 @@ footer a { color: var(--text-2); }
         <div><dt>活動類型</dt><dd>單次活動、DUPR 積分活動、時段預約（私人課、場地租借）</dd></div>
         <div><dt>收費方式</dt><dd>免費、匯款報名費（回填帳號後五碼對帳）、課卡</dd></div>
         <div><dt>通知</dt><dd>報名、候補遞補、收款確認、開課前一天提醒，全部推到 LINE</dd></div>
+        <div><dt>網址</dt><dd>預設 dc-studio.cc/你的場館；也能用你自己的網域，可協助購買與轉移</dd></div>
       </dl>
     </div>
   </section>
@@ -435,6 +438,8 @@ footer a { color: var(--text-2); }
         <article class="card"><h3>缺席管理</h3><p>最近 N 天缺席 X 次自動暫停報名，差一次先提醒；可免記、解除或手動暫停。</p></article>
         <article class="card"><h3>名單與報表</h3><p>名單一鍵下載 Excel（簽到、保險用），營收、滿班率、出席率一目了然。</p></article>
         <article class="card"><h3>課卡方案</h3><p>堂數卡、點數卡、無限卡都能設定，報名時自動扣卡、取消自動退卡。</p></article>
+        <article class="card"><h3>用你自己的網域</h3><p>預設給你「dc-studio.cc/你的場館」；想用自己的網址（例如 booking.你的球館.tw）也可以。還沒有網域我們協助購買設定，已有網站也協助轉移、舊連結不中斷。</p></article>
+        <article class="card"><h3>建立活動有引導</h3><p>先選活動類型，再填標「必填」的名稱、時間、名額與費用，其他收在「更多設定」；新場主有開站步驟一步步帶。</p></article>
         <article class="card"><h3>分享與隱私</h3><p>每場活動都有短網址與 LINE 預覽，可自訂網址、設為不公開；報名名單只顯示遮罩後的名字。</p></article>
       </div>
     </div>
@@ -477,6 +482,7 @@ footer a { color: var(--text-2); }
         <details><summary>可以開只給特定人報名的活動嗎？</summary><p>可以。把活動設為不公開，就只有拿到報名連結的人看得到、能報名，也不會被搜尋引擎收錄；報名網址可以自訂成好記的英文或數字。</p></details>
         <details><summary>球友報名後沒來怎麼辦？</summary><p>場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。</p></details>
         <details><summary>可以用來租場地或約私人課嗎？</summary><p>可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。</p></details>
+        <details><summary>可以用我們自己的網域嗎？</summary><p>可以。預設提供「dc-studio.cc/你的場館」的網址；也可以改用你自己的網域，例如 booking.你的球館.tw。還沒有網域的話，我們協助你購買與設定；原本已經有網站或其他報名系統，也可以協助把網址與舊連結轉移過來。</p></details>
         <details><summary>開始使用要多少錢？</summary><p>目前採個別開通，依場館規模與需求說明方案。請先填寫下方申請表，我們會與你聯絡。</p></details>
         <details><summary>球友的個人資料會公開嗎？</summary><p>不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。</p></details>
       </div>
@@ -512,6 +518,7 @@ footer a { color: var(--text-2); }
             <label><input type="checkbox" name="needs" value="DUPR 賽事"> DUPR 賽事</label>
             <label><input type="checkbox" name="needs" value="時段預約／租場"> 時段預約／租場</label>
             <label><input type="checkbox" name="needs" value="課卡"> 課卡</label>
+            <label><input type="checkbox" name="needs" value="自訂網域"> 自訂網域</label>
           </div>
         </fieldset>
         <label>想說的話 <small>選填</small><textarea name="message" rows="3" maxlength="1000" placeholder="例：目前每週兩場球敘，想改成線上報名與收費"></textarea></label>
