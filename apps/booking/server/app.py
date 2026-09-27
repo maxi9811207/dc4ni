@@ -169,14 +169,19 @@ MIGRATIONS = {
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
         "cover_url": "TEXT NOT NULL DEFAULT ''",
         "slot_set_id": "INTEGER",
+        "show_attendees": "INTEGER NOT NULL DEFAULT 1",
     },
     "course_templates": {
         "listed": "INTEGER NOT NULL DEFAULT 1",
+        "show_attendees": "INTEGER NOT NULL DEFAULT 1",
         "fee": "INTEGER NOT NULL DEFAULT 0",
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
         "cover_url": "TEXT NOT NULL DEFAULT ''",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
+    },
+    "slot_sets": {
+        "show_attendees": "INTEGER NOT NULL DEFAULT 0",
     },
     "reservations": {
         "partner_id": "INTEGER",
@@ -407,6 +412,8 @@ def startup():
             for col, ddl in cols.items():
                 if col not in have:
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+                    if (table, col) == ("slot_sets", "show_attendees"):  # 既有時段預約：時段跟著活動（預設不公開名單）
+                        conn.execute("UPDATE courses SET show_attendees=0 WHERE slot_set_id IS NOT NULL")
         phone = os.getenv("BOOKING_OWNER_PHONE")
         password = os.getenv("BOOKING_OWNER_PASSWORD")
         phone = clean_phone(phone)
@@ -575,6 +582,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "match_format": event_format(c),
         "games_to": c["games_to"],
         "listed": bool(c["listed"]),
+        "show_attendees": bool(c["show_attendees"]),
         "share_code": c["share_code"],
         "fee": c["fee"],
         "pay_hours": c["pay_hours"],
@@ -682,8 +690,10 @@ def venue():
 
 
 def attendees(conn, c: dict, limit: int = 200) -> list[dict]:
-    """已預約學員（姓名遮罩＋頭像）；DUPR 場附上該場依據的 DUPR 分數。"""
+    """已預約學員（姓名遮罩＋頭像）；DUPR 場附上該場依據的 DUPR 分數。場主可設定不公開（例如場地租借）。"""
     out = []
+    if not c.get("show_attendees", 1):
+        return out
     for r in conn.execute(
             "SELECT u.name, u.avatar_url, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified"
             " FROM reservations r JOIN users u ON u.id=r.user_id"
@@ -1834,7 +1844,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url")
+                 "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url", "show_attendees")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -1868,7 +1878,7 @@ def clean_course(b: dict) -> dict:
         out["match_format"] = "rotating"
     if "games_to" in out:
         out["games_to"] = min(max(int(out["games_to"] or 11), 5), 25)
-    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed"):
+    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed", "show_attendees"):
         if k in out:
             out[k] = 1 if out[k] else 0
     for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min", "fee", "pay_hours"):
@@ -2040,7 +2050,7 @@ def delete_template(template_id: int, owner=Depends(require_owner)):
 # 每個時段就是一筆 courses（slot_set_id 指回活動），報名、候補、課卡、報名費、付款審核、提醒、名單、報表都共用原本的流程。
 
 SLOT_FIELDS = ("name", "category", "teacher_id", "description", "location", "cover_url", "capacity", "cost", "fee",
-               "pay_hours", "plan_ids", "booking_deadline_min", "cancel_deadline_min", "listed")
+               "pay_hours", "plan_ids", "booking_deadline_min", "cancel_deadline_min", "listed", "show_attendees")
 # 修改活動時同步到尚未開始的時段（名額另外處理，不會少於已報名人數）
 SLOT_SYNC = tuple(k for k in SLOT_FIELDS if k != "capacity")
 
@@ -2126,7 +2136,7 @@ def slot_set_base(conn, ss: dict) -> dict:
     teacher = one(conn.execute("SELECT id, name, photo_url, title FROM teachers WHERE id=?", (ss["teacher_id"],)))
     return {**{k: ss[k] for k in ("id", "name", "category", "description", "location", "cover_url", "capacity", "cost", "fee",
                                   "pay_hours", "booking_deadline_min", "cancel_deadline_min", "share_code")},
-            "kind": "slots", "listed": bool(ss["listed"]), "teacher": teacher, "plan_ids": json.loads(ss["plan_ids"])}
+            "kind": "slots", "listed": bool(ss["listed"]), "show_attendees": bool(ss["show_attendees"]), "teacher": teacher, "plan_ids": json.loads(ss["plan_ids"])}
 
 
 def slot_day_summary(conn, ss: dict, day: str, user: dict | None, s: dict) -> dict:
@@ -2225,7 +2235,7 @@ def create_slot_set(body: dict = Depends(json_body), owner=Depends(require_owner
 
 DEFAULT_SLOT = {"category": "", "teacher_id": None, "description": "", "location": "", "cover_url": "", "capacity": 1,
                 "cost": 0, "fee": 0, "pay_hours": 48, "plan_ids": "[]", "booking_deadline_min": 60,
-                "cancel_deadline_min": 1440, "listed": 1}
+                "cancel_deadline_min": 1440, "listed": 1, "show_attendees": 0}
 
 
 @app.post("/api/admin/slot-sets/{set_id}/slots")

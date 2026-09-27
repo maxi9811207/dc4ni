@@ -98,7 +98,7 @@ export function SlotAdmin() {
           <Link to={`/admin/slots/${id}/edit`} className="small text-brand">編輯設定</Link>
         </div>
         <h2 className="detail-title">{d.name}</h2>
-        <p className="muted small">{span(d)} · 每段 {d.capacity} 位 · {d.fee > 0 ? `每段 NT$ ${d.fee.toLocaleString()}（匯款）` : d.cost > 0 ? '扣課卡' : '免費'}</p>
+        <p className="muted small">{span(d)} · 每段 {d.capacity} 位 · {d.fee > 0 ? `每段 NT$ ${d.fee.toLocaleString()}（匯款）` : d.cost > 0 ? '扣課卡' : '免費'} · {d.show_attendees ? '公開要去的球友' : '不公開預約者'}</p>
         <div className="stats stats-3">
           <div className="stat"><span>未來時段</span><b>{d.slot_count}</b></div>
           <div className="stat"><span>已預約</span><b>{d.booked}</b></div>

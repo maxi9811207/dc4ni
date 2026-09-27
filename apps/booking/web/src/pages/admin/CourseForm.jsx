@@ -11,7 +11,7 @@ const EMPTY = {
   capacity: 10, cost: 0, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '',
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true,
 }
 // 時段預約的產生設定
 const SLOT_GEN = { from: today(), to: addDays(today(), 13), weekdays: [0, 1, 2, 3, 4, 5, 6], open: '09:00', close: '21:00', minutes: 60 }
@@ -115,7 +115,8 @@ export default function CourseForm({ template = false, slotId }) {
   }
   const pickType = (t) => {
     setType(t)
-    if (t === 'slots') setForm({ ...form, capacity: form.capacity === EMPTY.capacity ? 1 : form.capacity, booking_deadline_min: 60, cancel_deadline_min: 1440 })
+    if (t === 'slots') setForm({ ...form, capacity: form.capacity === EMPTY.capacity ? 1 : form.capacity, booking_deadline_min: 60, cancel_deadline_min: 1440, show_attendees: false })
+    else if (type === 'slots') setForm({ ...form, show_attendees: true })
   }
   const categories = Array.from(new Set([...(venue?.categories || []), form.category].filter(Boolean)))
   const payMode = form.fee > 0 ? 'fee' : form.cost > 0 ? 'card' : 'free'
@@ -378,6 +379,10 @@ export default function CourseForm({ template = false, slotId }) {
             </Field>
           </div>
           {!isSlots && <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>}
+          <label className="check">
+            <input type="checkbox" checked={form.show_attendees} onChange={set('show_attendees')} />
+            <span>公開「要去的球友」<span className="muted small">（報名者的頭像與名字，名字會遮罩；{isSlots ? '場地租借通常不公開' : 'DUPR 場會附上分數'}）</span></span>
+          </label>
           <label className="check">
             <input type="checkbox" checked={form.listed} onChange={set('listed')} />
             <span>公開在首頁課表<span className="muted small">（不勾＝只有拿到報名連結的人看得到）</span></span>
