@@ -27,6 +27,7 @@ from fastapi.staticfiles import StaticFiles
 import dupr
 import line_login
 import line_push
+import mailer
 import matches
 import reports
 
@@ -3162,9 +3163,21 @@ def create_lead(request: Request, body: dict = Depends(json_body)):
     data = (name, contact, clean("org", 80), clean("size", 30), needs, clean("message", 1000), ip, stamp())
     LEAD_HITS[ip] = recent + [t]
     with db() as conn:
-        conn.execute("INSERT INTO leads (name, contact, org, size, needs, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?)", data)
+        lead_id = conn.execute("INSERT INTO leads (name, contact, org, size, needs, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?)", data).lastrowid
         admin_notify(conn, "lead", f"新的開通申請：{name}（{contact}）" + (f"｜{data[2]}" if data[2] else "") + (f"｜{data[3]}" if data[3] else "")
                      + (f"｜想用：{needs}" if needs else "") + (f"｜{data[5][:200]}" if data[5] else ""), "/admin/notifications")
+    # 寄一封信給平台（LEAD_EMAIL_TO，可多個以逗號分隔）；對方留的是 Email 就設成回覆對象，直接按回覆即可
+    to = [x.strip() for x in os.getenv("LEAD_EMAIL_TO", "").split(",") if x.strip()]
+    if to:
+        email = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", contact)
+        text = "\n".join([
+            f"有人在 Digital Court 首頁申請開通（#{lead_id}，{data[7].replace('T', ' ')}）", "",
+            f"稱呼：{name}", f"聯絡方式：{contact}", f"場館或球團：{data[2] or '（未填）'}", f"規模：{data[3] or '（未填）'}",
+            f"想用的功能：{needs or '（未填）'}", "", "想說的話：", data[5] or "（未填）", "",
+            "—", "這封信由 dc-studio.cc 自動寄出。" + ("直接回覆就會寄給對方。" if email else ""),
+        ])
+        mailer.send(to, f"【Digital Court】新的開通申請：{name}" + (f"（{data[2]}）" if data[2] else ""), text,
+                    reply_to=email.group(0) if email else None)
     return {"ok": True}
 
 
