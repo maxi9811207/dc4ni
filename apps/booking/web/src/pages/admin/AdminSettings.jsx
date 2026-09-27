@@ -17,6 +17,7 @@ export default function AdminSettings() {
         body: {
           ...form,
           open_days: Number(form.open_days) || 14,
+          reminder_hour: Number(form.reminder_hour ?? 20),
           categories: form.categories.split('\n').map((s) => s.trim()).filter(Boolean),
         },
       })
@@ -46,6 +47,16 @@ export default function AdminSettings() {
       </Field>
       <label className="check"><input type="checkbox" checked={!!form.show_reservation_count} onChange={set('show_reservation_count')} /> 課程列表顯示預約人數（例 5 / 6）；關閉時只在剩 5 位以內顯示「剩餘 N 位」</label>
       <label className="check"><input type="checkbox" checked={!!form.waitlist_enabled} onChange={set('waitlist_enabled')} /> 額滿時開放候補</label>
+
+      <h3 className="card-title">開課前一天提醒</h3>
+      <label className="check"><input type="checkbox" checked={form.reminder_enabled !== false} onChange={set('reminder_enabled')} /> 前一天提醒已報名的學員（網站通知＋有綁 LINE 的推到 LINE；未付款的會一併提醒付款）</label>
+      {form.reminder_enabled !== false && (
+        <Field label="提醒時間" hint="您也會在同一時間收到「明天有幾堂、幾個人」的總覽">
+          <select className="input" value={form.reminder_hour ?? 20} onChange={set('reminder_hour')}>
+            {[...new Set([8, 12, 18, 19, 20, 21, 22, Number(form.reminder_hour ?? 20)])].sort((a, b) => a - b).map((h) => <option key={h} value={h}>前一天 {h}:00</option>)}
+          </select>
+        </Field>
+      )}
       <button className="btn btn-block btn-lg">儲存設定</button>
     </form>
   )

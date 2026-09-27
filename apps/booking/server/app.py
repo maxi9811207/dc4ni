@@ -50,6 +50,8 @@ DEFAULT_SETTINGS = {
     "show_reservation_count": True,
     "open_days": 14,
     "waitlist_enabled": True,
+    "reminder_enabled": True,  # 開課前一天推播提醒
+    "reminder_hour": 20,       # 前一天幾點提醒（0～23）
 }
 
 SCHEMA = """
@@ -124,6 +126,7 @@ CREATE TABLE IF NOT EXISTS event_games (
   side_a TEXT NOT NULL, side_b TEXT NOT NULL, bye TEXT NOT NULL DEFAULT '[]', score_a INTEGER, score_b INTEGER,
   status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
+CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS notifications (
   id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, text TEXT NOT NULL,
   read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
@@ -172,6 +175,7 @@ MIGRATIONS = {
         "pay_note": "TEXT NOT NULL DEFAULT ''",
         "paid_at": "TEXT NOT NULL DEFAULT ''",
         "pay_due": "TEXT NOT NULL DEFAULT ''",
+        "reminded": "INTEGER NOT NULL DEFAULT 0",
     },
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
@@ -258,7 +262,7 @@ def get_settings(conn) -> dict:
     return out
 
 
-OWNER_PUSH_KINDS = {"order", "payment", "refund"}  # 需要場主動手的事才推到 LINE，其餘只在後台通知
+OWNER_PUSH_KINDS = {"order", "payment", "refund", "digest"}  # 需要場主動手的事才推到 LINE，其餘只在後台通知
 
 
 def admin_notify(conn, kind: str, text: str, link: str = ""):
@@ -1278,22 +1282,71 @@ def release_overdue(conn) -> int:
     return n
 
 
+def send_reminders(conn) -> int:
+    """開課前一天（設定的時間之後）提醒已報名的學員；每筆報名只提醒一次，場主收到一則明日總覽。"""
+    s = get_settings(conn)
+    if not s.get("reminder_enabled", True):
+        return 0
+    t = now()
+    at = datetime.combine(t.date(), datetime.min.time()) + timedelta(hours=min(max(int(s.get("reminder_hour", 20)), 0), 23))
+    if t < at:
+        return 0
+    tomorrow = (t.date() + timedelta(days=1)).isoformat()
+    sent = 0
+    courses = rows(conn.execute("SELECT * FROM courses WHERE date=? AND status='open' ORDER BY start_time", (tomorrow,)))
+    for c in courses:
+        groups = {}
+        ev = one(conn.execute("SELECT id FROM events WHERE course_id=?", (c["id"],)))
+        if ev:
+            for g in rows(conn.execute("SELECT name, entries FROM event_groups WHERE event_id=?", (ev["id"],))):
+                for e in json.loads(g["entries"]):
+                    for p in e:
+                        groups[p] = g["name"]
+        for r in rows(conn.execute("SELECT * FROM reservations WHERE course_id=? AND status='booked' AND reminded=0", (c["id"],))):
+            conn.execute("UPDATE reservations SET reminded=1 WHERE id=?", (r["id"],))
+            if r["created_at"] >= at.isoformat(timespec="seconds"):
+                continue  # 提醒時間之後才報名的，報名成功通知就是提醒
+            text = f"明天見！「{c['name']}」{tomorrow[5:].replace('-', '/')} {c['start_time']}–{c['end_time']}"
+            text += f"，地點：{c['location']}。" if c["location"] else "。"
+            if r["user_id"] in groups:
+                text += f"賽程已排好，您在 {groups[r['user_id']]}。"
+            if r["fee"] and not r["paid"]:
+                text += f"報名費 NT$ {r['fee']:,} 還沒完成付款，請記得付款並回報。"
+            notify(conn, r["user_id"], text, course=c)
+            sent += 1
+    key = f"digest:{tomorrow}"
+    if courses and not one(conn.execute("SELECT key FROM kv WHERE key=?", (key,))):
+        conn.execute("INSERT INTO kv VALUES (?, ?)", (key, stamp()))
+        total = sum(course_counts(conn, c["id"])[0] for c in courses)
+        unpaid = conn.execute(f"SELECT COUNT(*) FROM reservations WHERE status='booked' AND fee>0 AND paid=0 AND course_id IN "
+                              f"({','.join('?' * len(courses))})", tuple(c["id"] for c in courses)).fetchone()[0]
+        text = f"明天 {tomorrow[5:].replace('-', '/')} 有 {len(courses)} 堂、共 {total} 人：" + "、".join(
+            f"{c['start_time']} {c['name']}" for c in courses[:5]) + ("…" if len(courses) > 5 else "")
+        if unpaid:
+            text += f"。還有 {unpaid} 筆報名費沒收到"
+        admin_notify(conn, "digest", text, "/admin/calendar")
+    return sent
+
+
 def sweeper():
     import time as _t
     while True:
         _t.sleep(300)
-        try:
-            with db() as conn:
-                release_overdue(conn)
-        except Exception:  # noqa: BLE001 — 背景工作不能讓服務掛掉
-            pass
+        for job in (release_overdue, send_reminders):
+            try:
+                with db() as conn:
+                    job(conn)
+            except Exception:  # noqa: BLE001 — 背景工作不能讓服務掛掉
+                pass
 
 
 @app.post("/api/admin/sweep")
 def run_sweep(owner=Depends(require_owner)):
-    """立即執行一次逾期檢查（背景每 5 分鐘也會自動跑）。"""
+    """立即執行一次逾期檢查與開課提醒（背景每 5 分鐘也會自動跑）。"""
     with db() as conn:
-        return {"released": release_overdue(conn)}
+        released = release_overdue(conn)
+    with db() as conn:
+        return {"released": released, "reminded": send_reminders(conn)}
 
 
 @app.put("/api/courses/{course_id}/payment")
