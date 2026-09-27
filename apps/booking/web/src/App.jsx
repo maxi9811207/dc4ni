@@ -151,7 +151,7 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
-        <footer className="footer">© {new Date().getFullYear()} {venue?.name || '約課系統'}</footer>
+        <footer className="footer">© {new Date().getFullYear()} Digital Court</footer>
       </div>
 
       {toast && <div className="toast">{toast}</div>}
