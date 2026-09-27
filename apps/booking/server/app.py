@@ -131,6 +131,9 @@ CREATE TABLE IF NOT EXISTS event_games (
   status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS leads (
+  id INTEGER PRIMARY KEY, name TEXT NOT NULL, contact TEXT NOT NULL, org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '',
+  needs TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '', ip TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS share_aliases (code TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS slot_sets (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', teacher_id INTEGER,
@@ -285,7 +288,7 @@ def get_settings(conn) -> dict:
     return out
 
 
-OWNER_PUSH_KINDS = {"order", "payment", "refund", "digest"}  # 需要場主動手的事才推到 LINE，其餘只在後台通知
+OWNER_PUSH_KINDS = {"order", "payment", "refund", "digest", "lead"}  # 需要場主動手的事才推到 LINE，其餘只在後台通知
 
 
 def admin_notify(conn, kind: str, text: str, link: str = ""):
@@ -2975,50 +2978,194 @@ def uploaded(name: str):
 
 
 @app.get("/e/{code}", include_in_schema=False)
+def old_share_url(code: str, request: Request):
+    """舊的分享網址 /e/<代碼>：永久轉到 <網站>/<目前的代碼>（改過的代碼、升級前的 8 碼都能找到）。"""
+    with db() as conn:
+        kind, row = find_by_code(conn, code)
+    if not row:
+        guard_code_guess(request, True)
+        return RedirectResponse(public_base(request), status_code=302)
+    return RedirectResponse(public_base(request) + row["share_code"], status_code=301)
+
+
+# ---------------------------------------------------------------- 給搜尋引擎與 AI 的頁面（SEO／GEO）
+# 前端是單頁 App：這裡回同一份 index.html，但先在 <head> 放好標題、描述、分享預覽與結構化資料，
+# <div id="root"> 裡放活動的文字內容（不執行 JavaScript 的爬蟲也讀得到）；瀏覽器載入後 App 會接手畫面。
+
+def iso_local(day: str, hhmm: str) -> str:
+    off = datetime.now(TZ).strftime("%z")
+    return f"{day}T{hhmm}:00{off[:3]}:{off[3:]}" if hhmm else day
+
+
+def render_index(head: str, body: str, title: str) -> Response:
+    page = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    page = re.sub(r"<title>.*?</title>", f"<title>{html.escape(title)}</title>", page, count=1, flags=re.S)
+    page = page.replace("</head>", head + "</head>", 1)
+    page = page.replace('<div id="root"></div>', f'<div id="root">{body}</div>', 1)
+    return Response(page, media_type="text/html; charset=utf-8", headers={"Cache-Control": "no-cache"})
+
+
+def head_tags(base: str, url: str, title: str, desc: str, image: str, site: str, ld: list, index: bool = True, og_type: str = "website") -> str:
+    """title 給分享預覽用（LINE／FB 另外會顯示網站名稱，所以只放活動名稱）。"""
+    e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
+    if image and not re.match(r"^https?:", image):
+        image = base + image.lstrip("/")
+    tags = [f'<meta name="description" content="{e(desc)}">', f'<link rel="canonical" href="{e(url)}">',
+            f'<meta name="robots" content="{"index,follow,max-image-preview:large" if index else "noindex,nofollow"}">']
+    for k, v in (("og:type", og_type), ("og:site_name", site), ("og:title", title), ("og:description", desc), ("og:url", url),
+                 ("og:image", image), ("og:locale", "zh_TW")):
+        if v:
+            tags.append(f'<meta property="{k}" content="{e(v)}">')
+    tags.append('<meta name="twitter:card" content="summary_large_image">')
+    for item in ld:
+        tags.append('<script type="application/ld+json">' + json.dumps(item, ensure_ascii=False).replace("<", "\\u003c") + "</script>")
+    return "".join(tags)
+
+
 def share_page(code: str, request: Request):
-    """分享連結：給 LINE／FB 抓預覽（活動名稱、時間、封面），瀏覽器立即轉到一頁式活動頁。"""
+    """活動網址 <網站>/<代碼>：LINE／FB 預覽、搜尋引擎與 AI 都讀得到活動資訊；不公開的活動不讓搜尋引擎收錄。"""
     base = public_base(request)
     with db() as conn:
         kind, row = find_by_code(conn, code)
-        c = row if kind == "course" else None
+        if not row:
+            guard_code_guess(request, True)
+            return RedirectResponse(base, status_code=302)
+        if row["share_code"] != code.strip():  # 改過的代碼、大寫 → 轉到正式網址
+            return RedirectResponse(base + row["share_code"], status_code=301)
         s = get_settings(conn)
-        if not c:
-            ss = row if kind == "slots" else None
-            if not ss:
-                guard_code_guess(request, True)
-                return RedirectResponse(base, status_code=302)
-            span = conn.execute("SELECT MIN(date), MAX(date), COUNT(*) FROM courses WHERE slot_set_id=? AND date>=? AND status='open'",
-                                (ss["id"], now().date().isoformat())).fetchone()
-            c = {**ss, "date": span[0] or now().date().isoformat(), "start_time": "", "end_time": "", "status": "open"}
-            booked = None
-        else:
-            booked, _ = course_counts(conn, c["id"])
+        e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
+        url = base + row["share_code"]
+        org = {"@type": "Organization", "name": s["name"], "url": base}
+        place = {"@type": "Place", "name": row["location"] or s["name"], "address": s["address"] or s["name"]}
+        if kind == "slots":
+            ss = row
+            slots = rows(conn.execute("SELECT * FROM courses WHERE slot_set_id=? AND date>=? AND status='open' ORDER BY date, start_time",
+                                      (ss["id"], now().date().isoformat())))
+            price = f"每個時段 NT${ss['fee']:,}" if ss["fee"] else "使用課卡" if ss["cost"] else "免費"
+            span = f"{slots[0]['date'][5:].replace('-', '/')}–{slots[-1]['date'][5:].replace('-', '/')}" if slots else ""
+            desc = "｜".join(x for x in (f"線上選時段預約 {span}".strip(), row["location"] or s["name"], price, f"每段 {ss['capacity']} 位") if x)
+            ld = [{"@context": "https://schema.org", "@type": "Service", "name": ss["name"], "description": desc, "provider": org,
+                   "areaServed": place, "url": url, **({"image": base + ss["cover_url"]} if ss["cover_url"] else {})}]
+            days = {}
+            for c in slots[:300]:
+                days.setdefault(c["date"], []).append(c)
+            items = "".join(f"<li>{e(d[5:].replace('-', '/'))}（{WEEKDAYS[date.fromisoformat(d).weekday()]}）："
+                            + "、".join(f"{x['start_time']}–{x['end_time']}" for x in cs) + "</li>" for d, cs in list(days.items())[:14])
+            body = (f'<main class="seo"><p><a href="{e(base)}">{e(s["name"])}</a></p><h1>{e(ss["name"])}</h1><p>{e(desc)}</p>'
+                    + (f'<p>{e(ss["description"])}</p>' if ss["description"] else "")
+                    + f'<h2>可預約的時段</h2><ul>{items}</ul><p><a href="{e(url)}">線上選時段預約</a></p></main>')
+            return render_index(head_tags(base, url, ss["name"], desc, ss["cover_url"] or s["cover_url"], s["name"], ld, bool(ss["listed"])),
+                                body, f"{ss['name']}｜{s['name']}")
+        c = row
+        booked, _ = course_counts(conn, c["id"])
+        teacher = one(conn.execute("SELECT name FROM teachers WHERE id=?", (c["teacher_id"],)))
     d = date.fromisoformat(c["date"])
-    if booked is None:  # 時段預約
-        e2 = date.fromisoformat(span[1]) if span[1] else d
-        parts = [f"選時段預約 {d.month}/{d.day}" + (f"–{e2.month}/{e2.day}" if e2 != d else ""), c["location"] or s["name"]]
-    else:
-        parts = [f"{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}", c["location"] or s["name"]]
-    if c["fee"]:
-        parts.append(f"報名費 NT${c['fee']:,}")
+    when = f"{d.year}/{d.month}/{d.day}（{WEEKDAYS[d.weekday()]}）{c['start_time']}–{c['end_time']}"
+    price = f"報名費 NT${c['fee']:,}" if c["fee"] else "使用課卡" if c["cost"] else "免費"
+    parts = [when, c["location"] or s["name"], price]
+    dupr = ""
+    if c["dupr_required"]:
+        lo, hi = c["dupr_min"], c["dupr_max"]
+        dupr = "DUPR " + (f"{lo:.1f}–{hi:.1f}" if lo is not None and hi is not None else f"{lo:.1f}+" if lo is not None else f"≤{hi:.1f}" if hi is not None else "不限分數")
+        parts.append(dupr)
     if c["status"] == "cancelled":
         parts.append("已停課")
-    elif s["show_reservation_count"] and booked is not None:
+    elif s["show_reservation_count"]:
         parts.append(f"已報名 {booked}/{c['capacity']}")
-    image = c["cover_url"] or s["cover_url"]  # 活動自己的封面優先，沒有就用場館封面
-    if image and not re.match(r"^https?:", image):
-        image = base + image.lstrip("/")
-    target = f"{base}#/e/{c['share_code']}"  # 畫面仍由 hash 路由顯示；網址列會改回 {base}{代碼}
+    desc = "｜".join(parts)
+    remain = max(c["capacity"] - booked, 0)
+    ev = {"@context": "https://schema.org", "@type": "SportsEvent", "name": c["name"], "sport": "Pickleball", "url": url,
+          "startDate": iso_local(c["date"], c["start_time"]), "endDate": iso_local(c["date"], c["end_time"]),
+          "eventStatus": "https://schema.org/EventCancelled" if c["status"] == "cancelled" else "https://schema.org/EventScheduled",
+          "eventAttendanceMode": "https://schema.org/OfflineEventAttendanceMode", "location": place, "organizer": org,
+          "description": (c["description"] or desc)[:500], "maximumAttendeeCapacity": c["capacity"], "remainingAttendeeCapacity": remain}
+    if c["cover_url"] or s["cover_url"]:
+        ev["image"] = [base + (c["cover_url"] or s["cover_url"]).lstrip("/")]
+    if c["fee"] or not c["cost"]:
+        ev["offers"] = {"@type": "Offer", "price": c["fee"], "priceCurrency": "TWD", "url": url,
+                        "availability": "https://schema.org/InStock" if remain > 0 else "https://schema.org/SoldOut"}
+    if teacher:
+        ev["performer"] = {"@type": "Person", "name": teacher["name"]}
+    rowsinfo = [("日期時間", when), ("地點", c["location"] or s["address"] or s["name"]), ("費用", price),
+                ("名額", f"{c['capacity']} 位" + (f"（已報名 {booked} 位）" if s["show_reservation_count"] else ""))]
+    if teacher:
+        rowsinfo.append(("老師／團主", teacher["name"]))
+    if c["dupr_required"]:
+        rowsinfo.append(("DUPR 條件", dupr))
+    body = (f'<main class="seo"><p><a href="{e(base)}">{e(s["name"])}</a> 主辦</p><h1>{e(c["name"])}</h1>'
+            + "<dl>" + "".join(f"<dt>{e(k)}</dt><dd>{e(v)}</dd>" for k, v in rowsinfo) + "</dl>"
+            + (f'<p>{e(c["description"])}</p>' if c["description"] else "") + f'<p><a href="{e(url)}">線上報名</a></p></main>')
+    return render_index(head_tags(base, url, c["name"], desc, c["cover_url"] or s["cover_url"], s["name"], [ev], bool(c["listed"])),
+                        body, f"{c['name']}｜{s['name']}")
+
+
+def venue_page(request: Request):
+    """場館首頁：場館資訊（結構化資料）＋近期公開活動的連結，讓搜尋引擎與 AI 找得到每一場活動。"""
+    base = public_base(request)
     e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
-    meta = "".join(f'<meta property="{k}" content="{e(v)}">' for k, v in (
-        ("og:type", "website"), ("og:site_name", s["name"]), ("og:title", c["name"]),
-        ("og:description", "｜".join(parts)), ("og:url", f"{base}{c['share_code']}"), ("og:image", image)) if v)
-    page = (f'<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">'
-            f'<meta name="viewport" content="width=device-width,initial-scale=1"><title>{e(c["name"])}｜{e(s["name"])}</title>'
-            f'<meta name="description" content="{e("｜".join(parts))}">{meta}<meta name="twitter:card" content="summary_large_image">'
-            f'<meta http-equiv="refresh" content="0;url={e(target)}"><script>location.replace({json.dumps(target).replace("<", "\\u003c")})</script>'
-            f'</head><body><a href="{e(target)}">前往報名頁</a></body></html>')
-    return Response(page, media_type="text/html; charset=utf-8")
+    with db() as conn:
+        s = get_settings(conn)
+        today = now().date()
+        cs = rows(conn.execute("SELECT * FROM courses WHERE listed=1 AND status='open' AND slot_set_id IS NULL AND date BETWEEN ? AND ?"
+                               " ORDER BY date, start_time LIMIT 60", (today.isoformat(), (today + timedelta(days=int(s["open_days"] or 14))).isoformat())))
+        sets = rows(conn.execute("SELECT * FROM slot_sets WHERE listed=1 ORDER BY id"))
+    desc = (s["about"] or f"{s['name']}的匹克球課程、球敘與 DUPR 活動線上報名。").replace("\n", " ")[:150]
+    ld = [{"@context": "https://schema.org", "@type": "SportsActivityLocation", "name": s["name"], "url": base, "description": desc,
+           **({"address": s["address"]} if s["address"] else {}), **({"telephone": s["phone"]} if s["phone"] else {}),
+           **({"image": base + s["cover_url"].lstrip("/")} if s["cover_url"] else {}),
+           **({"sameAs": [s["line_url"]]} if s["line_url"] else {})}]
+    items = "".join(f'<li><a href="{e(base + c["share_code"])}">{e(c["date"][5:].replace("-", "/"))}（{WEEKDAYS[date.fromisoformat(c["date"]).weekday()]}）'
+                    f'{e(c["start_time"])} {e(c["name"])}</a></li>' for c in cs)
+    items += "".join(f'<li><a href="{e(base + x["share_code"])}">{e(x["name"])}（線上選時段預約）</a></li>' for x in sets)
+    body = (f'<main class="seo"><h1>{e(s["name"])}</h1><p>{e(desc)}</p>' + (f"<p>地址：{e(s['address'])}</p>" if s["address"] else "")
+            + f"<h2>近期活動</h2><ul>{items}</ul></main>")
+    title = f"{s['name']}｜匹克球課程、球敘與 DUPR 活動報名"
+    return render_index(head_tags(base, base, title, desc, s["cover_url"], s["name"], ld), body, title)
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap(request: Request):
+    """場館首頁＋公開、還沒結束的活動與時段預約。"""
+    base = public_base(request)
+    with db() as conn:
+        today = now().date().isoformat()
+        urls = [(base, today)]
+        urls += [(base + c["share_code"], c["created_at"][:10]) for c in rows(conn.execute(
+            "SELECT share_code, created_at FROM courses WHERE listed=1 AND status='open' AND slot_set_id IS NULL AND date>=? ORDER BY date LIMIT 5000", (today,)))]
+        urls += [(base + x["share_code"], x["created_at"][:10]) for x in rows(conn.execute("SELECT share_code, created_at FROM slot_sets WHERE listed=1"))]
+    xml = ('<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+           + "".join(f"<url><loc>{html.escape(u)}</loc><lastmod>{m}</lastmod></url>" for u, m in urls) + "</urlset>")
+    return Response(xml, media_type="application/xml")
+
+
+# ---------------------------------------------------------------- 首頁的「申請開通」表單
+
+LEAD_HITS: dict[str, list[float]] = {}
+
+
+@app.post("/api/leads")
+def create_lead(request: Request, body: dict = Depends(json_body)):
+    import time
+    if body.get("website"):  # 機器人才會填的隱藏欄位
+        return {"ok": True}
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    t = time.time()
+    recent = [x for x in LEAD_HITS.get(ip, []) if t - x < 3600]
+    if len(recent) >= 5:
+        fail(429, "送出太多次了，請稍後再試，或直接用 LINE 聯絡我們")
+    clean = lambda k, n: str(body.get(k) or "").strip()[:n]  # noqa: E731
+    name, contact = clean("name", 40), clean("contact", 100)
+    if not name or not contact:
+        fail(400, "請填寫稱呼與聯絡方式")
+    needs = body.get("needs") if isinstance(body.get("needs"), list) else []
+    needs = "、".join(str(x)[:20] for x in needs[:8])
+    data = (name, contact, clean("org", 80), clean("size", 30), needs, clean("message", 1000), ip, stamp())
+    LEAD_HITS[ip] = recent + [t]
+    with db() as conn:
+        conn.execute("INSERT INTO leads (name, contact, org, size, needs, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?)", data)
+        admin_notify(conn, "lead", f"新的開通申請：{name}（{contact}）" + (f"｜{data[2]}" if data[2] else "") + (f"｜{data[3]}" if data[3] else "")
+                     + (f"｜想用：{needs}" if needs else "") + (f"｜{data[5][:200]}" if data[5] else ""), "/admin/notifications")
+    return {"ok": True}
 
 
 if STATIC_DIR.is_dir():
@@ -3030,6 +3177,8 @@ if STATIC_DIR.is_dir():
             fail(404, "not found")
         if SHARE_CODE_RE.match(path.lower()) and path.lower() not in SHARE_RESERVED:  # 活動網址 <網站>/<代碼>
             return share_page(path, request)
+        if path in ("", "index.html"):
+            return venue_page(request)
         target = STATIC_DIR / path
         if path and target.is_file() and STATIC_DIR in target.resolve().parents:
             return FileResponse(target)

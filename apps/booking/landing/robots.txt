@@ -1,0 +1,28 @@
+# Digital Court — 歡迎搜尋引擎與 AI 助理讀取公開頁面
+User-agent: *
+Allow: /
+Disallow: /active/api/
+
+# AI 搜尋與助理（GEO）：公開頁面可引用
+User-agent: GPTBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-SearchBot
+Allow: /
+User-agent: Claude-User
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Perplexity-User
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+
+Sitemap: https://dc-studio.cc/sitemap.xml

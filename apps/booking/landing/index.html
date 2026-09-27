@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Digital Court｜匹克球報名系統：開團、收費對帳、DUPR 賽事一次搞定</title>
+<meta name="description" content="Digital Court 是給台灣匹克球團主、教練與場館的線上報名系統。活動連結貼到 LINE 群組，球友用 LINE 一鍵報名；名額候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組記分都自動處理，不用下載 App。">
+<link rel="canonical" href="https://dc-studio.cc/">
+<meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon-48.png" sizes="48x48" type="image/png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="alternate" type="text/plain" href="/llms.txt" title="LLM 摘要">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Digital Court">
+<meta property="og:title" content="Digital Court｜匹克球報名系統">
+<meta property="og:description" content="開團報名、收費對帳、DUPR 賽事，一個連結貼到 LINE 群組就能報名。給匹克球團主、教練與場館。">
+<meta property="og:url" content="https://dc-studio.cc/">
+<meta property="og:image" content="https://dc-studio.cc/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="zh_TW">
+<meta name="twitter:card" content="summary_large_image">
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://dc-studio.cc/#org",
+      "name": "Digital Court",
+      "url": "https://dc-studio.cc/",
+      "logo": "https://dc-studio.cc/logo-512.png",
+      "description": "為台灣匹克球團主、教練與場館提供線上報名與營運系統。",
+      "areaServed": "TW"
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://dc-studio.cc/#website",
+      "url": "https://dc-studio.cc/",
+      "name": "Digital Court",
+      "inLanguage": "zh-Hant-TW",
+      "publisher": { "@id": "https://dc-studio.cc/#org" }
+    },
+    {
+      "@type": "WebApplication",
+      "@id": "https://dc-studio.cc/#app",
+      "name": "Digital Court 匹克球報名系統",
+      "url": "https://dc-studio.cc/",
+      "applicationCategory": "BusinessApplication",
+      "applicationSubCategory": "運動活動報名與場館管理",
+      "operatingSystem": "Web（iOS、Android、電腦瀏覽器）",
+      "inLanguage": "zh-Hant-TW",
+      "publisher": { "@id": "https://dc-studio.cc/#org" },
+      "audience": { "@type": "BusinessAudience", "audienceType": "匹克球團主、教練、球館、社團" },
+      "description": "匹克球活動線上報名系統：活動連結分享到 LINE 群組，球友用 LINE 一鍵登入報名；自動處理名額與候補遞補、報名費匯款對帳、開課前一天提醒、缺席管理，並支援 DUPR 分數限制、自動分組排賽程與記分。",
+      "featureList": [
+        "LINE 一鍵登入與報名，不用下載 App",
+        "單次活動、DUPR 積分活動、時段預約（私人課、場地租借）",
+        "免費、匯款報名費（回填帳號後五碼對帳）或課卡三種收費",
+        "額滿候補，有人取消依序自動遞補並推播通知",
+        "開課前一天自動提醒學員，場主收到明日總覽",
+        "缺席（No-show）累計自動暫停報名",
+        "依 DUPR 分數分組，輪換搭檔、固定搭檔、單打循環，雙方確認比分",
+        "名單下載 Excel、比分匯出 CSV、營收與出席報表",
+        "活動短網址、LINE 分享預覽、不公開活動"
+      ]
+    },
+    {
+      "@type": "HowTo",
+      "@id": "https://dc-studio.cc/#howto",
+      "name": "如何開始用 Digital Court 開匹克球活動",
+      "step": [
+        { "@type": "HowToStep", "position": 1, "name": "填寫申請表", "text": "在 dc-studio.cc 首頁填寫稱呼、聯絡方式與場館或球團名稱。" },
+        { "@type": "HowToStep", "position": 2, "name": "開通場館", "text": "我們與你聯絡、開好你的場館網址與後台帳號。" },
+        { "@type": "HowToStep", "position": 3, "name": "設定場館與收款方式", "text": "在後台填寫場館介紹與匯款資訊。" },
+        { "@type": "HowToStep", "position": 4, "name": "建立活動並分享", "text": "選擇活動類型、填名稱時間名額與費用，把報名連結貼到 LINE 群組。" }
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://dc-studio.cc/#faq",
+      "mainEntity": [
+        { "@type": "Question", "name": "球友報名需要下載 App 嗎？", "acceptedAnswer": { "@type": "Answer", "text": "不用。球友點活動連結，用手機瀏覽器或在 LINE 裡直接打開就能報名；第一次用 LINE 登入會自動建立帳號，也可以用手機號碼或 Email 註冊。" } },
+        { "@type": "Question", "name": "報名費怎麼收？系統會抽成嗎？", "acceptedAnswer": { "@type": "Answer", "text": "球友報名後名額先保留，依活動頁上的匯款資訊轉帳，再回填匯款帳號後五碼就算報名成功；場主在後台「付款審核」對帳後按確認收款。款項直接匯到場主帳戶，系統不經手金流、不抽成。期限內沒回填，名額會自動讓給候補。" } },
+        { "@type": "Question", "name": "額滿之後怎麼候補？", "acceptedAnswer": { "@type": "Answer", "text": "額滿後球友可以加入候補；有人取消時，系統依候補順序自動遞補並用 LINE 通知。付費活動遞補後一樣要回填匯款後五碼。" } },
+        { "@type": "Question", "name": "有支援 DUPR 積分賽嗎？", "acceptedAnswer": { "@type": "Answer", "text": "有。可以設定 DUPR 雙打或單打分數範圍，只讓符合的球友報名；人到齊後依分數自動分組排賽程，支援輪換搭檔、固定搭檔與單打循環。比分由任一方回報、對手確認才算數，團主可在後台修改，最後匯出 CSV（含 DUPR ID）。" } },
+        { "@type": "Question", "name": "可以開只給特定人報名的活動嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以。把活動設為不公開，就只有拿到報名連結的人看得到、能報名，也不會被搜尋引擎收錄；報名網址可以自訂成好記的英文或數字。" } },
+        { "@type": "Question", "name": "球友報名後沒來怎麼辦？", "acceptedAnswer": { "@type": "Answer", "text": "場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。" } },
+        { "@type": "Question", "name": "可以用來租場地或約私人課嗎？", "acceptedAnswer": { "@type": "Answer", "text": "可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。" } },
+        { "@type": "Question", "name": "開始使用要多少錢？", "acceptedAnswer": { "@type": "Answer", "text": "目前採個別開通，依場館規模與需求說明方案。請先在首頁填寫申請表，我們會與你聯絡。" } },
+        { "@type": "Question", "name": "球友的個人資料會公開嗎？", "acceptedAnswer": { "@type": "Answer", "text": "不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。" } }
+      ]
+    }
+  ]
+}
+</script>
+<style>
+:root {
+  --g: #0b6b4b; --g-dark: #084f37; --g-soft: #e6f4ec; --ink: #111; --text-2: #3a3a3c; --muted: #6e6e73;
+  --line: #ececec; --bg: #f6f6f7; --card: #fff; --warn: #a15c00; --warn-soft: #fdf0dc; --r: 14px;
+  color-scheme: light;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.7 -apple-system, BlinkMacSystemFont, "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", sans-serif; -webkit-font-smoothing: antialiased; }
+a { color: inherit; }
+img { max-width: 100%; display: block; }
+h1, h2, h3, p, ul, ol, dl, dd, figure { margin: 0; }
+.wrap { max-width: 1080px; margin: 0 auto; padding-inline: 20px; }
+section { padding-block: 72px; }
+.eyebrow { font-size: 13px; font-weight: 700; color: var(--g); letter-spacing: 0.04em; }
+h2 { font-size: clamp(26px, 4vw, 34px); line-height: 1.3; letter-spacing: -0.01em; text-wrap: balance; margin-top: 8px; }
+.lead { color: var(--text-2); font-size: 17px; max-width: 62ch; margin-top: 14px; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 22px; border-radius: 12px;
+  background: var(--g); color: #fff; font-weight: 700; text-decoration: none; border: 1px solid var(--g); font-size: 16px; cursor: pointer; }
+.btn:hover { background: var(--g-dark); }
+.btn.ghost { background: var(--card); color: var(--ink); border-color: #d8d8dc; }
+.btn.ghost:hover { background: #fafafa; }
+:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+/* 頂列 */
+.top { position: sticky; top: 0; z-index: 10; background: rgba(255,255,255,0.94); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; align-items: center; gap: 16px; height: 60px; }
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 17px; text-decoration: none; margin-right: auto; }
+.brand img { width: 30px; height: 30px; }
+.nav { display: flex; gap: 22px; font-size: 15px; color: var(--text-2); }
+.nav a { text-decoration: none; }
+.nav a:hover { color: var(--ink); }
+.top .btn { min-height: 38px; padding: 0 16px; font-size: 14px; }
+@media (max-width: 760px) { .nav { display: none; } }
+
+/* 首屏 */
+.hero { background: var(--card); padding-block: 56px 64px; border-bottom: 1px solid var(--line); }
+.hero .wrap { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 48px; align-items: center; }
+.hero h1 { font-size: clamp(32px, 5.2vw, 50px); line-height: 1.22; letter-spacing: -0.02em; margin-top: 12px; text-wrap: balance; }
+.hero .lead { font-size: 18px; }
+.nw { white-space: nowrap; }
+.hero h1 { text-wrap: wrap; }
+.ctas { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+.facts { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 24px; padding: 0; list-style: none; font-size: 14px; color: var(--text-2); }
+.facts li::before { content: "✓"; color: var(--g); font-weight: 800; margin-right: 6px; }
+@media (max-width: 860px) { .hero .wrap { grid-template-columns: 1fr; gap: 36px; } }
+
+/* 手機示意（用 HTML 畫，和系統實際畫面一致） */
+.phone { width: 300px; max-width: 100%; margin: 0 auto; border-radius: 34px; background: #111; padding: 10px; box-shadow: 0 24px 60px rgba(0,0,0,0.18); }
+.screen { border-radius: 26px; background: var(--bg); overflow: hidden; font-size: 12px; line-height: 1.45; }
+.s-bar { display: flex; align-items: center; gap: 8px; background: #fff; padding: 12px 12px 10px; border-bottom: 1px solid var(--line); }
+.s-av { width: 24px; height: 24px; border-radius: 50%; background: var(--g); flex: none; }
+.s-bar b { font-size: 12px; }
+.s-bar small { display: block; color: var(--muted); font-size: 10px; }
+.s-body { padding: 8px; display: grid; gap: 6px; }
+.s-card { background: #fff; border-radius: 10px; padding: 10px; }
+.s-cover { border-radius: 10px; aspect-ratio: 16 / 9; object-fit: cover; width: 100%; }
+.s-title { font-size: 15px; font-weight: 800; margin: 2px 0 6px; }
+.s-kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+.s-kpi { background: var(--bg); border-radius: 7px; padding: 5px 6px; }
+.s-kpi span { display: block; color: var(--muted); font-size: 9px; }
+.s-kpi b { font-size: 12px; }
+.s-kpi small { display: block; color: var(--muted); font-size: 9px; }
+.s-h { font-weight: 800; font-size: 12px; display: flex; justify-content: space-between; }
+.s-h span { color: var(--muted); font-weight: 400; font-size: 10px; }
+.s-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-top: 1px solid var(--line); }
+.s-row:first-of-type { border-top: 0; }
+.s-row i { width: 18px; height: 18px; border-radius: 50%; background: #e5e5ea; flex: none; }
+.s-row em { font-style: normal; flex: 1; }
+.s-pill { background: var(--ink); color: #fff; border-radius: 5px; padding: 0 6px; font-weight: 700; font-size: 10px; font-variant-numeric: tabular-nums; }
+.s-cta { background: var(--g); color: #fff; font-weight: 800; text-align: center; border-radius: 9px; padding: 10px; font-size: 13px; }
+
+/* 定義 */
+.define { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: start; }
+.define dl { background: var(--card); border-radius: var(--r); padding: 8px 22px; }
+.define dl div { display: grid; grid-template-columns: 7.5em 1fr; gap: 12px; padding: 14px 0; border-top: 1px solid var(--line); }
+.define dl div:first-child { border-top: 0; }
+.define dt { color: var(--muted); font-size: 14px; }
+.define dd { font-size: 15px; }
+@media (max-width: 860px) { .define { grid-template-columns: 1fr; gap: 24px; } }
+
+/* 比較表 */
+.table-wrap { overflow-x: auto; margin-top: 28px; background: var(--card); border-radius: var(--r); }
+table { width: 100%; border-collapse: collapse; min-width: 640px; font-size: 15px; }
+th, td { text-align: left; padding: 14px 18px; border-top: 1px solid var(--line); vertical-align: top; }
+thead th { border-top: 0; font-size: 13px; color: var(--muted); font-weight: 600; }
+tbody th { font-weight: 700; white-space: nowrap; }
+td.old { color: var(--muted); }
+td.new { color: var(--ink); }
+td.new::before { content: "✓ "; color: var(--g); font-weight: 800; }
+@media (max-width: 640px) {
+  .table-wrap { background: none; overflow: visible; }
+  table { min-width: 0; }
+  thead { display: none; }
+  table, tbody, tr, th, td { display: block; }
+  tbody tr { background: var(--card); border-radius: var(--r); padding: 16px 18px; margin-bottom: 8px; }
+  tbody th, td { border: 0; padding: 0; }
+  tbody th { font-size: 17px; margin-bottom: 8px; }
+  td { padding: 6px 0; font-size: 15px; }
+  td[data-label]::before { display: block; content: attr(data-label); font-size: 12px; color: var(--muted); font-weight: 600; }
+  td.new { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+  td.new::before { content: "✓ Digital Court"; color: var(--g); }
+}
+
+/* 卡片格 */
+.grid3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 28px; }
+.grid2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 28px; }
+@media (max-width: 860px) { .grid3, .grid2 { grid-template-columns: 1fr; } }
+.card { background: var(--card); border-radius: var(--r); padding: 24px; }
+.card h3 { font-size: 19px; margin-bottom: 8px; }
+.card p { color: var(--text-2); font-size: 15px; }
+.card .tag { display: inline-block; font-size: 12px; font-weight: 700; border-radius: 6px; padding: 1px 8px; margin-bottom: 12px; background: var(--g-soft); color: var(--g); }
+.card .tag.dark { background: var(--ink); color: #fff; }
+.card ul { padding-left: 18px; margin-top: 10px; color: var(--text-2); font-size: 15px; }
+
+/* 步驟 */
+.steps { list-style: none; padding: 0; margin-top: 28px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; counter-reset: s; }
+.steps li { background: var(--card); border-radius: var(--r); padding: 22px; counter-increment: s; }
+.steps li::before { content: counter(s); display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--ink); color: #fff; font-weight: 800; font-size: 14px; margin-bottom: 12px; }
+.steps b { display: block; font-size: 16px; margin-bottom: 4px; }
+.steps span { color: var(--text-2); font-size: 14px; }
+@media (max-width: 860px) { .steps { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 480px) { .steps { grid-template-columns: 1fr; } }
+
+.band { background: var(--card); border-block: 1px solid var(--line); }
+.note { font-size: 13px; color: var(--muted); margin-top: 16px; }
+.demo { display: flex; flex-wrap: wrap; align-items: center; gap: 16px 24px; justify-content: space-between; background: var(--ink); color: #fff; border-radius: var(--r); padding: 28px; margin-top: 28px; }
+.demo p { color: #c7c7cc; font-size: 15px; }
+.demo b { font-size: 19px; display: block; margin-bottom: 4px; color: #fff; }
+.demo .btn { background: #fff; color: var(--ink); border-color: #fff; }
+
+/* 常見問題 */
+.faq { margin-top: 28px; display: grid; gap: 8px; }
+.faq details { background: var(--card); border-radius: 12px; padding: 0 20px; }
+.faq summary { cursor: pointer; list-style: none; padding: 18px 28px 18px 0; font-weight: 700; font-size: 16px; position: relative; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; position: absolute; right: 0; top: 14px; font-size: 22px; color: var(--muted); font-weight: 400; }
+.faq details[open] summary::after { content: "–"; }
+.faq details p { padding: 0 0 18px; color: var(--text-2); font-size: 15px; }
+
+/* 申請表 */
+.apply { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 40px; align-items: start; }
+@media (max-width: 860px) { .apply { grid-template-columns: 1fr; gap: 24px; } }
+form { background: var(--card); border-radius: var(--r); padding: 24px; display: grid; gap: 14px; }
+label { display: grid; gap: 6px; font-size: 14px; font-weight: 600; color: var(--text-2); }
+label small { font-weight: 400; color: var(--muted); }
+input, select, textarea { font: inherit; font-size: 16px; width: 100%; border: 1px solid #d8d8dc; border-radius: 10px; padding: 11px 12px; background: #fff; color: var(--ink); }
+input:focus, select:focus, textarea:focus { outline: none; border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 8px; }
+legend { font-size: 14px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.checks label { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; border: 1px solid #d8d8dc; border-radius: 999px; padding: 6px 12px; cursor: pointer; }
+.checks input { width: auto; accent-color: var(--g); }
+.hp { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
+.form-msg { font-size: 15px; border-radius: 10px; padding: 12px 14px; }
+.form-msg.ok { background: var(--g-soft); color: var(--g-dark); }
+.form-msg.bad { background: var(--warn-soft); color: var(--warn); }
+.privacy { font-size: 13px; color: var(--muted); }
+
+footer { padding-block: 36px 48px; color: var(--muted); font-size: 13px; }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; }
+footer a { color: var(--text-2); }
+</style>
+</head>
+<body>
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="/" aria-label="Digital Court 首頁"><img src="/favicon.svg" alt="" width="30" height="30">Digital Court</a>
+    <nav class="nav" aria-label="主選單">
+      <a href="#features">功能</a>
+      <a href="#dupr">DUPR 賽事</a>
+      <a href="#players">給球友</a>
+      <a href="#faq">常見問題</a>
+    </nav>
+    <a class="btn" href="#apply">申請開通</a>
+  </div>
+</header>
+
+<main>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">給匹克球團主・教練・場館</p>
+        <h1 id="hero-title"><span class="nw">開團報名、</span><span class="nw">收費對帳、</span><span class="nw">DUPR 賽事，</span><span class="nw">一個連結就搞定</span></h1>
+        <p class="lead">Digital Court 是台灣的匹克球線上報名系統。把活動連結貼到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額、候補、報名費、提醒都自動處理，不用再手動接龍、對名單。</p>
+        <div class="ctas">
+          <a class="btn" href="#apply">申請開通</a>
+          <a class="btn ghost" href="/active/">看示範場館 →</a>
+        </div>
+        <ul class="facts" aria-label="重點">
+          <li>不用下載 App</li>
+          <li>LINE 一鍵登入</li>
+          <li>款項直接匯給場主</li>
+          <li>支援 DUPR 積分賽</li>
+        </ul>
+      </div>
+      <figure aria-label="活動報名頁畫面示意">
+        <div class="phone" aria-hidden="true">
+          <div class="screen">
+            <div class="s-bar"><span class="s-av"></span><div><b>週六球敘團</b><small>活動報名</small></div></div>
+            <div class="s-body">
+              <img class="s-cover" src="/mock-cover.webp" alt="" width="360" height="203" loading="eager">
+              <div class="s-card">
+                <div class="s-title">週六下午分級球敘</div>
+                <div class="s-kpis">
+                  <div class="s-kpi"><span>日期</span><b>10/4（六）</b><small>14:00–17:00</small></div>
+                  <div class="s-kpi"><span>名額</span><b>14/16</b><small>剩 2 位</small></div>
+                  <div class="s-kpi"><span>費用</span><b>NT$ 250</b><small>報名後付款</small></div>
+                </div>
+              </div>
+              <div class="s-card">
+                <div class="s-h">要去的球友（14）<span>平均 DUPR 3.412</span></div>
+                <div class="s-row"><i></i><em>林**</em><span class="s-pill">3.652</span></div>
+                <div class="s-row"><i></i><em>陳**</em><span class="s-pill">3.488</span></div>
+                <div class="s-row"><i></i><em>王**</em><span class="s-pill">3.301</span></div>
+              </div>
+              <div class="s-cta">立即報名（NT$ 250）</div>
+            </div>
+          </div>
+        </div>
+      </figure>
+    </div>
+  </section>
+
+  <section id="what" aria-labelledby="what-title">
+    <div class="wrap define">
+      <div>
+        <p class="eyebrow">Digital Court 是什麼？</p>
+        <h2 id="what-title">給匹克球團主與場館的線上報名與營運系統</h2>
+        <p class="lead">場主在後台開活動、把連結分享到 LINE 群組；球友點連結就能報名。名額與候補、報名費對帳、開課前提醒、缺席紀錄、DUPR 分組與記分，都由系統自動處理。</p>
+      </div>
+      <dl>
+        <div><dt>適合誰</dt><dd>匹克球團主、教練、球館、學校與公司社團</dd></div>
+        <div><dt>球友怎麼報名</dt><dd>點活動連結 → LINE 一鍵登入 → 按「報名」</dd></div>
+        <div><dt>要下載 App 嗎</dt><dd>不用，手機瀏覽器或 LINE 裡直接打開</dd></div>
+        <div><dt>活動類型</dt><dd>單次活動、DUPR 積分活動、時段預約（私人課、場地租借）</dd></div>
+        <div><dt>收費方式</dt><dd>免費、匯款報名費（回填帳號後五碼對帳）、課卡</dd></div>
+        <div><dt>通知</dt><dd>報名、候補遞補、收款確認、開課前一天提醒，全部推到 LINE</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="compare-title">
+    <div class="wrap">
+      <p class="eyebrow">為什麼不用 LINE 接龍就好？</p>
+      <h2 id="compare-title">用 LINE 接龍報名，常見的五個麻煩</h2>
+      <p class="lead">接龍適合十幾個人的小團，但只要場次一多、要收費、要分組，團主就得花大量時間數名單、追款項、@ 所有人。</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th scope="col">情況</th><th scope="col">LINE 接龍</th><th scope="col">Digital Court</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">名額滿了</th><td class="old" data-label="LINE 接龍">自己數人數；有人取消要一個個問下一位</td><td class="new" data-label="Digital Court">自動額滿、開放候補；有人取消依序自動遞補並通知</td></tr>
+            <tr><th scope="row">收報名費</th><td class="old" data-label="LINE 接龍">靠截圖對帳，容易漏收、重複確認</td><td class="new" data-label="Digital Court">球友回填匯款後五碼，後台一鍵確認收款；逾時未回填名額自動釋出</td></tr>
+            <tr><th scope="row">開課提醒</th><td class="old" data-label="LINE 接龍">前一天自己在群組 @ 所有人</td><td class="new" data-label="Digital Court">前一天自動 LINE 推播提醒；場主收到明日總覽</td></tr>
+            <tr><th scope="row">常放鳥</th><td class="old" data-label="LINE 接龍">很難記得誰常缺席</td><td class="new" data-label="Digital Court">點名記缺席，累計太多次自動暫停報名</td></tr>
+            <tr><th scope="row">DUPR 分組</th><td class="old" data-label="LINE 接龍">手動排組、紙本或試算表記分</td><td class="new" data-label="Digital Court">依分數自動分組排賽程，雙方確認比分，匯出 CSV</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" aria-labelledby="types-title">
+    <div class="wrap">
+      <p class="eyebrow">三種活動，一個後台</p>
+      <h2 id="types-title">課程、球敘、積分賽、租場地都能開</h2>
+      <div class="grid3">
+        <article class="card">
+          <span class="tag">單次活動</span>
+          <h3>課程、球敘、一次性活動</h3>
+          <p>設定日期、時間、名額與費用，球友按「報名」就完成；固定的課可以每週重複開，也能存成範本一次排好幾週。</p>
+        </article>
+        <article class="card">
+          <span class="tag dark">DUPR 活動</span>
+          <h3>DUPR 積分賽、分級球敘</h3>
+          <p>設定 DUPR 雙打或單打分數範圍，只讓符合的球友報名；人到齊後依分數分組、排賽程、記比分。</p>
+        </article>
+        <article class="card">
+          <span class="tag">時段預約</span>
+          <h3>私人課、場地租借</h3>
+          <p>設定日期區間、每天營業時間、每段長度與名額，球友自己挑時段，一次可以約好幾段。</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="payment" aria-labelledby="pay-title">
+    <div class="wrap">
+      <p class="eyebrow">報名費怎麼收？</p>
+      <h2 id="pay-title">不用串金流，匯款後回填後五碼就完成報名</h2>
+      <p class="lead">款項直接匯到場主帳戶，系統不經手金流、不抽成。三種活動都可以設成免費、匯款或扣課卡。</p>
+      <ol class="steps">
+        <li><b>球友報名</b><span>名額先保留，頁面顯示你設定的匯款資訊</span></li>
+        <li><b>球友匯款</b><span>在期限內轉帳（可設 24／48／72 小時）</span></li>
+        <li><b>回填後五碼</b><span>送出就算報名成功，出現在報名名單</span></li>
+        <li><b>場主對帳</b><span>在「付款審核」集中看所有活動的待收款並確認</span></li>
+      </ol>
+      <p class="note">期限內沒回填的名額會自動讓給候補，雙方都會收到通知。</p>
+    </div>
+  </section>
+
+  <section id="dupr" aria-labelledby="dupr-title">
+    <div class="wrap">
+      <p class="eyebrow">DUPR 賽事</p>
+      <h2 id="dupr-title">DUPR 分組、排賽程、記比分，都在同一頁</h2>
+      <div class="grid2">
+        <article class="card">
+          <h3>報名條件與分組</h3>
+          <ul>
+            <li>設定雙打或單打分數範圍，可限主辦驗證過的帳號</li>
+            <li>人到齊後依 DUPR 分數自動分組，團主可手動調整</li>
+            <li>賽制：輪換搭檔（每組 4～7 人）、固定搭檔、單打循環</li>
+            <li>每局打到 11、15 或 21 分，領先 2 分獲勝</li>
+          </ul>
+        </article>
+        <article class="card">
+          <h3>比分與成績</h3>
+          <ul>
+            <li>任一方回報比分，對手確認才算數，避免爭議</li>
+            <li>球友手機上直接看到「你的下一局」與即時排名</li>
+            <li>團主可在後台修改、裁定比分</li>
+            <li>比分匯出 CSV（含 DUPR ID），方便上傳</li>
+          </ul>
+        </article>
+      </div>
+      <p class="note">DUPR 為其所有者的商標；Digital Court 為獨立服務，與 DUPR 官方無隸屬關係。</p>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="ops-title">
+    <div class="wrap">
+      <p class="eyebrow">場主省下的時間</p>
+      <h2 id="ops-title">重複的事交給系統</h2>
+      <div class="grid3">
+        <article class="card"><h3>LINE 推播</h3><p>報名成功、候補遞補、收款確認、停課、賽程排好、比分待確認，都自動推到球友的 LINE。</p></article>
+        <article class="card"><h3>開課前一天提醒</h3><p>在你設定的時間提醒已報名的球友；你也會收到「明天幾場、幾個人、還有幾筆沒收款」的總覽。</p></article>
+        <article class="card"><h3>缺席管理</h3><p>最近 N 天缺席 X 次自動暫停報名，差一次先提醒；可免記、解除或手動暫停。</p></article>
+        <article class="card"><h3>名單與報表</h3><p>名單一鍵下載 Excel（簽到、保險用），營收、滿班率、出席率一目了然。</p></article>
+        <article class="card"><h3>課卡方案</h3><p>堂數卡、點數卡、無限卡都能設定，報名時自動扣卡、取消自動退卡。</p></article>
+        <article class="card"><h3>分享與隱私</h3><p>每場活動都有短網址與 LINE 預覽，可自訂網址、設為不公開；報名名單只顯示遮罩後的名字。</p></article>
+      </div>
+    </div>
+  </section>
+
+  <section id="players" aria-labelledby="players-title">
+    <div class="wrap">
+      <p class="eyebrow">給球友</p>
+      <h2 id="players-title">球友怎麼報名？點連結、LINE 登入、按報名</h2>
+      <p class="lead">第一次用 LINE 登入會自動建立帳號，也可以用手機號碼或 Email。在「會員中心」可以看自己的報名、課卡、出席紀錄與 DUPR 分數。</p>
+      <div class="demo">
+        <div><b>Active Pickleball Club</b><p>新北市中和區・使用 Digital Court 開課與辦球敘</p></div>
+        <a class="btn" href="/active/">看這個場館的活動 →</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" aria-labelledby="how-title">
+    <div class="wrap">
+      <p class="eyebrow">開通流程</p>
+      <h2 id="how-title">四步驟開始開團</h2>
+      <ol class="steps">
+        <li><b>填申請表</b><span>留下稱呼、聯絡方式與場館或球團名稱</span></li>
+        <li><b>開通場館</b><span>我們與你聯絡，開好你的場館網址與後台</span></li>
+        <li><b>設定場館</b><span>填場館介紹與匯款資訊，後台有開站步驟帶你做</span></li>
+        <li><b>建立活動</b><span>選活動類型、填必填欄位，把連結貼到 LINE 群組</span></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="faq" aria-labelledby="faq-title">
+    <div class="wrap">
+      <p class="eyebrow">常見問題</p>
+      <h2 id="faq-title">常見問題</h2>
+      <div class="faq">
+        <details open><summary>球友報名需要下載 App 嗎？</summary><p>不用。球友點活動連結，用手機瀏覽器或在 LINE 裡直接打開就能報名；第一次用 LINE 登入會自動建立帳號，也可以用手機號碼或 Email 註冊。</p></details>
+        <details><summary>報名費怎麼收？系統會抽成嗎？</summary><p>球友報名後名額先保留，依活動頁上的匯款資訊轉帳，再回填匯款帳號後五碼就算報名成功；場主在後台「付款審核」對帳後按確認收款。款項直接匯到場主帳戶，系統不經手金流、不抽成。期限內沒回填，名額會自動讓給候補。</p></details>
+        <details><summary>額滿之後怎麼候補？</summary><p>額滿後球友可以加入候補；有人取消時，系統依候補順序自動遞補並用 LINE 通知。付費活動遞補後一樣要回填匯款後五碼。</p></details>
+        <details><summary>有支援 DUPR 積分賽嗎？</summary><p>有。可以設定 DUPR 雙打或單打分數範圍，只讓符合的球友報名；人到齊後依分數自動分組排賽程，支援輪換搭檔、固定搭檔與單打循環。比分由任一方回報、對手確認才算數，團主可在後台修改，最後匯出 CSV（含 DUPR ID）。</p></details>
+        <details><summary>可以開只給特定人報名的活動嗎？</summary><p>可以。把活動設為不公開，就只有拿到報名連結的人看得到、能報名，也不會被搜尋引擎收錄；報名網址可以自訂成好記的英文或數字。</p></details>
+        <details><summary>球友報名後沒來怎麼辦？</summary><p>場主點名時標記缺席，系統會累計；可以設定例如最近 90 天缺席 3 次就自動暫停報名 14 天。差一次到上限會先提醒球友，場主也能免記單次缺席或手動解除。</p></details>
+        <details><summary>可以用來租場地或約私人課嗎？</summary><p>可以，用「時段預約」：設定日期區間、每天營業時間、每段長度與每段名額，球友自己挑時段預約，一次可以約好幾段，一樣可以設免費、匯款或課卡。</p></details>
+        <details><summary>開始使用要多少錢？</summary><p>目前採個別開通，依場館規模與需求說明方案。請先填寫下方申請表，我們會與你聯絡。</p></details>
+        <details><summary>球友的個人資料會公開嗎？</summary><p>不會。活動頁上的報名名單只顯示遮罩過的名字，場主也可以選擇完全不公開名單；手機與 Email 只有場主在後台看得到。全站使用 HTTPS 加密。</p></details>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="apply" aria-labelledby="apply-title">
+    <div class="wrap apply">
+      <div>
+        <p class="eyebrow">申請開通</p>
+        <h2 id="apply-title">想用 Digital Court 開團？留下聯絡方式</h2>
+        <p class="lead">告訴我們你的場館或球團規模、想用的功能，我們會與你聯絡、說明方案並協助開通。</p>
+        <p class="note">想先看實際畫面，可以到 <a href="/active/">示範場館</a> 逛逛。</p>
+      </div>
+      <form id="lead-form" novalidate>
+        <label>稱呼 <input name="name" autocomplete="name" required maxlength="40" placeholder="例：王教練"></label>
+        <label>聯絡方式 <small>LINE ID、手機或 Email 都可以</small><input name="contact" required maxlength="100" placeholder="例：LINE ID wang123"></label>
+        <label>場館或球團名稱 <small>選填</small><input name="org" autocomplete="organization" maxlength="80" placeholder="例：中和週六球敘團"></label>
+        <label>規模 <small>選填</small>
+          <select name="size">
+            <option value="">請選擇</option>
+            <option>每週 1～2 場</option>
+            <option>每週 3～5 場</option>
+            <option>每週 6 場以上</option>
+            <option>有自己的球館</option>
+          </select>
+        </label>
+        <fieldset>
+          <legend>想用的功能 <small>選填、可複選</small></legend>
+          <div class="checks">
+            <label><input type="checkbox" name="needs" value="活動報名"> 活動報名</label>
+            <label><input type="checkbox" name="needs" value="收報名費"> 收報名費</label>
+            <label><input type="checkbox" name="needs" value="DUPR 賽事"> DUPR 賽事</label>
+            <label><input type="checkbox" name="needs" value="時段預約／租場"> 時段預約／租場</label>
+            <label><input type="checkbox" name="needs" value="課卡"> 課卡</label>
+          </div>
+        </fieldset>
+        <label>想說的話 <small>選填</small><textarea name="message" rows="3" maxlength="1000" placeholder="例：目前每週兩場球敘，想改成線上報名與收費"></textarea></label>
+        <label class="hp" aria-hidden="true">網站 <input name="website" tabindex="-1" autocomplete="off"></label>
+        <button class="btn" type="submit">送出申請</button>
+        <p class="privacy">你填的資料只用來聯絡你開通事宜，不會提供給其他人。</p>
+        <p class="form-msg" id="lead-msg" role="status" hidden></p>
+      </form>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 Digital Court</span>
+    <span><a href="/active/">示範場館</a> · <a href="#faq">常見問題</a> · <a href="#apply">申請開通</a></span>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var form = document.getElementById('lead-form')
+  var msg = document.getElementById('lead-msg')
+  var show = function (text, ok) { msg.textContent = text; msg.className = 'form-msg ' + (ok ? 'ok' : 'bad'); msg.hidden = false }
+  form.addEventListener('submit', function (e) {
+    e.preventDefault()
+    var f = new FormData(form)
+    var body = { name: f.get('name'), contact: f.get('contact'), org: f.get('org'), size: f.get('size'), message: f.get('message'), website: f.get('website'), needs: f.getAll('needs') }
+    if (!String(body.name || '').trim() || !String(body.contact || '').trim()) return show('請填寫稱呼與聯絡方式', false)
+    var btn = form.querySelector('button[type=submit]')
+    btn.disabled = true; btn.textContent = '送出中…'
+    fetch('/active/api/leads', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, d: d } }) })
+      .then(function (x) {
+        if (!x.ok) throw new Error((x.d && (x.d.error || x.d.detail)) || '送出失敗，請稍後再試')
+        form.reset(); show('已收到！我們會盡快用你留的聯絡方式與你聯絡。', true)
+      })
+      .catch(function (err) { show(err.message || '送出失敗，請稍後再試', false) })
+      .finally(function () { btn.disabled = false; btn.textContent = '送出申請' })
+  })
+})()
+</script>
+</body>
+</html>

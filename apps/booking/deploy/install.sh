@@ -40,6 +40,12 @@ mkdir -p "$APP/data"
 rm -rf "$APP/server.new" && cp -r "$SRC/apps/booking/server" "$APP/server.new"
 [ -f "$APP/server.new/static/index.html" ] || { echo "找不到前端檔案，請確認分支內容"; exit 1; }
 rm -rf "$APP/server" && mv "$APP/server.new" "$APP/server"
+# 品牌首頁（一頁式介紹，給 nginx 直接提供）：https://<網域>/
+if [ -d "$SRC/apps/booking/landing" ]; then
+  rm -rf "$APP/landing.new" && cp -r "$SRC/apps/booking/landing" "$APP/landing.new"
+  rm -rf "$APP/landing" && mv "$APP/landing.new" "$APP/landing"
+  chmod -R a+rX "$APP/landing"
+fi
 # 填 LINE 金鑰的小工具：sudo booking-line-setup
 [ -f "$SRC/apps/booking/deploy/line-setup.sh" ] && install -m 755 "$SRC/apps/booking/deploy/line-setup.sh" /usr/local/sbin/booking-line-setup
 rm -rf "$SRC"
