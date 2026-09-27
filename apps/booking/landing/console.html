@@ -42,7 +42,7 @@
   var PLAN = { lite: '輕量', standard: '標準', pro: '專業', advanced: '進階', enterprise: '企業' }
   function row(t) {
     var st = '<span class="badge ' + t.status + '">' + (DC.STATUS[t.status] || t.status) + '</span>' + (t.comp ? ' <span class="badge">免費</span>' : '') + (t.cancel_at_period_end ? ' <span class="badge pending">將停止</span>' : '')
-    var dom = t.custom_domain ? e(t.custom_domain) + '<br><span class="hint">' + e(t.domain_status) + '</span>' + (t.domain_status === 'pending' ? ' <button class="btn ghost small" data-act="domain" data-slug="' + t.slug + '">開通</button>' : '') : ''
+    var dom = t.custom_domain ? e(t.custom_domain) + '<br><span class="hint">' + e(t.domain_status) + '</span>' + (['pending', 'failed'].indexOf(t.domain_status) >= 0 ? ' <button class="btn ghost small" data-act="domain" data-slug="' + t.slug + '">重新開通</button>' : '') : ''
     var acts = '<button class="btn ghost small" data-act="enter" data-slug="' + t.slug + '">進後台</button> ' +
       (t.status === 'suspended' ? '<button class="btn ghost small" data-act="resume" data-slug="' + t.slug + '">恢復</button>' : t.status !== 'pending' ? '<button class="btn danger small" data-act="suspend" data-slug="' + t.slug + '">暫停</button>' : '') +
       ' <select data-act="plan" data-slug="' + t.slug + '" style="width:auto;padding:6px">' + ['lite', 'standard', 'pro', 'advanced', 'enterprise'].map(function (p) { return '<option value="' + p + '"' + (p === t.plan ? ' selected' : '') + '>' + PLAN[p] + '</option>' }).join('') + '</select>'
@@ -69,7 +69,7 @@
     if (b.dataset.act === 'enter') DC.api('admin/tenants/' + slug + '/enter', { method: 'POST' }).then(function (d) { window.open(d.url, '_blank') }).catch(function (x) { DC.msg(msg, x.message) })
     if (b.dataset.act === 'suspend') upd(slug, { status: 'suspended' }, '已暫停 ' + slug)
     if (b.dataset.act === 'resume') upd(slug, { status: 'active' }, '已恢復 ' + slug)
-    if (b.dataset.act === 'domain') upd(slug, { domain_status: 'approved' }, '已排入開通，主機會在一分鐘內申請 HTTPS 憑證')
+    if (b.dataset.act === 'domain') upd(slug, { domain_status: 'approved' }, '已排入開通：DNS 指過來後主機會在一分鐘內申請 HTTPS 憑證')
   })
   DC.$('#tenants').addEventListener('change', function (ev) {
     var s = ev.target.closest('select[data-act=plan]'); if (s) upd(s.dataset.slug, { plan: s.value }, '已改成' + PLAN[s.value] + '方案')

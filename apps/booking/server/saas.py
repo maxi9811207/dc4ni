@@ -703,15 +703,43 @@ def set_domain(a: dict, slug: str, body: dict):
     if "domain" not in FEATURES.get(r["plan"], set()):
         raise HTTPException(402, "自訂網域是進階方案以上的功能")
     domain = str(body.get("domain") or "").strip().lower().removeprefix("https://").removeprefix("http://").strip("/")
-    if domain and (not DOMAIN_RE.match(domain) or domain.endswith("dc-studio.cc")):
+    if domain and (not DOMAIN_RE.match(domain) or domain.endswith(("dc-studio.cc", "sslip.io", "nip.io"))):
         raise HTTPException(400, "網域格式不正確，例如 booking.yourclub.tw")
     with tenancy.platform_db() as conn:
         if domain and conn.execute("SELECT 1 FROM tenants WHERE custom_domain=? AND slug!=?", (domain, slug)).fetchone():
             raise HTTPException(400, "這個網域已經被其他場館使用")
-        conn.execute("UPDATE tenants SET custom_domain=?, domain_status=? WHERE slug=?", (domain, "pending" if domain else "", slug))
+        # 直接排入開通：主機上的 booking-domains 每分鐘檢查 DNS，指過來了就自動申請 HTTPS
+        conn.execute("UPDATE tenants SET custom_domain=?, domain_status=? WHERE slug=?", (domain, "approved" if domain else "", slug))
     if domain:
-        _alert("有場館申請自訂網域", f"{slug}：{domain}\n請到平台管理確認 DNS 後開通")
-    return {"ok": True, "ip": os.getenv("BOOKING_SERVER_IP", "172.237.11.215")}
+        _alert("有場館設定自訂網域", f"{slug}：{domain}\nDNS 指過來後主機會自動開通 HTTPS，完成或失敗都會再通知")
+    return {"ok": True, "ip": SERVER_IP}
+
+
+SERVER_IP = os.getenv("BOOKING_SERVER_IP", "172.237.11.215")
+
+
+def domain_result(body: dict, request: Request):
+    """主機上的 booking-domains 開通（或放棄）網域後呼叫，寄信通知場主。只接受本機直接呼叫。"""
+    if request.headers.get("x-real-ip") or request.headers.get("x-forwarded-for") or not request.client \
+            or request.client.host not in ("127.0.0.1", "::1"):
+        raise HTTPException(404)
+    slug, domain, ok = str(body.get("slug") or ""), str(body.get("domain") or ""), bool(body.get("ok"))
+    r = tenant_row(slug)
+    if not r or r["custom_domain"] != domain or r["domain_status"] != ("active" if ok else "failed"):
+        raise HTTPException(409, "狀態不符")
+    with tenancy.platform_db() as conn:
+        acc = conn.execute("SELECT email, name FROM accounts WHERE id=?", (r["account_id"],)).fetchone() if r["account_id"] else None
+    if ok:
+        text = (f"你的自訂網域已經開通：https://{domain}/\n\n之後分享給球友的活動連結都會用這個網址，舊的 dc-studio.cc 網址也還能用。\n"
+                "如果有用 LINE 登入，請到 LINE Developers 把 Callback URL 加上 "
+                f"https://{domain}/api/auth/line/callback（不會設定的話直接回信，我們幫你處理）。\n\nDigital Court")
+    else:
+        text = (f"你的自訂網域 {domain} 還沒辦法開通：我們檢查不到它的 DNS 指向 {SERVER_IP}，或 HTTPS 憑證申請沒有成功。\n\n"
+                "請確認網域 DNS 有一筆 A 記錄指向上面的 IP，改好後到「我的帳號」重新按一次儲存即可；需要協助請直接回信。\n\nDigital Court")
+    if acc and acc["email"]:
+        mailer.send(acc["email"], "【Digital Court】自訂網域" + ("已開通" if ok else "開通失敗"), text)
+    _alert("自訂網域" + ("已開通" if ok else "開通失敗"), f"{slug}：{domain}")
+    return {"ok": True}
 
 
 # ---------------------------------------------------------------- 路由
@@ -761,6 +789,10 @@ def register(app):
     @app.put("/platform/api/tenants/{slug}/domain", include_in_schema=False)
     def _domain(slug: str, a=Depends(require_account), body: dict = Depends(core.json_body)):
         return set_domain(a, slug, body)
+
+    @app.post("/platform/api/internal/domain-result", include_in_schema=False)
+    def _domain_result(request: Request, body: dict = Depends(core.json_body)):
+        return domain_result(body, request)
 
     @app.get("/platform/api/tenants/{slug}/status", include_in_schema=False)
     def _status(slug: str, a=Depends(require_account)):

@@ -48,6 +48,32 @@ if [ -d "$SRC/apps/booking/landing" ]; then
 fi
 # 填 LINE 金鑰的小工具：sudo booking-line-setup
 [ -f "$SRC/apps/booking/deploy/line-setup.sh" ] && install -m 755 "$SRC/apps/booking/deploy/line-setup.sh" /usr/local/sbin/booking-line-setup
+# 自訂網域自動開通（每分鐘檢查一次；紀錄：journalctl -u booking-domains）
+if [ -f "$SRC/apps/booking/deploy/domains.py" ]; then
+  install -m 700 "$SRC/apps/booking/deploy/domains.py" /usr/local/sbin/booking-domains
+  cat > /etc/systemd/system/booking-domains.service <<UNIT
+[Unit]
+Description=Booking custom domains (nginx + HTTPS)
+After=network-online.target booking.service
+
+[Service]
+Type=oneshot
+Environment=BOOKING_DATA_DIR=$APP/data
+ExecStart=/usr/bin/python3 /usr/local/sbin/booking-domains
+UNIT
+  cat > /etc/systemd/system/booking-domains.timer <<UNIT
+[Unit]
+Description=Check custom domains every minute
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=1min
+
+[Install]
+WantedBy=timers.target
+UNIT
+  BOOKING_DOMAINS_TIMER=1
+fi
 rm -rf "$SRC"
 
 echo "==> 安裝 Python 套件"
@@ -168,6 +194,11 @@ fi
 
 if [ -z "$DOMAIN" ] && command -v ufw > /dev/null && ufw status | grep -q active; then
   ufw allow "$PORT"/tcp > /dev/null
+fi
+
+if [ -n "${BOOKING_DOMAINS_TIMER:-}" ]; then
+  systemctl daemon-reload
+  systemctl enable -q --now booking-domains.timer
 fi
 
 echo "$COMMIT" > "$APP/.deployed"
