@@ -64,7 +64,9 @@ function Reservations() {
           <div key={r.id}>
             <CourseCard course={c} showDate />
             {r.fee > 0 && r.status === 'booked' && !r.paid && view === 'upcoming' && (
-              <Link to={`/course/${c.id}`} className="history-foot text-warn small">報名費 NT$ {r.fee.toLocaleString()} 待付款 ›</Link>
+              <Link to={`/course/${c.id}`} className={`history-foot small ${r.pay_note ? 'text-success' : 'text-warn'}`}>
+                {r.pay_note ? `已回填後五碼，報名成功・等主辦對帳 ›` : `尚未完成報名：匯款 NT$ ${r.fee.toLocaleString()} 後回填後五碼 ›`}
+              </Link>
             )}
             {view === 'history' && (
               <div className="history-foot">

@@ -16,7 +16,7 @@ export function capInfo(c, showCount, admin) {
   const count = `${c.booked_count}/${c.capacity}`
   if (admin) return { tone: c.remain <= 0 ? 'full' : c.remain <= 3 ? 'near' : '', big: count, small: '名單 ›' }
   switch (c.state) {
-    case 'booked': return { tone: 'mine', big: '已報名', small: showCount ? count : '' }
+    case 'booked': return c.pending_payment ? { tone: 'wait', big: '待付款', small: '未完成報名' } : { tone: 'mine', big: '已報名', small: showCount ? count : '' }
     case 'waiting': return { tone: 'wait', big: '候補中', small: c.waitlist_position ? `第 ${c.waitlist_position} 位` : '' }
     case 'waitlist': return { tone: 'full', big: showCount ? count : '額滿', small: '可候補' }
     case 'book':

@@ -568,6 +568,8 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "button": button,
         "state": state,
         "my_reservation": mine,
+        # 付費活動：名額已保留，但還沒回填後五碼（不算報名成功）
+        "pending_payment": bool(mine and mine["status"] == "booked" and mine["fee"] and not mine["paid"] and not mine["pay_note"]),
         "waitlist_position": position,
         "can_cancel": bool(mine) and (mine["status"] == "waitlist" or
                                       (t < start - timedelta(minutes=c["cancel_deadline_min"]) and not event)),
@@ -667,7 +669,8 @@ def promote_waitlist(conn, c: dict):
             continue
         conn.execute("UPDATE reservations SET status='booked', card_id=?, charged=?, pay_due=?, updated_at=? WHERE id=?",
                      (card_id, charged, pay_due(c), stamp(), w["id"]))
-        notify(conn, w["user_id"], f"候補成功！您已報名「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c), course=c)
+        notify(conn, w["user_id"], (f"候補成功！「{c['name']}」{c['date']} {c['start_time']} 有名額了，" + fee_notice(conn, c)) if c["fee"]
+               else f"候補成功！您已報名「{c['name']}」{c['date']} {c['start_time']}。", course=c)
         admin_notify(conn, "promote", f"{u['name']} 由候補遞補 {course_label(c)}", f"/admin/courses/{c['id']}")
         booked += 1
 
@@ -697,7 +700,8 @@ def attendees(conn, c: dict, limit: int = 200) -> list[dict]:
     for r in conn.execute(
             "SELECT u.name, u.avatar_url, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified"
             " FROM reservations r JOIN users u ON u.id=r.user_id"
-            " WHERE r.course_id=? AND r.status IN ('booked','attended','absent') ORDER BY r.id LIMIT ?",
+            " WHERE r.course_id=? AND r.status IN ('booked','attended','absent')"
+            " AND (r.fee=0 OR r.paid=1 OR r.pay_note!='') ORDER BY r.id LIMIT ?",  # 付費活動：回填後五碼才算報名成功
             (c["id"], limit)):
         a = {"name": mask_name(r["name"]), "avatar_url": r["avatar_url"]}
         if c["dupr_required"]:
@@ -1148,8 +1152,11 @@ def reserve(course_id: int, body: dict = Depends(json_body), user=Depends(requir
         conn.execute("INSERT INTO reservations (course_id, user_id, status, card_id, charged, fee, pay_due, created_at, updated_at)"
                      " VALUES (?,?,?,?,?,?,?,?,?)", (course_id, user["id"], "booked", card_id, charged, c["fee"], pay_due(c),
                                                     stamp(), stamp()))
-        notify(conn, user["id"], f"報名成功：「{c['name']}」{c['date']} {c['start_time']}。" + fee_notice(conn, c), course=c)
-        admin_notify(conn, "booking", f"{user['name']} 預約 {course_label(c)}" + (f"（報名費 NT$ {c['fee']:,} 待收款）" if c["fee"] else ""),
+        if c["fee"]:
+            notify(conn, user["id"], f"「{c['name']}」{c['date']} {c['start_time']}：" + fee_notice(conn, c), course=c)
+        else:
+            notify(conn, user["id"], f"報名成功：「{c['name']}」{c['date']} {c['start_time']}。", course=c)
+        admin_notify(conn, "booking", f"{user['name']} 報名 {course_label(c)}" + (f"（報名費 NT$ {c['fee']:,}，等對方匯款回填後五碼）" if c["fee"] else ""),
                      f"/admin/courses/{c['id']}")
         return {"result": "booked"}
 
@@ -1281,10 +1288,12 @@ def refresh_dupr(user=Depends(require_user)):
 # ---------------------------------------------------------------- 單次報名費
 
 def pay_due(c: dict) -> str:
-    """報名費的付款期限（報名或遞補起算 pay_hours 小時；0＝不限，但不會晚於開始前 1 小時）。"""
-    if not c["fee"] or not c["pay_hours"]:
+    """回填後五碼的期限（報名或遞補起算 pay_hours 小時；0＝開始前 1 小時）。沒回填就不算報名成功，逾時名額讓給候補。"""
+    if not c["fee"]:
         return ""
-    due = min(now() + timedelta(hours=c["pay_hours"]), course_start(c) - timedelta(hours=1))
+    due = course_start(c) - timedelta(hours=1)
+    if c["pay_hours"]:
+        due = min(now() + timedelta(hours=c["pay_hours"]), due)
     return max(due, now() + timedelta(minutes=30)).isoformat(timespec="minutes")
 
 
@@ -1297,9 +1306,10 @@ def fee_notice(conn, c: dict) -> str:
         return ""
     s = get_settings(conn)
     due = pay_due(c)
-    return (f"報名費 NT$ {c['fee']:,}，" + (f"付款方式：{s['payment_info'].strip()}" if payment_ready(s) else "付款方式請洽主辦。")
-            + (f"請在 {due[5:10].replace('-', '/')} {due[11:16]} 前付款，逾期名額會讓給候補。" if due else "")
-            + "付款後在活動頁填寫匯款末五碼。")
+    return (f"名額先為您保留，還沒完成報名：請匯款報名費 NT$ {c['fee']:,}（"
+            + (f"付款方式：{s['payment_info'].strip()}" if payment_ready(s) else "付款方式請洽主辦")
+            + "），匯款後到活動頁回填「匯款帳號後五碼」才算報名成功"
+            + (f"，請在 {due[5:10].replace('-', '/')} {due[11:16]} 前完成，逾時名額會讓給下一位" if due else "") + "。")
 
 
 def release_overdue(conn) -> int:
@@ -1399,6 +1409,8 @@ def payment_note(course_id: int, body: dict = Depends(json_body), user=Depends(r
         if r["paid"]:
             fail(400, "場館已確認收款")
         conn.execute("UPDATE reservations SET pay_note=?, updated_at=? WHERE id=?", (note, stamp(), r["id"]))
+        if note and not r["pay_note"]:
+            notify(conn, user["id"], f"報名成功：「{c['name']}」{c['date']} {c['start_time']}，已收到您回填的後五碼 {note}，主辦對帳後會再通知您。", course=c)
         if note:
             admin_notify(conn, "payment", f"{user['name']} 回報已付款（{note}）：{course_label(c)}，請核對", f"/admin/courses/{c['id']}")
         return {"ok": True}

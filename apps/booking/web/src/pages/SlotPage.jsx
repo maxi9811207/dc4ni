@@ -7,7 +7,7 @@ import { VenueAvatar } from '../components/VenueHeader'
 import { Badge, Confirm, Loading, Modal } from '../components/ui'
 import { hours, showDate, today } from '../util'
 
-const PAY = (m) => (m.status === 'waitlist' ? ['候補中', 'warn'] : !m.fee ? ['已預約', 'success'] : m.paid ? ['已付款', 'success'] : m.pay_note ? ['等主辦對帳', 'brand'] : ['待付款', 'warn'])
+const PAY = (m) => (m.status === 'waitlist' ? ['候補中', 'warn'] : !m.fee ? ['已預約', 'success'] : m.paid ? ['已付款', 'success'] : m.pay_note ? ['預約成功・等對帳', 'success'] : ['未完成・待回填後五碼', 'warn'])
 
 function minutes(s) {
   const t = (x) => Number(x.slice(0, 2)) * 60 + Number(x.slice(3, 5))
@@ -144,7 +144,7 @@ export default function SlotPage({ code, header }) {
                     className={`slot ${pick === s.id ? 'picked' : ''} ${mine ? 'mine' : ''} ${s.state === 'waitlist' ? 'full' : ''}`}
                     onClick={() => (mine ? navigate(`/e/${s.share_code}`) : setPick(pick === s.id ? null : s.id))}>
                     <b>{s.start_time}</b>
-                    <small>{mine ? (s.mine.status === 'waitlist' ? '你在候補' : '你已預約') : s.state === 'book' ? `剩 ${s.remain}` : s.state === 'waitlist' ? '額滿・可候補' : s.button}</small>
+                    <small>{mine ? (s.mine.status === 'waitlist' ? '你在候補' : s.mine.fee && !s.mine.paid && !s.mine.pay_note ? '待回填後五碼' : '你已預約') : s.state === 'book' ? `剩 ${s.remain}` : s.state === 'waitlist' ? '額滿・可候補' : s.button}</small>
                   </button>
                 )
               })}
@@ -157,7 +157,7 @@ export default function SlotPage({ code, header }) {
           <ul className="notes">
             <li>{d.booking_deadline_min ? `開始前 ${hours(d.booking_deadline_min)}截止預約。` : '開始前都可以預約。'}</li>
             <li>{d.cancel_deadline_min ? `開始前 ${hours(d.cancel_deadline_min)}內無法自行取消，請聯絡主辦。` : '開始前都可以自行取消。'}</li>
-            {d.fee > 0 && <li>預約後依主辦提供的匯款資訊付款，並在該時段頁面填寫匯款帳號後五碼，主辦對帳後確認。{d.pay_hours ? `請在 ${d.pay_hours} 小時內付款，逾期名額會釋出。` : ''}</li>}
+            {d.fee > 0 && <li>預約後依主辦提供的匯款資訊付款，並在該時段頁面回填匯款帳號後五碼，回填後才算預約成功，主辦再對帳確認。{d.pay_hours ? `請在 ${d.pay_hours} 小時內付款，逾期名額會釋出。` : ''}</li>}
             <li>想預約好幾個時段，一個一個選就可以。</li>
           </ul>
           {d.description && <p className="pre small mt">{d.description}</p>}
@@ -173,10 +173,10 @@ export default function SlotPage({ code, header }) {
 
       {dialog?.kind === 'booked' && (
         <Modal onClose={() => setDialog(null)}>
-          <div className="dialog-icon success">✓</div>
-          <h3 className="dialog-title">預約成功</h3>
+          <div className={`dialog-icon ${d.fee > 0 ? 'warn' : 'success'}`}>{d.fee > 0 ? '!' : '✓'}</div>
+          <h3 className="dialog-title">{d.fee > 0 ? '時段已保留，還差一步' : '預約成功'}</h3>
           <p className="dialog-text">{d.name}<br />{showDate(cur?.date || '')} {dialog.slot.start_time}–{dialog.slot.end_time}</p>
-          {d.fee > 0 && <p className="alert warn small">時段已保留。請匯款 NT$ {d.fee.toLocaleString()}，匯完到這個時段的頁面填「匯款帳號後五碼」。</p>}
+          {d.fee > 0 && <p className="alert warn small">請匯款 NT$ {d.fee.toLocaleString()}，匯完到這個時段的頁面填「匯款帳號後五碼」，<b>送出後才算預約成功</b>。逾時沒回填，時段會讓給下一位。</p>}
           <button className="btn btn-block" onClick={() => (d.fee > 0 ? navigate(`/e/${dialog.slot.share_code}`) : setDialog(null))}>{d.fee > 0 ? '去付款' : '好'}</button>
           {d.fee > 0 && <button className="btn btn-block btn-light" onClick={() => setDialog(null)}>繼續選其他時段</button>}
         </Modal>

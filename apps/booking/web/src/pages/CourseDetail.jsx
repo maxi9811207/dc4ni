@@ -101,9 +101,9 @@ export default function CourseDetail() {
   const primaryLabel = {
     book: c.fee > 0 ? `立即報名（NT$ ${c.fee.toLocaleString()}）` : c.cost === 0 ? '立即報名（免費）' : '立即報名',
     waitlist: '額滿，加入候補',
-  }[c.state] || (needsPay ? (mine.pay_note ? '已回報後五碼，等主辦對帳' : `付款回報（NT$ ${c.fee.toLocaleString()}）`) : c.button)
+  }[c.state] || (needsPay ? '匯款後回填後五碼，完成報名' : c.button)
   // 已報名／候補：主按鈕換成狀態，取消退到下面的文字連結
-  const statusLine = c.state === 'booked' ? (c.has_event ? '✓ 已排入賽事' : mine?.paid || !c.fee ? '✓ 已報名' : null)
+  const statusLine = c.state === 'booked' ? (c.has_event ? '✓ 已排入賽事' : !c.fee ? '✓ 已報名' : mine?.paid ? '✓ 已報名（已付款）' : mine?.pay_note ? '✓ 報名成功，等主辦對帳' : null)
     : c.state === 'waiting' ? `候補第 ${c.waitlist_position} 位，有名額會自動遞補並通知您` : null
 
   const costText = c.fee > 0 ? `NT$ ${c.fee.toLocaleString()}（報名後付款，不需課卡）`
@@ -283,10 +283,10 @@ export default function CourseDetail() {
 
       {dialog === 'booked' && (
         <Modal onClose={() => setDialog(null)}>
-          <div className="dialog-icon success">✓</div>
-          <h3 className="dialog-title">報名成功</h3>
+          <div className={`dialog-icon ${c.fee > 0 ? 'warn' : 'success'}`}>{c.fee > 0 ? '!' : '✓'}</div>
+          <h3 className="dialog-title">{c.fee > 0 ? '名額已保留，還差一步' : '報名成功'}</h3>
           <p className="dialog-text">{showDate(c.date)} {c.start_time}<br />{c.name}</p>
-          {c.fee > 0 && <p className="alert warn small">名額已保留。請付報名費 NT$ {c.fee.toLocaleString()}，付完在頁面上「付款回報」填末五碼。</p>}
+          {c.fee > 0 && <p className="alert warn small">請匯款報名費 NT$ {c.fee.toLocaleString()}，匯完回到這頁填「匯款帳號後五碼」，<b>送出後才算報名成功</b>。逾時沒回填，名額會讓給下一位。</p>}
           <button className="btn btn-block" onClick={() => { setDialog(null); if (c.fee > 0) setTimeout(() => document.querySelector('.pay-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }}>
             {c.fee > 0 ? '去付款' : '好'}
           </button>
@@ -434,7 +434,7 @@ function PaymentBox({ c, onSaved }) {
     e.preventDefault()
     try {
       await api(`courses/${c.id}/payment`, { method: 'PUT', body: { note } })
-      showToast('已送出，場館核對後會通知您')
+      showToast(r.pay_note ? '已更新後五碼' : '報名成功！主辦對帳後會通知您')
       onSaved()
     } catch (err) { handleError(err) }
   }
@@ -442,22 +442,23 @@ function PaymentBox({ c, onSaved }) {
     <section className={`card pay-card ${r.paid ? 'paid' : ''}`}>
       <div className="row between">
         <h3 className="card-title nomargin">報名費 NT$ {r.fee.toLocaleString()}</h3>
-        {r.paid ? <Badge tone="success">已付款</Badge> : <Badge tone="warn">待付款</Badge>}
+        {r.paid ? <Badge tone="success">已付款</Badge> : r.pay_note ? <Badge tone="success">報名成功</Badge> : <Badge tone="warn">尚未完成報名</Badge>}
       </div>
       {r.paid ? (
         <p className="small text-success">場館已確認收款，當天直接到場即可。</p>
       ) : (
         <>
+          {!r.pay_note && <ol className="pay-steps"><li>依下面的資訊匯款</li><li>回填匯款帳號後五碼，<b>送出就完成報名</b></li><li>主辦對帳後通知您</li></ol>}
           <p className="pre small pay-info">{venue?.payment_ready ? venue.payment_info : '付款方式請直接詢問主辦。'}</p>
-          {r.pay_due && <p className="small text-warn">請在 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')} 前付款，逾期名額會讓給候補。</p>}
+          {r.pay_due && !r.pay_note && <p className="small text-warn">請在 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')} 前回填後五碼，逾時名額會讓給下一位。</p>}
           <form className="row gap" onSubmit={save}>
             <Field label="匯款帳號後五碼" hint="匯款完成後填寫，主辦用來對帳">
               <input className="input" value={note} onChange={(e) => setNote(e.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric"
                 pattern="\d{5}" title="請填 5 位數字" placeholder="12345" />
             </Field>
-            <button className="btn btn-small" disabled={note.length !== 5 || note === (r.pay_note || '')}>{r.pay_note ? '更新' : '送出'}</button>
+            <button className="btn btn-small" disabled={note.length !== 5 || note === (r.pay_note || '')}>{r.pay_note ? '更新' : '送出，完成報名'}</button>
           </form>
-          {r.pay_note && <p className="muted small">已回報後五碼：{r.pay_note}，等主辦對帳確認</p>}
+          {r.pay_note && <p className="small text-success">已收到後五碼 {r.pay_note}，報名成功。主辦對帳後會通知您；填錯可以直接改。</p>}
         </>
       )}
     </section>

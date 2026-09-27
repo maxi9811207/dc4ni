@@ -64,7 +64,7 @@ export default function Roster() {
           <p className="small fee-summary">
             報名費已收 <b className="text-success">NT$ {feeRows.filter((r) => r.paid).reduce((s, r) => s + r.fee, 0).toLocaleString()}</b>
             ／應收 NT$ {feeRows.reduce((s, r) => s + r.fee, 0).toLocaleString()}
-            {feeRows.some((r) => !r.paid) && <span className="text-warn">（{feeRows.filter((r) => !r.paid).length} 人待付款）</span>}
+            {feeRows.some((r) => !r.paid) && <span className="text-warn">（{feeRows.filter((r) => !r.paid && r.pay_note).length} 人待對帳、{feeRows.filter((r) => !r.paid && !r.pay_note).length} 人未完成報名）</span>}
           </p>
         )}
       </section>
@@ -89,9 +89,9 @@ export default function Roster() {
                   <p className="muted small">{r.phone && <><a href={`tel:${r.phone}`}>{r.phone}</a> · </>}{r.fee > 0 ? `報名費 NT$ ${r.fee.toLocaleString()}` : r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
                   {r.fee > 0 && (
                     <p className="small">
-                      {r.paid ? <Badge tone="success">已付款</Badge> : <Badge tone="warn">待付款</Badge>}
-                      {r.pay_note && <span className="muted"> 學員回報：{r.pay_note}</span>}
-                      {!r.paid && !r.pay_note && r.pay_due && <span className="muted"> 期限 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')}</span>}
+                      {r.paid ? <Badge tone="success">已付款</Badge> : r.pay_note ? <Badge tone="brand">已回填・請對帳</Badge> : <Badge tone="warn">未完成報名</Badge>}
+                      {r.pay_note && <span className="muted"> 後五碼：{r.pay_note}</span>}
+                      {!r.paid && !r.pay_note && r.pay_due && <span className="muted"> 回填期限 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')}</span>}
                     </p>
                   )}
                 </div>

@@ -47,11 +47,11 @@ export default function AdminOrders() {
           <div key={f.id} className="card">
             <div className="row between">
               <Link to={`/admin/courses/${f.course_id}`}><b>{f.course_name}</b></Link>
-              {f.paid ? <Badge tone="success">已收</Badge> : f.pay_note ? <Badge tone="brand">學員已回報</Badge> : <Badge tone="warn">待付款</Badge>}
+              {f.paid ? <Badge tone="success">已收</Badge> : f.pay_note ? <Badge tone="brand">已回填・請對帳</Badge> : <Badge tone="warn">未完成報名</Badge>}
             </div>
             <p className="small">{f.user_name}{f.phone && <> · <a href={`tel:${f.phone}`}>{f.phone}</a></>} · {showDate(f.date)} {f.start_time}</p>
-            {f.pay_note && <p className="small">學員回報：<b>{f.pay_note}</b></p>}
-            {!f.paid && f.pay_due && <p className="muted small">付款期限 {f.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')}，逾期未付款會自動讓給候補</p>}
+            {f.pay_note && <p className="small">匯款帳號後五碼：<b>{f.pay_note}</b></p>}
+            {!f.paid && f.pay_due && <p className="muted small">{f.pay_note ? '已回填，對方算報名成功；對帳後按確認收款' : `還沒回填後五碼，${f.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')} 前沒回填會自動讓給候補`}</p>}
             <div className="row between">
               <span className="muted small">{f.paid ? `收款 ${showDateTime(f.paid_at)}` : `報名 ${showDateTime(f.created_at)}`}</span>
               <b className="price">{money(f.fee)}</b>
