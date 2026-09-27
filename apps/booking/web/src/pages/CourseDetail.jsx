@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../App'
-import { api } from '../api'
+import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
 import { ShareButton } from '../components/Share'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
@@ -112,6 +112,7 @@ export default function CourseDetail() {
     <>
       {header}
       <main className="page">
+        {c.cover_url && <img className="event-cover" src={asset(c.cover_url)} alt={c.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
         <section className="card detail-card">
           <div className="row gap-sm wrap">
             {c.category && <Badge>{c.category}</Badge>}

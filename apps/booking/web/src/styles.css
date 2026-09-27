@@ -665,3 +665,4 @@ textarea.input { resize: vertical; }
 .setup-step.done { color: var(--muted); text-decoration: line-through; }
 .setup-dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--brand); display: grid; place-items: center; font-size: 13px; color: #fff; flex: none; }
 .setup-step.done .setup-dot { background: var(--success); border-color: var(--success); }
+.event-cover { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: var(--radius); background: var(--gray-soft); box-shadow: var(--shadow); }

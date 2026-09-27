@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../../App'
 import { api } from '../../api'
+import ImageInput from '../../components/ImageInput'
 import { Field, Loading } from '../../components/ui'
 import { PLAN_TYPES, today } from '../../util'
 
@@ -10,7 +11,7 @@ const EMPTY = {
   capacity: 10, cost: 1, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48,
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '',
 }
 
 // template=true 時編輯課程範本（沒有日期，可同步更新之後的課程）
@@ -115,6 +116,9 @@ export default function CourseForm({ template = false }) {
         </Field>
       )}
       <Field label="課程名稱"><input className="input" value={form.name} onChange={set('name')} required placeholder="例：匹克球初階實戰班 Lv.1" /></Field>
+      <Field label="封面圖片（選填）" hint="顯示在活動頁最上方，分享到 LINE 也會用這張；建議橫式 16:9。沒上傳就不顯示">
+        <ImageInput value={form.cover_url} onChange={(v) => setForm({ ...form, cover_url: v })} />
+      </Field>
       <div className="grid2">
         <Field label="課程類別">
           <select className="input" value={form.category} onChange={set('category')}>

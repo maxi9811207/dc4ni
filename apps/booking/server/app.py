@@ -160,11 +160,13 @@ MIGRATIONS = {
         "share_code": "TEXT NOT NULL DEFAULT ''",
         "fee": "INTEGER NOT NULL DEFAULT 0",
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
+        "cover_url": "TEXT NOT NULL DEFAULT ''",
     },
     "course_templates": {
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "fee": "INTEGER NOT NULL DEFAULT 0",
         "pay_hours": "INTEGER NOT NULL DEFAULT 0",
+        "cover_url": "TEXT NOT NULL DEFAULT ''",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
     },
@@ -566,6 +568,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "share_code": c["share_code"],
         "fee": c["fee"],
         "pay_hours": c["pay_hours"],
+        "cover_url": c["cover_url"],
     }
 
 
@@ -1807,7 +1810,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
                  "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
-                 "match_format", "games_to", "listed", "fee", "pay_hours")
+                 "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
 # 修改範本時同步到未開始課程的欄位（不含時間與日期）
@@ -1827,6 +1830,11 @@ def clean_course(b: dict) -> dict:
     for k in ("start_time", "end_time"):
         if k in out and not TIME_RE.match(str(out[k])):
             fail(400, "時間格式不正確（例如 19:00）")
+    if "cover_url" in out:
+        url = str(out["cover_url"] or "").strip()[:300]
+        if url and not re.match(r"^(uploads/[0-9a-f]{32}\.(jpg|png|webp|gif)|https://\S+)$", url):
+            fail(400, "封面圖片網址不正確")
+        out["cover_url"] = url
     for k in ("dupr_min", "dupr_max"):
         if k in out:
             out[k] = round(float(out[k]), 3) if out[k] not in (None, "") else None
@@ -2480,7 +2488,7 @@ def share_page(code: str, request: Request):
         parts.append("已停課")
     elif s["show_reservation_count"]:
         parts.append(f"已報名 {booked}/{c['capacity']}")
-    image = s["cover_url"]
+    image = c["cover_url"] or s["cover_url"]  # 活動自己的封面優先，沒有就用場館封面
     if image and not re.match(r"^https?:", image):
         image = base + image.lstrip("/")
     target = f"{base}#/e/{c['share_code']}"
