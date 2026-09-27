@@ -65,15 +65,18 @@ export function ShareBox({ c }) {
   )
 }
 
-// 活動頁的網址列直接顯示分享連結（/e/<代碼>），從網址列複製出去也有 LINE 預覽、不公開的活動也打得開；
-// 畫面仍由 hash 路由控制，離開活動頁時網址列恢復原本的路徑
+// 活動頁的網址列只顯示分享連結 /e/<代碼>（不帶 #/course/…），從網址列複製出去也有 LINE 預覽、不公開的活動也打得開。
+// 畫面仍由 hash 路由控制：原本的 hash 記在 history.state.__hash，按返回鍵回到這頁時由 main.jsx 接回；離開活動頁恢復原路徑。
 export function useShareAddress(code) {
   useEffect(() => {
     if (!code) return undefined
-    const set = (path) => {
-      try { window.history.replaceState(window.history.state, '', path + window.location.hash) } catch { /* 部分內嵌瀏覽器不允許 */ }
+    const replace = (url, extra = {}) => {
+      try { window.history.replaceState({ ...(window.history.state || {}), ...extra }, '', url) } catch { /* 部分內嵌瀏覽器不允許 */ }
     }
-    set(`${BASE}e/${code}`)
-    return () => set(BASE)
+    replace(`${BASE}e/${code}`, { __hash: window.location.hash || window.history.state?.__hash || '' })
+    return () => {
+      const hash = window.location.hash || window.history.state?.__hash || ''
+      replace(BASE + hash, { __hash: undefined })
+    }
   }, [code])
 }
