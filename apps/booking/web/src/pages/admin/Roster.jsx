@@ -71,7 +71,7 @@ export default function Roster() {
         )}
       </section>
 
-      {c.share_code && !c.slot_set && <ShareBox c={c} />}
+      {c.share_code && !c.slot_set && <ShareBox c={c} saveUrl={`admin/courses/${c.id}`} onSaved={load} />}
 
       <div className="row between section-head">
         <h3 className="date-title">學員名單</h3>

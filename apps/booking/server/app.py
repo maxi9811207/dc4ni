@@ -131,6 +131,7 @@ CREATE TABLE IF NOT EXISTS event_games (
   status TEXT NOT NULL DEFAULT 'pending', reported_by INTEGER, confirmed_by INTEGER, updated_at TEXT NOT NULL DEFAULT '');
 CREATE INDEX IF NOT EXISTS idx_games_event ON event_games(event_id);
 CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS share_aliases (code TEXT PRIMARY KEY, kind TEXT NOT NULL, target_id INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS slot_sets (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, category TEXT NOT NULL DEFAULT '', teacher_id INTEGER,
   description TEXT NOT NULL DEFAULT '', location TEXT NOT NULL DEFAULT '', cover_url TEXT NOT NULL DEFAULT '',
@@ -434,6 +435,13 @@ def startup():
             seed_demo(conn)
         for r in rows(conn.execute("SELECT id FROM courses WHERE share_code=''")):
             conn.execute("UPDATE courses SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
+        if not one(conn.execute("SELECT key FROM kv WHERE key='share_codes_v2'")):
+            # 分享代碼從 8 碼改成 4 碼：舊代碼留作別名，已經分享出去的連結照樣能開
+            for table, kind in (("courses", "course"), ("slot_sets", "slots")):
+                for r in rows(conn.execute(f"SELECT id, share_code FROM {table} WHERE length(share_code)=8")):
+                    conn.execute("INSERT OR IGNORE INTO share_aliases VALUES (?,?,?,?)", (r["share_code"], kind, r["id"], stamp()))
+                    conn.execute(f"UPDATE {table} SET share_code=? WHERE id=?", (new_share_code(conn), r["id"]))
+            conn.execute("INSERT INTO kv VALUES ('share_codes_v2', ?)", (stamp(),))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_slot ON courses(slot_set_id, date)")
     threading.Thread(target=sweeper, name="sweeper", daemon=True).start()
@@ -442,13 +450,76 @@ def startup():
 SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o、1/l/i
 
 
+SHARE_CODE_RE = re.compile(r"^[a-z0-9]{4,18}$")
+
+
+def code_taken(conn, code: str) -> bool:
+    return bool(one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,)))
+                or one(conn.execute("SELECT id FROM slot_sets WHERE share_code=?", (code,)))
+                or one(conn.execute("SELECT code FROM share_aliases WHERE code=?", (code,))))
+
+
 def new_share_code(conn) -> str:
-    """課程的分享代碼（8 碼，不可猜），網址 /e/<代碼>。"""
-    while True:
-        code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(8))
-        if not one(conn.execute("SELECT id FROM courses WHERE share_code=?", (code,))) \
-                and not one(conn.execute("SELECT id FROM slot_sets WHERE share_code=?", (code,))):
+    """分享代碼（預設 4 碼英文數字，去掉容易看錯的字），網址 /e/<代碼>；場主可自訂 4～18 碼。"""
+    for n in range(200):
+        code = "".join(secrets.choice(SHARE_ALPHABET) for _ in range(4 if n < 100 else 5))
+        if not code_taken(conn, code):
             return code
+    fail(500, "產生分享代碼失敗，請再試一次")
+
+
+def find_by_code(conn, code: str) -> tuple[str, dict] | tuple[None, None]:
+    """依分享代碼（含改過之前的舊代碼）找活動：('course', 課程) 或 ('slots', 時段預約)。"""
+    code = (code or "").strip().lower()
+    if not code:
+        return None, None
+    c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code,)))
+    if c:
+        return "course", c
+    ss = one(conn.execute("SELECT * FROM slot_sets WHERE share_code=?", (code,)))
+    if ss:
+        return "slots", ss
+    a = one(conn.execute("SELECT * FROM share_aliases WHERE code=?", (code,)))
+    if a:
+        table = "courses" if a["kind"] == "course" else "slot_sets"
+        row = one(conn.execute(f"SELECT * FROM {table} WHERE id=?", (a["target_id"],)))
+        if row:
+            return a["kind"], row
+    return None, None
+
+
+def set_share_code(conn, kind: str, row: dict, value) -> str:
+    """場主自訂分享代碼：4～18 碼英文或數字、不分大小寫、不能跟別的活動重複；舊代碼留作別名。"""
+    code = str(value or "").strip().lower()
+    if code == row["share_code"]:
+        return code
+    if not SHARE_CODE_RE.match(code):
+        fail(400, "自訂網址只能用英文或數字，長度 4～18 碼")
+    a = one(conn.execute("SELECT * FROM share_aliases WHERE code=?", (code,)))
+    if a and (a["kind"], a["target_id"]) == (kind, row["id"]):
+        conn.execute("DELETE FROM share_aliases WHERE code=?", (code,))  # 改回自己以前用過的代碼
+    elif code_taken(conn, code):
+        fail(400, "這個網址已經被其他活動用了，換一個試試")
+    conn.execute("INSERT OR REPLACE INTO share_aliases VALUES (?,?,?,?)", (row["share_code"], kind, row["id"], stamp()))
+    conn.execute(f"UPDATE {'courses' if kind == 'course' else 'slot_sets'} SET share_code=? WHERE id=?", (code, row["id"]))
+    return code
+
+
+CODE_MISSES: dict[str, list[float]] = {}
+
+
+def guard_code_guess(request: Request, missed: bool):
+    """分享代碼只有 4 碼：同一個來源 10 分鐘內猜錯太多次就先擋下，避免被逐一猜出不公開的活動。"""
+    import time
+    ip = request.headers.get("x-real-ip") or (request.client.host if request.client else "")
+    t = time.time()
+    recent = [x for x in CODE_MISSES.get(ip, []) if t - x < 600]
+    if len(recent) >= 30:
+        fail(429, "嘗試太多次，請稍後再試")
+    if missed:
+        CODE_MISSES[ip] = recent + [t]
+        if len(CODE_MISSES) > 5000:
+            CODE_MISSES.clear()
 
 
 def seed_demo(conn):
@@ -738,7 +809,9 @@ def list_courses(request: Request, user=Depends(current_user)):
 
 def can_see(conn, c: dict, user: dict | None, code: str | None = None) -> bool:
     """不公開（只限連結）的課程：拿到分享代碼、場主、已報名／候補過的人才看得到。"""
-    if c["listed"] or (code and secrets.compare_digest(code, c["share_code"])):
+    if c["listed"] or (code and secrets.compare_digest(code.strip().lower(), c["share_code"])):
+        return True
+    if code and one(conn.execute("SELECT code FROM share_aliases WHERE code=? AND kind='course' AND target_id=?", (code.strip().lower(), c["id"]))):
         return True
     if user and user["role"] == "owner":
         return True
@@ -756,16 +829,17 @@ def detail_view(conn, c: dict, user: dict | None) -> dict:
 
 
 @app.get("/api/e/{code}")
-def share_detail(code: str, user=Depends(current_user)):
+def share_detail(code: str, request: Request, user=Depends(current_user)):
     """分享網址 /e/<代碼> 的一頁式活動頁資料。"""
+    guard_code_guess(request, False)
     with db() as conn:
-        c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
-        if not c:
-            ss = one(conn.execute("SELECT * FROM slot_sets WHERE share_code=?", (code.strip().lower(),)))
-            if ss:
-                return slot_set_view(conn, ss, user)
+        kind, row = find_by_code(conn, code)
+        if kind == "slots":
+            return slot_set_view(conn, row, user)
+        if not row:
+            guard_code_guess(request, True)
             fail(404, "找不到這個活動，請確認連結是否正確")
-        return detail_view(conn, c, user)
+        return detail_view(conn, row, user)
 
 
 @app.get("/api/courses/{course_id}")
@@ -2006,6 +2080,8 @@ def create_course(body: dict = Depends(json_body), owner=Depends(require_owner))
             cur = conn.execute(f"INSERT INTO courses ({cols}) VALUES ({','.join('?' * len(row))})",
                                tuple(row.values()))
             ids.append(cur.lastrowid)
+            if w == 0 and b.get("share_code"):  # 自訂網址只用在第一場（每週重複的其他場自動產生）
+                set_share_code(conn, "course", get_course(conn, cur.lastrowid), b["share_code"])
     return {"ids": ids}
 
 
@@ -2324,6 +2400,8 @@ def create_slot_set(body: dict = Depends(json_body), owner=Depends(require_owner
         row = {**{k: DEFAULT_SLOT[k] for k in DEFAULT_SLOT}, **data, "share_code": new_share_code(conn), "created_at": stamp()}
         set_id = conn.execute(f"INSERT INTO slot_sets ({','.join(row)}) VALUES ({','.join('?' * len(row))})",
                               tuple(row.values())).lastrowid
+        if body.get("share_code"):
+            set_share_code(conn, "slots", get_slot_set(conn, set_id), body["share_code"])
         n = add_slots(conn, get_slot_set(conn, set_id), times)
         return {"id": set_id, "created": n}
 
@@ -2346,7 +2424,9 @@ def add_slot_times(set_id: int, body: dict = Depends(json_body), owner=Depends(r
 def update_slot_set(set_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
     data = clean_slot_set(body)
     with db() as conn:
-        get_slot_set(conn, set_id)
+        ss0 = get_slot_set(conn, set_id)
+        if body.get("share_code") not in (None, ""):
+            set_share_code(conn, "slots", ss0, body["share_code"])
         if data:
             conn.execute(f"UPDATE slot_sets SET {','.join(k + '=?' for k in data)} WHERE id=?", (*data.values(), set_id))
         ss = get_slot_set(conn, set_id)
@@ -2385,6 +2465,8 @@ def update_course(course_id: int, body: dict = Depends(json_body), owner=Depends
     data = clean_course(body)
     with db() as conn:
         c = get_course(conn, course_id)
+        if body.get("share_code") not in (None, ""):
+            set_share_code(conn, "course", c, body["share_code"])
         if data:
             conn.execute(f"UPDATE courses SET {','.join(k + '=?' for k in data)} WHERE id=?",
                          (*data.values(), course_id))
@@ -2891,11 +2973,13 @@ def share_page(code: str, request: Request):
     """分享連結：給 LINE／FB 抓預覽（活動名稱、時間、封面），瀏覽器立即轉到一頁式活動頁。"""
     base = public_base(request)
     with db() as conn:
-        c = one(conn.execute("SELECT * FROM courses WHERE share_code=?", (code.strip().lower(),)))
+        kind, row = find_by_code(conn, code)
+        c = row if kind == "course" else None
         s = get_settings(conn)
         if not c:
-            ss = one(conn.execute("SELECT * FROM slot_sets WHERE share_code=?", (code.strip().lower(),)))
+            ss = row if kind == "slots" else None
             if not ss:
+                guard_code_guess(request, True)
                 return RedirectResponse(base, status_code=302)
             span = conn.execute("SELECT MIN(date), MAX(date), COUNT(*) FROM courses WHERE slot_set_id=? AND date>=? AND status='open'",
                                 (ss["id"], now().date().isoformat())).fetchone()

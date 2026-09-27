@@ -3,7 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useApp } from '../App'
 import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
-import { ShareButton, useShareAddress } from '../components/Share'
+import { ShareButton, openedInApp, useShareAddress } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import SlotPage from './SlotPage'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
@@ -12,7 +12,8 @@ import { blockUntil, cardRemain, duprRange, hours, noshowRule, rating, showDate 
 // /course/:id 是課表裡的課程頁；/e/:code 是分享出去的一頁式活動頁（沒有場館導覽，只有報名）
 export default function CourseDetail() {
   const { id, code } = useParams()
-  const standalone = Boolean(code)
+  // 一頁式活動頁（分享連結）；從前台點進來後重新整理的，仍用前台版面（有返回箭頭）
+  const standalone = Boolean(code) && !openedInApp(code)
   const { user, venue, refreshUser, handleError, showToast } = useApp()
   const navigate = useNavigate()
   const location = useLocation()
@@ -29,7 +30,7 @@ export default function CourseDetail() {
   }).catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
 
   useEffect(() => { setC(null); setMissing(false); load() }, [load])
-  useShareAddress(c?.share_code)
+  useShareAddress(c?.share_code, !standalone)
   useEffect(() => {
     if (standalone && c) document.title = `${c.name}｜${venue?.name || '報名'}`
   }, [standalone, c, venue])

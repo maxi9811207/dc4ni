@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { useApp } from '../../App'
-import { api } from '../../api'
+import { BASE, api } from '../../api'
 import ImageInput from '../../components/ImageInput'
 import { Field, Loading } from '../../components/ui'
 import { PLAN_TYPES, addDays, fromISO, today } from '../../util'
@@ -11,7 +11,7 @@ const EMPTY = {
   capacity: 10, cost: 0, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
   dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
-  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true,
+  match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true, share_code: '',
 }
 // 時段預約的產生設定
 const SLOT_GEN = { from: today(), to: addDays(today(), 13), weekdays: [0, 1, 2, 3, 4, 5, 6], open: '09:00', close: '21:00', minutes: 60 }
@@ -89,13 +89,13 @@ export default function CourseForm({ template = false, slotId }) {
       return
     }
     if (params.get('template')) {
-      api(`admin/templates/${params.get('template')}`).then((t) => { setForm({ ...fromSource(t), template_id: t.id, date: params.get('date') || today() }); setType(t.dupr_required ? 'dupr' : 'single') }).catch(handleError)
+      api(`admin/templates/${params.get('template')}`).then((t) => { setForm({ ...fromSource(t), template_id: t.id, date: params.get('date') || today(), share_code: '' }); setType(t.dupr_required ? 'dupr' : 'single') }).catch(handleError)
       return
     }
     const source = id || params.get('copy')
     if (!source) { setForm(fresh); return }
     api(`courses/${source}`).then((c) => {
-      setForm({ ...fromSource(c), template_id: c.template_id, ...(id ? {} : { date: params.get('date') || c.date }) })
+      setForm({ ...fromSource(c), template_id: c.template_id, ...(id ? {} : { date: params.get('date') || c.date, share_code: '' }) })
       setType(c.dupr_required ? 'dupr' : 'single')
       setSlotOf(c.slot_set)
     }).catch(handleError)
@@ -110,7 +110,7 @@ export default function CourseForm({ template = false, slotId }) {
   const useTemplate = (tid) => {
     const t = templates.find((x) => String(x.id) === tid)
     if (!t) return setForm({ ...form, template_id: null })
-    setForm({ ...fromSource(t), template_id: t.id, date: form.date, repeat_weeks: form.repeat_weeks })
+    setForm({ ...fromSource(t), template_id: t.id, date: form.date, repeat_weeks: form.repeat_weeks, share_code: form.share_code })
     setType(t.dupr_required ? 'dupr' : 'single')
   }
   const pickType = (t) => {
@@ -134,6 +134,7 @@ export default function CourseForm({ template = false, slotId }) {
       if (!slotCount) return showToast('這個設定產生不出任何時段，請檢查營業時間與每段長度')
     }
     if (payMode === 'fee' && !(form.fee > 0)) return showToast('請填報名費金額')
+    if (form.share_code && !/^[a-zA-Z0-9]{4,18}$/.test(form.share_code)) return showToast('自訂網址只能用英文或數字，長度 4～18 碼')
     if (type === 'dupr' && form.dupr_min !== '' && form.dupr_max !== '' && Number(form.dupr_min) > Number(form.dupr_max)) return showToast('DUPR 最低分不能高於最高分')
     const body = { ...form, dupr_required: type === 'dupr' }
     setBusy(true)
@@ -379,6 +380,15 @@ export default function CourseForm({ template = false, slotId }) {
             </Field>
           </div>
           {!isSlots && <label className="check"><input type="checkbox" checked={form.beginner} onChange={set('beginner')} /> 標示「新手友善」</label>}
+          {!template && (
+            <Field label="報名網址" hint={editing ? '改了之後，舊網址還是打得開' : '不填就自動產生 4 碼；自訂可用 4～18 碼英文或數字，例如 summer2026'}>
+              <div className="url-input">
+                <span>{BASE.replace(/^https?:\/\//, '')}e/</span>
+                <input className="input" value={form.share_code} onChange={(e) => setForm({ ...form, share_code: e.target.value.replace(/[^a-zA-Z0-9]/g, '').slice(0, 18).toLowerCase() })}
+                  placeholder="自動產生" inputMode="url" autoCapitalize="off" spellCheck={false} />
+              </div>
+            </Field>
+          )}
           <label className="check">
             <input type="checkbox" checked={form.show_attendees} onChange={set('show_attendees')} />
             <span>公開「要去的球友」<span className="muted small">（報名者的頭像與名字，名字會遮罩；{isSlots ? '場地租借通常不公開' : 'DUPR 場會附上分數'}）</span></span>

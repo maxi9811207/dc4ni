@@ -106,7 +106,7 @@ export function SlotAdmin() {
         </div>
       </section>
 
-      <ShareBox c={d} />
+      <ShareBox c={d} saveUrl={`admin/slot-sets/${id}`} onSaved={load} />
 
       <div className="row between section-head">
         <h3 className="date-title">各時段預約狀況</h3>

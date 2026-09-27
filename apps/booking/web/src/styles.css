@@ -831,3 +831,7 @@ textarea.input { resize: vertical; }
 .noshow-meter span { flex: 1; height: 8px; border-radius: 4px; background: var(--gray-soft); }
 .noshow-meter span.on { background: var(--warn); }
 a.alert { display: block; }
+.url-input { display: flex; align-items: center; border: 1px solid var(--line-2); border-radius: 10px; background: var(--card); overflow: hidden; }
+.url-input:focus-within { border-color: var(--ink); box-shadow: 0 0 0 1px var(--ink); }
+.url-input span { padding: 0 2px 0 12px; font-size: 13px; color: var(--muted); white-space: nowrap; max-width: 55%; overflow: hidden; text-overflow: ellipsis; }
+.url-input .input { border: 0; box-shadow: none; padding-left: 2px; min-width: 0; font-weight: 600; }
