@@ -4,7 +4,7 @@ import { useApp } from '../../App'
 import { api } from '../../api'
 import WeekPicker from '../../components/WeekPicker'
 import { Badge, Chips, Empty, Loading } from '../../components/ui'
-import { addDays, showDate, today } from '../../util'
+import { addDays, showDate, today, noshowMessage } from '../../util'
 
 export default function Attendance() {
   const [params, setParams] = useSearchParams()
@@ -26,7 +26,9 @@ function RollCall({ date, onDate }) {
 
   const mark = async (r, status) => {
     try {
-      await api(`admin/reservations/${r.id}`, { method: 'POST', body: { status: r.status === status ? 'booked' : status } })
+      const res = await api(`admin/reservations/${r.id}`, { method: 'POST', body: { status: r.status === status ? 'booked' : status } })
+      const msg = noshowMessage(res.noshow, r.name)
+      if (msg) showToast(msg)
       load()
     } catch (e) { handleError(e) }
   }
@@ -63,7 +65,7 @@ function RollCall({ date, onDate }) {
             </div>
             {c.roster.length === 0 ? <p className="muted small">沒有學員預約</p> : c.roster.map((r) => (
               <div key={r.id} className="roll-row">
-                <span className="flex1 min0"><b>{r.name}</b> <span className="muted small">{r.phone}</span></span>
+                <span className="flex1 min0"><b>{r.name}</b> <span className="muted small">{r.phone}</span>{r.noshow?.blocked && <Badge tone="warn">暫停報名</Badge>}</span>
                 <button className={`roll-btn ${r.status === 'attended' ? 'on-ok' : ''}`} onClick={() => mark(r, 'attended')}>出席</button>
                 <button className={`roll-btn ${r.status === 'absent' ? 'on-bad' : ''}`} onClick={() => mark(r, 'absent')}>缺席</button>
               </div>

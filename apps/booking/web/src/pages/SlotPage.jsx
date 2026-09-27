@@ -5,7 +5,7 @@ import { api, asset } from '../api'
 import { ShareButton } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import { Badge, Confirm, Loading, Modal } from '../components/ui'
-import { hours, showDate, today } from '../util'
+import { blockUntil, hours, noshowRule, showDate, today } from '../util'
 
 const PAY = (m) => (m.status === 'waitlist' ? ['候補中', 'warn'] : !m.fee ? ['已預約', 'success'] : m.paid ? ['已付款', 'success'] : m.pay_note ? ['預約成功・等對帳', 'success'] : ['未完成・待回填後五碼', 'warn'])
 
@@ -74,11 +74,13 @@ export default function SlotPage({ code, header }) {
   const beyond = (date) => maxDate && date > maxDate
   const priceText = d.fee > 0 ? `NT$ ${d.fee.toLocaleString()}` : d.cost > 0 ? '課卡' : '免費'
   const sample = days[0]?.slots[0]
+  const ns = user?.noshow
 
   return (
     <>
       {header}
       <main className="page">
+        {ns?.blocked && <p className="alert warn">您因{ns.reason || '缺席次數過多'}，預約暫停{blockUntil(ns)}。已預約的時段不受影響；有疑問請聯絡主辦。</p>}
         {d.cover_url && <img className="event-cover" src={asset(d.cover_url)} alt={d.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
         <section className="card ev-head">
           <p className="ev-host"><VenueAvatar venue={venue} /><span><b>{d.teacher?.name || venue?.name}</b> 主辦</span></p>
@@ -159,14 +161,15 @@ export default function SlotPage({ code, header }) {
             <li>{d.cancel_deadline_min ? `開始前 ${hours(d.cancel_deadline_min)}內無法自行取消，請聯絡主辦。` : '開始前都可以自行取消。'}</li>
             {d.fee > 0 && <li>預約後依主辦提供的匯款資訊付款，並在該時段頁面回填匯款帳號後五碼，回填後才算預約成功，主辦再對帳確認。{d.pay_hours ? `請在 ${d.pay_hours} 小時內付款，逾期名額會釋出。` : ''}</li>}
             <li>想預約好幾個時段，一個一個選就可以。</li>
+            {noshowRule(venue) && <li>{noshowRule(venue).replace('報名', '預約')}</li>}
           </ul>
           {d.description && <p className="pre small mt">{d.description}</p>}
         </section>
       </main>
 
       <div className="action-bar">
-        <button className={`btn btn-block btn-lg ${slot?.state === 'waitlist' ? 'btn-warn' : ''}`} disabled={!slot || busy} onClick={() => book(slot)}>
-          {busy ? '處理中…' : !slot ? '請先選一個時段'
+        <button className={`btn btn-block btn-lg ${slot?.state === 'waitlist' ? 'btn-warn' : ''}`} disabled={!slot || busy || ns?.blocked} onClick={() => book(slot)}>
+          {busy ? '處理中…' : ns?.blocked ? `暫停預約中（${blockUntil(ns)}）` : !slot ? '請先選一個時段'
             : `${slot.state === 'waitlist' ? '加入候補' : '預約'} ${showDate(cur.date).slice(5)} ${slot.start_time}–${slot.end_time}${slot.state === 'book' && d.fee > 0 ? `（NT$ ${d.fee.toLocaleString()}）` : ''}`}
         </button>
       </div>

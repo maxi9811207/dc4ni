@@ -7,7 +7,7 @@ import { ShareButton } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import SlotPage from './SlotPage'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
-import { cardRemain, duprRange, hours, rating, showDate } from '../util'
+import { blockUntil, cardRemain, duprRange, hours, noshowRule, rating, showDate } from '../util'
 
 // /course/:id 是課表裡的課程頁；/e/:code 是分享出去的一頁式活動頁（沒有場館導覽，只有報名）
 export default function CourseDetail() {
@@ -98,6 +98,8 @@ export default function CourseDetail() {
   const mine = c.my_reservation
   const needsPay = c.fee > 0 && c.state === 'booked' && mine && !mine.paid
   const bestCard = c.cards.find((x) => x.id === cardId) || c.cards[0]
+  const ns = user?.noshow
+  const blocked = ns?.blocked && ['book', 'waitlist'].includes(c.state)
   const primaryLabel = {
     book: c.fee > 0 ? `立即報名（NT$ ${c.fee.toLocaleString()}）` : c.cost === 0 ? '立即報名（免費）' : '立即報名',
     waitlist: '額滿，加入候補',
@@ -115,6 +117,7 @@ export default function CourseDetail() {
     <>
       {header}
       <main className="page">
+        {blocked && <p className="alert warn">您因{ns.reason || '缺席次數過多'}，報名暫停{blockUntil(ns)}。已報名的活動不受影響；有疑問請聯絡主辦。</p>}
         {c.cover_url && <img className="event-cover" src={asset(c.cover_url)} alt={c.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
         {c.slot_set && (
           <Link className="back-link" to={c.slot_set.listed && !standalone ? `/slots/${c.slot_set.id}?date=${c.date}` : `/e/${c.slot_set.share_code}`}>‹ 「{c.slot_set.name}」其他時段</Link>
@@ -239,6 +242,7 @@ export default function CourseDetail() {
             <li>{c.cancel_deadline_min ? `開始前 ${hours(c.cancel_deadline_min)}內無法自行取消，請聯絡主辦。` : '開始前都可以自行取消。'}</li>
             <li>額滿時可加入候補，有名額釋出會依順序自動遞補{c.cost > 0 ? '並扣卡' : ''}、通知您{c.fee > 0 ? '，遞補後再付款' : ''}。</li>
             {c.fee > 0 && <li>已付款後取消，請聯絡主辦辦理退費。</li>}
+            {noshowRule(venue) && <li>{noshowRule(venue)}</li>}
           </ul>
         </section>
 
@@ -271,10 +275,10 @@ export default function CourseDetail() {
           <>
             <button
               className={`btn btn-block btn-lg ${c.state === 'waitlist' ? 'btn-warn' : ''}`}
-              disabled={busy || c.state === 'disabled'}
+              disabled={busy || c.state === 'disabled' || blocked}
               onClick={onPrimary}
             >
-              {busy ? '處理中…' : primaryLabel}
+              {busy ? '處理中…' : blocked ? `暫停報名中（${blockUntil(ns)}）` : primaryLabel}
             </button>
             {needsPay && <button type="button" className="link-btn center-link" onClick={askCancel}>取消報名</button>}
           </>

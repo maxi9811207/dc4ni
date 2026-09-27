@@ -30,6 +30,7 @@ export default function Dashboard() {
           ))}
         </section>
       )}
+      {d.blocked_members > 0 && <Link to="/admin/members" className="alert warn">{d.blocked_members} 位會員因缺席暫停報名中 ›</Link>}
       <div className="stats">
         <Link to="/admin/orders" className={`stat ${d.pending_orders ? 'alert-stat' : ''}`}><span>待確認訂單</span><b>{d.pending_orders}</b></Link>
         <div className="stat"><span>本月營收</span><b>{money(d.month_revenue)}</b>{d.unpaid_fees > 0 && <small className="stat-sub text-warn">{d.unpaid_fees} 筆報名費待收</small>}</div>

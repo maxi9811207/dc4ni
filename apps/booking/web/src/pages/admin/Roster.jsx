@@ -4,7 +4,7 @@ import { useApp } from '../../App'
 import { api, downloadFile } from '../../api'
 import { ShareBox } from '../../components/Share'
 import { Badge, Confirm, Empty, Loading, Modal } from '../../components/ui'
-import { duprRange, rating, showDate } from '../../util'
+import { duprRange, noshowMessage, rating, showDate } from '../../util'
 
 const STATUS = { booked: ['已預約', 'brand'], attended: ['出席', 'success'], absent: ['缺席', 'danger'], waitlist: ['候補', 'warn'] }
 
@@ -33,7 +33,9 @@ export default function Roster() {
   const feeRows = booked.filter((r) => r.fee > 0)
   const setStatus = async (r, status, extra = {}) => {
     try {
-      await api(`admin/reservations/${r.id}`, { method: 'POST', body: { status, ...extra } })
+      const res = await api(`admin/reservations/${r.id}`, { method: 'POST', body: { status, ...extra } })
+      const msg = noshowMessage(res.noshow, r.name)
+      if (msg) showToast(msg)
       load()
     } catch (e) { handleError(e) }
   }
@@ -86,6 +88,8 @@ export default function Roster() {
                 <div>
                   <b>{i + 1}. {r.name}</b> <Badge tone={STATUS[r.status][1]}>{STATUS[r.status][0]}</Badge>
                   {r.dupr_id && <span className="small dupr-inline"> DUPR {rating(r[`dupr_${c.dupr_format}`])}{r.dupr_verified ? ' ✓' : ''}</span>}
+                  {r.noshow?.enabled && r.noshow.count > 0 && <Badge tone={r.noshow.count >= r.noshow.limit - 1 ? 'warn' : 'gray'}>缺席 {r.noshow.count}/{r.noshow.limit}</Badge>}
+                  {r.noshow?.blocked && <Badge tone="warn">暫停報名中</Badge>}
                   <p className="muted small">{r.phone && <><a href={`tel:${r.phone}`}>{r.phone}</a> · </>}{r.fee > 0 ? `報名費 NT$ ${r.fee.toLocaleString()}` : r.card_name ? `${r.card_name}（扣 ${r.charged}）` : '未扣卡'}</p>
                   {r.fee > 0 && (
                     <p className="small">

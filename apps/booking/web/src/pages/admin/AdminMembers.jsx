@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
 import { api } from '../../api'
-import { Avatar, Badge, Empty, Field, Loading, Modal } from '../../components/ui'
+import { Avatar, Badge, Chips, Empty, Field, Loading, Modal } from '../../components/ui'
 import { cardRemain, rating, showDateTime } from '../../util'
 
 export default function AdminMembers() {
@@ -15,11 +15,15 @@ export default function AdminMembers() {
   }).catch(handleError), [handleError])
   useEffect(() => { load() }, [load])
 
+  const [only, setOnly] = useState('all')
   const shown = (list || []).filter((m) => m.name.includes(q) || (m.phone || '').includes(q) || (m.email || '').includes(q.toLowerCase()))
+    .filter((m) => only === 'all' || (only === 'blocked' ? m.noshow?.blocked : m.noshow?.count > 0))
+  const blockedN = (list || []).filter((m) => m.noshow?.blocked).length
 
   return (
     <>
       <input className="input search" placeholder="搜尋姓名、信箱或手機" value={q} onChange={(e) => setQ(e.target.value)} />
+      <Chips value={only} onChange={setOnly} options={[['all', '全部'], ['absent', '有缺席紀錄'], ['blocked', `暫停報名中（${blockedN}）`]]} />
       {!list ? <Loading /> : shown.length === 0 ? <Empty text="找不到會員" /> : shown.map((m) => (
         <button key={m.id} className="card member-row text-left" onClick={() => setOpen(m)}>
           <Avatar src={m.avatar_url} name={m.name} size={40} />
@@ -27,8 +31,9 @@ export default function AdminMembers() {
             <b>{m.name}</b>
             {m.role === 'owner' && <Badge>場主</Badge>}
             {m.suspended ? <Badge tone="danger">停權</Badge> : null}
+            {m.noshow?.blocked && <Badge tone="warn">暫停報名</Badge>}
             {m.dupr_id && <Badge tone="dupr">DUPR {rating(m.dupr_doubles)}{m.dupr_verified ? ' ✓' : ''}</Badge>}
-            <p className="muted small">{m.line_linked && <span className="badge badge-line">LINE</span>} {m.email || m.phone || ''} · 有效課卡 {m.cards.length} · 預約 {m.bookings} 次{m.absences ? ` · 缺席 ${m.absences}` : ''}</p>
+            <p className="muted small">{m.line_linked && <span className="badge badge-line">LINE</span>} {m.email || m.phone || ''} · 有效課卡 {m.cards.length} · 預約 {m.bookings} 次{m.absences ? ` · 缺席 ${m.absences}` : ''}{m.noshow?.enabled && m.noshow.count > 0 ? `（計入 ${m.noshow.count}/${m.noshow.limit}）` : ''}</p>
           </div>
           <span className="muted">›</span>
         </button>
@@ -69,6 +74,8 @@ function MemberDialog({ m, onClose, onChanged }) {
         <div className="stat"><span>缺席</span><b>{m.absences}</b></div>
         <div className="stat"><span>課卡</span><b>{m.cards.length}</b></div>
       </div>
+
+      {m.role !== 'owner' && <NoShowAdmin m={m} run={run} onChanged={onChanged} />}
 
       <h4 className="sub-title">有效課卡</h4>
       {m.cards.length === 0 ? <p className="muted small">沒有有效課卡</p> : m.cards.map((c) => (
@@ -160,5 +167,52 @@ function DuprAdmin({ m, run }) {
         </div>
       )}
     </div>
+  )
+}
+
+// 缺席管理：目前計入次數、暫停狀態、每筆缺席可免記、手動暫停／解除
+function NoShowAdmin({ m, run, onChanged }) {
+  const { handleError } = useApp()
+  const [d, setD] = useState(null)
+  const [days, setDays] = useState(14)
+  const load = useCallback(() => api(`admin/members/${m.id}/absences`).then(setD).catch(handleError), [m.id, handleError])
+  useEffect(() => { load() }, [load, m])
+  if (!d) return null
+  const s = d.status
+  const act = (fn, msg) => run(fn, msg).then(() => { load(); onChanged() })
+  return (
+    <>
+      <h4 className="sub-title">缺席紀錄</h4>
+      {s.blocked ? (
+        <div className="alert warn">
+          <b>暫停報名中</b>，{s.forever ? '直到您解除' : `到 ${s.blocked_until.slice(5).replace('-', '/')}`}（{s.reason}）
+          <button className="btn btn-small btn-block mt" onClick={() => act(() => api(`admin/members/${m.id}`, { method: 'PUT', body: { unblock: true } }), '已解除報名限制')}>解除暫停</button>
+        </div>
+      ) : (
+        <p className="small">{s.enabled ? <>目前計入 <b className={s.count >= s.limit - 1 && s.count ? 'text-warn' : ''}>{s.count} / {s.limit}</b> 次（{s.days ? `最近 ${s.days} 天` : '累計'}），滿 {s.limit} 次自動暫停報名</> : '缺席管理未開啟（場館設定可開啟）'}</p>
+      )}
+      {d.absences.length === 0 ? <p className="muted small">沒有缺席紀錄</p> : d.absences.map((a) => (
+        <div key={a.id} className="row between list-row">
+          <div className={a.noshow_cleared ? 'dim' : ''}>
+            <b className="small">{a.date.slice(5).replace('-', '/')} {a.start_time}</b> <span className="small">{a.name}</span>
+            {a.noshow_cleared === 1 && <Badge tone="gray">已免記</Badge>}
+            {a.noshow_cleared === 2 && <Badge tone="gray">已計入暫停</Badge>}
+          </div>
+          {a.noshow_cleared !== 2 && (
+            <button className="btn btn-small btn-light" onClick={() => act(() => api(`admin/reservations/${a.id}/excuse`, { method: 'POST', body: { excused: !a.noshow_cleared } }), a.noshow_cleared ? '已恢復計入' : '已免記')}>
+              {a.noshow_cleared ? '恢復計入' : '免記'}
+            </button>
+          )}
+        </div>
+      ))}
+      {!s.blocked && (
+        <div className="row gap">
+          <select className="input flex1" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            {[[7, '暫停 7 天'], [14, '暫停 14 天'], [30, '暫停 30 天'], [0, '暫停直到解除']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <button className="btn btn-small btn-outline-warn" onClick={() => act(() => api(`admin/members/${m.id}`, { method: 'PUT', body: { block: { days, reason: '主辦暫停報名' } } }), '已暫停報名')}>手動暫停報名</button>
+        </div>
+      )}
+    </>
   )
 }

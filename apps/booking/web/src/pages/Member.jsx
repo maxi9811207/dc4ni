@@ -4,9 +4,9 @@ import { useApp } from '../App'
 import { api } from '../api'
 import CourseCard from '../components/CourseCard'
 import { Avatar, Badge, Chips, Empty, Field, Loading, Modal, Stars, TopBar } from '../components/ui'
-import { cardRemain, money, rating, showDateTime } from '../util'
+import { blockUntil, cardRemain, money, noshowRule, rating, showDate, showDateTime } from '../util'
 
-const TABS = [['reservations', '我的報名'], ['cards', '我的課卡'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
+const TABS = [['reservations', '我的報名'], ['cards', '我的課卡'], ['attendance', '出席紀錄'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
 
 export default function Member() {
   const { user } = useApp()
@@ -27,11 +27,13 @@ export default function Member() {
           </div>
           {user.role === 'owner' && <Link className="btn btn-small" to="/admin">場主後台</Link>}
         </section>
+        {user.noshow?.blocked && <div className="alert warn">您因{user.noshow.reason || '缺席次數過多'}，報名暫停{blockUntil(user.noshow)}。已報名的活動不受影響。<Link className="strong" to="/me?tab=attendance"> 看紀錄 ›</Link></div>}
         {user.suspended ? <div className="alert danger">您的帳號已被停權，請聯絡場館管理員。{user.suspend_reason && `原因：${user.suspend_reason}`}</div> : null}
         <Chips value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })}
           options={TABS.map(([k, l]) => [k, k === 'notifications' && user.unread ? `${l}（${user.unread}）` : l])} />
         {tab === 'reservations' && <Reservations />}
         {tab === 'cards' && <Cards />}
+        {tab === 'attendance' && <Attendance />}
         {tab === 'dupr' && <Dupr />}
         {tab === 'notifications' && <Notifications />}
         {tab === 'account' && <Account />}
@@ -303,6 +305,42 @@ function Dupr() {
           </div>
         </form>
       )}
+    </>
+  )
+}
+
+// 出席紀錄：目前計入的缺席次數、規則、每筆缺席
+function Attendance() {
+  const { venue, handleError } = useApp()
+  const [d, setD] = useState(null)
+  useEffect(() => { api('me/attendance').then(setD).catch(handleError) }, [handleError])
+  if (!d) return <Loading />
+  const s = d.status
+  return (
+    <>
+      <section className="card">
+        <div className="sec-head"><h3>缺席次數</h3>{s.enabled && <span>{s.days ? `最近 ${s.days} 天` : '累計'}</span>}</div>
+        {!s.enabled ? <p className="muted small">這個場館沒有缺席限制。</p> : s.blocked ? (
+          <p className="text-warn strong">暫停報名中，{blockUntil(s)}（{s.reason}）</p>
+        ) : (
+          <>
+            <div className="noshow-meter" aria-label={`缺席 ${s.count} 次，上限 ${s.limit} 次`}>
+              {Array.from({ length: s.limit }, (_, i) => <span key={i} className={i < s.count ? 'on' : ''} />)}
+            </div>
+            <p className="small">{s.count === 0 ? '目前沒有缺席，繼續保持！' : s.count >= s.limit - 1 ? <b className="text-warn">已缺席 {s.count} 次，再 1 次會暫停報名</b> : `已缺席 ${s.count} 次，滿 ${s.limit} 次會暫停報名`}</p>
+          </>
+        )}
+        {noshowRule(venue) && <p className="muted small mt">{noshowRule(venue)}</p>}
+      </section>
+      <section className="card">
+        <h3 className="card-title">缺席紀錄</h3>
+        {d.absences.length === 0 ? <p className="muted small">沒有缺席紀錄</p> : d.absences.map((a) => (
+          <div key={a.id} className="row between list-row">
+            <span className={`small ${a.noshow_cleared ? 'muted' : ''}`}><b>{showDate(a.date).slice(5)} {a.start_time}</b> {a.name}</span>
+            {a.noshow_cleared === 1 ? <Badge tone="gray">主辦免記</Badge> : a.noshow_cleared === 2 ? <Badge tone="gray">已計入暫停</Badge> : <Badge tone="warn">計入</Badge>}
+          </div>
+        ))}
+      </section>
     </>
   )
 }

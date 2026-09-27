@@ -83,3 +83,23 @@ export function duprRange(c, short = false) {
   const range = lo && hi ? `${lo}–${hi}` : lo ? `${lo}+` : hi ? `≤${hi}` : '不限分數'
   return short ? `DUPR ${range}` : `DUPR ${fmt} ${range}`
 }
+
+// 點名標記缺席後給場主的提示（到上限已自動暫停／差 1 次）
+export function noshowMessage(ns, name) {
+  if (!ns) return ''
+  if (ns.blocked) return `${name} ${ns.reason}，已自動暫停報名${ns.forever ? '直到您解除' : `到 ${ns.blocked_until.slice(5).replace('-', '/')}`}，已通知他`
+  if (ns.limit && ns.count === ns.limit - 1) return `${name} 已缺席 ${ns.count} 次，再 1 次會暫停報名（已提醒他）`
+  return ''
+}
+
+// 缺席規則（報名須知、會員中心用）；沒開啟回傳空字串
+export function noshowRule(v) {
+  if (!v || v.noshow_enabled === false) return ''
+  const period = Number(v.noshow_days) ? `最近 ${v.noshow_days} 天內` : '累計'
+  const length = Number(v.noshow_block_days) ? ` ${v.noshow_block_days} 天` : '，直到主辦解除'
+  return `報名後沒到會記一次缺席；${period}缺席 ${v.noshow_limit} 次會暫停報名${length}。不能來請提早取消。`
+}
+
+export function blockUntil(ns) {
+  return ns.forever ? '直到主辦解除' : `到 ${ns.blocked_until.slice(5).replace('-', '/')}`
+}

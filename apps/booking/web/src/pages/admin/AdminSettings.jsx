@@ -18,6 +18,9 @@ export default function AdminSettings() {
           ...form,
           open_days: Number(form.open_days) || 14,
           reminder_hour: Number(form.reminder_hour ?? 20),
+          noshow_limit: Math.max(Number(form.noshow_limit) || 3, 1),
+          noshow_days: Number(form.noshow_days ?? 90),
+          noshow_block_days: Number(form.noshow_block_days ?? 14),
           categories: form.categories.split('\n').map((s) => s.trim()).filter(Boolean),
         },
       })
@@ -56,6 +59,30 @@ export default function AdminSettings() {
             {[...new Set([8, 12, 18, 19, 20, 21, 22, Number(form.reminder_hour ?? 20)])].sort((a, b) => a - b).map((h) => <option key={h} value={h}>前一天 {h}:00</option>)}
           </select>
         </Field>
+      )}
+      <h3 className="card-title">缺席（No-show）管理</h3>
+      <label className="check"><input type="checkbox" checked={form.noshow_enabled !== false} onChange={set('noshow_enabled')} /> 報名後沒到（點名標「缺席」）累計太多次，自動暫停報名</label>
+      {form.noshow_enabled !== false && (
+        <>
+          <div className="grid2">
+            <Field label="計算期間">
+              <select className="input" value={form.noshow_days ?? 90} onChange={set('noshow_days')}>
+                {[[30, '最近 30 天'], [60, '最近 60 天'], [90, '最近 90 天'], [180, '最近 180 天'], [0, '不限（全部累計）']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+            <Field label="缺席幾次">
+              <select className="input" value={form.noshow_limit ?? 3} onChange={set('noshow_limit')}>
+                {[1, 2, 3, 4, 5, 6, 8, 10].map((n) => <option key={n} value={n}>{n} 次</option>)}
+              </select>
+            </Field>
+          </div>
+          <Field label="暫停報名多久" hint="暫停後缺席次數歸零重算；已經報名的活動不受影響">
+            <select className="input" value={form.noshow_block_days ?? 14} onChange={set('noshow_block_days')}>
+              {[[7, '7 天'], [14, '14 天'], [30, '30 天'], [60, '60 天'], [0, '直到我手動解除']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+          </Field>
+          <p className="muted small">差 1 次到上限時會先提醒學員。個別缺席可以在「會員管理」免記（例如生病有先說），也可以手動解除或暫停。</p>
+        </>
       )}
       <button className="btn btn-block btn-lg">儲存設定</button>
     </form>

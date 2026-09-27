@@ -52,6 +52,10 @@ DEFAULT_SETTINGS = {
     "waitlist_enabled": True,
     "reminder_enabled": True,  # 開課前一天推播提醒
     "reminder_hour": 20,       # 前一天幾點提醒（0～23）
+    "noshow_enabled": True,    # 缺席（no-show）管理
+    "noshow_limit": 3,         # 缺席幾次暫停報名
+    "noshow_days": 90,         # 只算最近幾天的缺席（0＝不限）
+    "noshow_block_days": 14,   # 暫停報名幾天（0＝直到場主解除）
 }
 
 SCHEMA = """
@@ -153,6 +157,8 @@ MIGRATIONS = {
         "deleted": "INTEGER NOT NULL DEFAULT 0",
         "avatar_url": "TEXT NOT NULL DEFAULT ''",
         "avatar_source": "TEXT NOT NULL DEFAULT ''",
+        "blocked_until": "TEXT NOT NULL DEFAULT ''",   # 缺席太多次，暫停報名到這天（含）；9999-12-31＝直到場主解除
+        "block_reason": "TEXT NOT NULL DEFAULT ''",
     },
     "courses": {
         "dupr_required": "INTEGER NOT NULL DEFAULT 0",
@@ -191,6 +197,7 @@ MIGRATIONS = {
         "paid_at": "TEXT NOT NULL DEFAULT ''",
         "pay_due": "TEXT NOT NULL DEFAULT ''",
         "reminded": "INTEGER NOT NULL DEFAULT 0",
+        "noshow_cleared": "INTEGER NOT NULL DEFAULT 0",  # 缺席不再計入：1＝場主免記，2＝已計入一次暫停報名（歸零重算）
     },
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
@@ -657,6 +664,9 @@ def promote_waitlist(conn, c: dict):
         u = one(conn.execute("SELECT * FROM users WHERE id=?", (w["user_id"],)))
         if u["suspended"]:
             continue
+        if noshow_status(conn, u)["blocked"]:
+            notify(conn, w["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 有名額釋出，但您目前暫停報名中，未能自動遞補。")
+            continue
         if dupr_problem(c, u):
             notify(conn, w["user_id"], f"「{c['name']}」{c['date']} {c['start_time']} 有名額釋出，"
                                        "但您的 DUPR 分數不符合這場的條件，未能自動遞補。")
@@ -1042,7 +1052,7 @@ def me(user=Depends(require_user)):
     with db() as conn:
         unread = conn.execute("SELECT COUNT(*) FROM notifications WHERE user_id=? AND read=0",
                               (user["id"],)).fetchone()[0]
-        out = {**public_user(user), "unread": unread}
+        out = {**public_user(user), "unread": unread, "noshow": noshow_status(conn, user)}
         if user["role"] == "owner":
             out["admin_unread"] = conn.execute("SELECT COUNT(*) FROM admin_notifications WHERE id>?",
                                                (user["admin_seen_id"],)).fetchone()[0]
@@ -1097,6 +1107,19 @@ def my_reservations(user=Depends(require_user)):
         return out
 
 
+@app.get("/api/me/attendance")
+def my_attendance(user=Depends(require_user)):
+    """會員中心：出席紀錄與缺席規則。"""
+    with db() as conn:
+        return {"status": noshow_status(conn, user), "absences": noshow_list(conn, user["id"])}
+
+
+def noshow_list(conn, user_id: int) -> list[dict]:
+    return rows(conn.execute(
+        "SELECT r.id, r.noshow_cleared, c.id course_id, c.name, c.date, c.start_time FROM reservations r JOIN courses c ON c.id=r.course_id"
+        " WHERE r.user_id=? AND r.status='absent' ORDER BY c.date DESC, c.start_time DESC LIMIT 50", (user_id,)))
+
+
 @app.get("/api/me/cards")
 def my_cards(user=Depends(require_user)):
     with db() as conn:
@@ -1119,6 +1142,64 @@ def my_notifications(user=Depends(require_user)):
         return items
 
 
+# ---------------------------------------------------------------- 缺席（no-show）管理
+
+FOREVER = "9999-12-31"
+
+
+def noshow_status(conn, u: dict, s: dict | None = None) -> dict:
+    """目前累計的缺席次數（最近 N 天、未免記、未因暫停歸零）與暫停報名狀態。"""
+    s = s or get_settings(conn)
+    since = (now().date() - timedelta(days=int(s["noshow_days"]))).isoformat() if int(s["noshow_days"] or 0) > 0 else ""
+    count = conn.execute(
+        "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE r.user_id=? AND r.status='absent'"
+        " AND r.noshow_cleared=0 AND c.date>=?", (u["id"], since)).fetchone()[0]
+    until = u.get("blocked_until") or ""
+    blocked = bool(until) and until >= now().date().isoformat()
+    return {"enabled": bool(s["noshow_enabled"]), "count": count, "limit": int(s["noshow_limit"]), "days": int(s["noshow_days"] or 0),
+            "block_days": int(s["noshow_block_days"] or 0), "blocked": blocked,
+            "blocked_until": until if blocked else "", "forever": blocked and until == FOREVER,
+            "reason": u.get("block_reason", "") if blocked else ""}
+
+
+def block_text(ns: dict) -> str:
+    return "直到主辦解除" if ns["forever"] else f"到 {ns['blocked_until'][5:].replace('-', '/')}"
+
+
+def ensure_not_blocked(conn, user: dict):
+    ns = noshow_status(conn, user)
+    if ns["blocked"]:
+        fail(400, f"因{ns['reason'] or '缺席次數過多'}，報名暫停{block_text(ns)}；有疑問請聯絡主辦")
+
+
+def check_noshow(conn, user_id: int, c: dict):
+    """點名標記缺席後：快到上限先提醒，到上限自動暫停報名（計數歸零重算）並通知雙方。"""
+    s = get_settings(conn)
+    u = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
+    if not s["noshow_enabled"] or not u or u["role"] == "owner":
+        return None
+    ns = noshow_status(conn, u, s)
+    if ns["blocked"]:
+        return ns
+    period = f"最近 {ns['days']} 天" if ns["days"] else "累計"
+    if ns["count"] >= ns["limit"] > 0:
+        until = FOREVER if not ns["block_days"] else (now().date() + timedelta(days=ns["block_days"] - 1)).isoformat()
+        reason = f"{period}缺席 {ns['count']} 次"
+        conn.execute("UPDATE users SET blocked_until=?, block_reason=? WHERE id=?", (until, reason, user_id))
+        since = (now().date() - timedelta(days=ns["days"])).isoformat() if ns["days"] else ""
+        conn.execute("UPDATE reservations SET noshow_cleared=2 WHERE user_id=? AND status='absent' AND noshow_cleared=0"
+                     " AND course_id IN (SELECT id FROM courses WHERE date>=?)", (user_id, since))
+        ns = noshow_status(conn, {**u, "blocked_until": until, "block_reason": reason}, s)
+        notify(conn, user_id, f"您{reason}（最近一次：「{c['name']}」{c['date']}），依場館規定暫停報名{block_text(ns)}。"
+                              "已報名的活動不受影響；如有誤會請聯絡主辦。")
+        admin_notify(conn, "noshow", f"{u['name']} {reason}，已自動暫停報名{block_text(ns)}", "/admin/members")
+    elif ns["limit"] and ns["count"] == ns["limit"] - 1:
+        length = f" {ns['block_days']} 天" if ns["block_days"] else "，直到主辦解除"
+        notify(conn, user_id, f"提醒：您{period}已缺席 {ns['count']} 次（最近一次：「{c['name']}」{c['date']}），"
+                              f"再缺席 1 次將暫停報名{length}。不能來請提早取消。")
+    return ns
+
+
 def ensure_active(user: dict):
     if user["suspended"]:
         fail(403, "SUSPENDED")
@@ -1132,6 +1213,7 @@ def reserve(course_id: int, body: dict = Depends(json_body), user=Depends(requir
         c = get_course(conn, course_id)
         if not can_see(conn, c, user, str(b.get("code") or "")):
             fail(404, "找不到課程")
+        ensure_not_blocked(conn, user)
         settings = get_settings(conn)
         v = course_view(conn, c, user, settings)
         if v["state"] not in ("book", "waitlist"):
@@ -1831,6 +1913,7 @@ def dashboard(owner=Depends(require_owner)):
             "unpaid_fees": conn.execute("SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id WHERE r.fee>0 AND r.paid=0"
                                         " AND r.status IN ('booked','attended','absent') AND c.status='open'").fetchone()[0],
             "members": conn.execute("SELECT COUNT(*) FROM users WHERE role='student' AND deleted=0").fetchone()[0],
+            "blocked_members": conn.execute("SELECT COUNT(*) FROM users WHERE deleted=0 AND blocked_until>=?", (today,)).fetchone()[0],
             "week_bookings": conn.execute(
                 "SELECT COUNT(*) FROM reservations r JOIN courses c ON c.id=r.course_id"
                 " WHERE r.status='booked' AND c.date BETWEEN ? AND ?", (today, week_end)).fetchone()[0],
@@ -2353,9 +2436,18 @@ def admin_notifications(owner=Depends(require_owner)):
         return items
 
 
+def with_noshow(conn, roster: list[dict], s: dict | None = None) -> list[dict]:
+    """名單上附每個人目前計入的缺席次數與是否暫停報名。"""
+    s = s or get_settings(conn)
+    for r in roster:
+        ns = noshow_status(conn, {"id": r["user_id"], "blocked_until": r["blocked_until"], "block_reason": ""}, s)
+        r["noshow"] = {"count": ns["count"], "limit": ns["limit"], "blocked": ns["blocked"], "enabled": ns["enabled"]}
+    return roster
+
+
 def roster_rows(conn, course_id: int) -> list[dict]:
     return rows(conn.execute(
-        "SELECT r.*, u.name, u.phone, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified,"
+        "SELECT r.*, u.name, u.phone, u.dupr_id, u.dupr_doubles, u.dupr_singles, u.dupr_verified, u.blocked_until,"
         " cd.name card_name FROM reservations r JOIN users u ON u.id=r.user_id"
         " LEFT JOIN cards cd ON cd.id=r.card_id WHERE r.course_id=? AND r.status!='cancelled' ORDER BY r.id",
         (course_id,)))
@@ -2371,7 +2463,7 @@ def attendance(request: Request, owner=Depends(require_owner)):
         for c in rows(conn.execute("SELECT * FROM courses WHERE date=? AND status='open' ORDER BY start_time, id",
                                    (day,))):
             v = course_view(conn, c, None, s)
-            v["roster"] = [r for r in roster_rows(conn, c["id"]) if r["status"] != "waitlist"]
+            v["roster"] = with_noshow(conn, [r for r in roster_rows(conn, c["id"]) if r["status"] != "waitlist"], s)
             v["started"] = now() >= course_start(c)
             out.append(v)
         return out
@@ -2414,7 +2506,7 @@ def roster(course_id: int, owner=Depends(require_owner)):
     with db() as conn:
         c = get_course(conn, course_id)
         v = course_view(conn, c, None, get_settings(conn))
-        v["roster"] = roster_rows(conn, course_id)
+        v["roster"] = with_noshow(conn, roster_rows(conn, course_id))
         return v
 
 
@@ -2445,7 +2537,11 @@ def update_reservation(res_id: int, body: dict = Depends(json_body), owner=Depen
             notify(conn, r["user_id"], f"場館已取消您的預約：「{c['name']}」{c['date']} {c['start_time']}。")
             if r["status"] == "booked":
                 promote_waitlist(conn, c)
-        return {"ok": True}
+        ns = None
+        if status == "absent" and r["status"] != "absent":
+            conn.execute("UPDATE reservations SET noshow_cleared=0 WHERE id=?", (res_id,))
+            ns = check_noshow(conn, r["user_id"], c)
+        return {"ok": True, "noshow": ns}
 
 
 @app.post("/api/admin/courses/{course_id}/add")
@@ -2580,6 +2676,7 @@ def update_order(order_id: int, body: dict = Depends(json_body), owner=Depends(r
 def members(owner=Depends(require_owner)):
     with db() as conn:
         today = now().date().isoformat()
+        s = get_settings(conn)
         out = []
         for u in rows(conn.execute("SELECT * FROM users WHERE deleted=0 ORDER BY role='owner' DESC, id DESC")):
             m = public_user(u)
@@ -2591,8 +2688,32 @@ def members(owner=Depends(require_owner)):
                 (u["id"],)).fetchone()[0]
             m["absences"] = conn.execute(
                 "SELECT COUNT(*) FROM reservations WHERE user_id=? AND status='absent'", (u["id"],)).fetchone()[0]
+            m["noshow"] = noshow_status(conn, u, s)
             out.append(m)
         return out
+
+
+@app.get("/api/admin/members/{user_id}/absences")
+def member_absences(user_id: int, owner=Depends(require_owner)):
+    with db() as conn:
+        u = one(conn.execute("SELECT * FROM users WHERE id=?", (user_id,)))
+        if not u:
+            fail(404, "找不到會員")
+        return {"status": noshow_status(conn, u), "absences": noshow_list(conn, user_id)}
+
+
+@app.post("/api/admin/reservations/{res_id}/excuse")
+def excuse_absence(res_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    """缺席免記（例如生病有先講）；取消免記會重新計入。"""
+    with db() as conn:
+        r = one(conn.execute("SELECT * FROM reservations WHERE id=? AND status='absent'", (res_id,)))
+        if not r:
+            fail(404, "找不到這筆缺席紀錄")
+        if r["noshow_cleared"] == 2:
+            fail(400, "這次缺席已計入之前的暫停報名，要取消請直接解除暫停")
+        conn.execute("UPDATE reservations SET noshow_cleared=? WHERE id=?", (1 if body.get("excused", True) else 0, res_id))
+        ns = None if body.get("excused", True) else check_noshow(conn, r["user_id"], get_course(conn, r["course_id"]))
+        return {"ok": True, "noshow": ns}
 
 
 @app.put("/api/admin/members/{user_id}")
@@ -2617,6 +2738,16 @@ def update_member(user_id: int, body: dict = Depends(json_body), owner=Depends(r
             conn.execute("UPDATE users SET avatar_url=? WHERE id=?", (str(b["avatar_url"] or "")[:300], user_id))
         if "note" in b:
             conn.execute("UPDATE users SET note=? WHERE id=?", (str(b["note"])[:500], user_id))
+        if b.get("unblock"):
+            conn.execute("UPDATE users SET blocked_until='', block_reason='' WHERE id=?", (user_id,))
+            notify(conn, user_id, "主辦已解除您的報名限制，可以正常報名了。")
+        if isinstance(b.get("block"), dict):
+            days = max(int(b["block"].get("days") or 0), 0)
+            until = FOREVER if not days else (now().date() + timedelta(days=days - 1)).isoformat()
+            reason = str(b["block"].get("reason") or "主辦暫停報名")[:100]
+            conn.execute("UPDATE users SET blocked_until=?, block_reason=? WHERE id=?", (until, reason, user_id))
+            ns = noshow_status(conn, {**u, "blocked_until": until, "block_reason": reason})
+            notify(conn, user_id, f"主辦已暫停您的報名{block_text(ns)}（{reason}）。已報名的活動不受影響。")
         if b.get("role") in ("student", "owner") and u["id"] != owner["id"]:
             conn.execute("UPDATE users SET role=? WHERE id=?", (b["role"], user_id))
         return {"ok": True}
