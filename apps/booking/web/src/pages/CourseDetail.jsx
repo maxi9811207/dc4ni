@@ -4,6 +4,7 @@ import { useApp } from '../App'
 import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
 import { ShareButton } from '../components/Share'
+import { VenueAvatar } from '../components/VenueHeader'
 import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
 import { cardRemain, duprRange, hours, rating, showDate } from '../util'
 
@@ -113,35 +114,68 @@ export default function CourseDetail() {
       {header}
       <main className="page">
         {c.cover_url && <img className="event-cover" src={asset(c.cover_url)} alt={c.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
-        <section className="card detail-card">
-          <div className="row gap-sm wrap">
-            {c.category && <Badge>{c.category}</Badge>}
-            {c.dupr_required && c.category !== 'DUPR 場' && <Badge tone="dupr">DUPR 場</Badge>}
-            {c.beginner && <Badge tone="danger">新手友善</Badge>}
-            {c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}
-          </div>
-          <div className="row between gap">
+        <section className="card ev-head">
+          <p className="ev-host"><VenueAvatar venue={venue} /><span><b>{venue?.name}</b> 主辦</span></p>
+          <div className="ev-title-row">
             <h2 className="detail-title">{c.name}</h2>
             {standalone && <ShareButton c={c} />}
           </div>
-          <dl className="info-list">
-            <div><dt>日期</dt><dd>{showDate(c.date)}</dd></div>
-            <div><dt>時間</dt><dd className="text-brand strong">{c.start_time} ~ {c.end_time}</dd></div>
-            {c.location && <div><dt>地點</dt><dd>{c.location}</dd></div>}
-            <div><dt>人數</dt><dd>{c.booked_count} / {c.capacity}{c.waitlist_count > 0 && `（候補 ${c.waitlist_count} 人）`}</dd></div>
-            <div><dt>費用</dt><dd className={c.fee > 0 ? 'strong' : ''}>{costText}</dd></div>
-          </dl>
+          {(c.category || c.dupr_required || c.beginner || c.status === 'cancelled') && (
+            <div className="row gap-sm wrap">
+              {c.dupr_required && <Badge tone="dupr">{duprRange(c, true)}</Badge>}
+              {c.category && c.category !== 'DUPR 場' && <Badge>{c.category}</Badge>}
+              {c.beginner && <Badge tone="warn">新手友善</Badge>}
+              {c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}
+            </div>
+          )}
+          <div className="kpis">
+            <div className="kpi"><span>日期</span><b>{Number(c.date.slice(5, 7))}/{Number(c.date.slice(8))}（{c.weekday}）</b><small>{c.start_time}–{c.end_time}</small></div>
+            <div className="kpi"><span>名額</span><b>{c.booked_count}/{c.capacity}</b>
+              <small className={c.remain <= 3 ? 'warn' : ''}>{c.waitlist_count > 0 ? `候補 ${c.waitlist_count} 人` : c.remain > 0 ? `剩 ${c.remain} 位` : '已額滿'}</small></div>
+            <div className="kpi"><span>費用</span><b>{c.fee > 0 ? `NT$ ${c.fee.toLocaleString()}` : c.cost === 0 ? '免費' : '課卡'}</b>
+              <small>{c.fee > 0 ? '報名後付款' : c.cost === 0 ? '不用課卡' : bestCard?.value > 0 ? `約 NT$ ${bestCard.value.toLocaleString()}` : bestCard?.type === 'points' ? `扣 ${c.cost} 點` : '扣 1 堂'}</small></div>
+          </div>
+          {(c.location || c.cost > 0) && (
+            <dl className="ev-meta">
+              {c.location && <div><dt>地點</dt><dd>{c.location}</dd></div>}
+              {c.cost > 0 && <div><dt>費用</dt><dd>{costText}</dd></div>}
+            </dl>
+          )}
         </section>
 
-        {c.teacher && (
-          <Link to={`/teachers/${c.teacher.id}`} className="card row gap teacher-row">
-            <Avatar src={c.teacher.photo_url} name={c.teacher.name} />
-            <div className="flex1">
-              <b>{c.teacher.name}{c.substitute && '（代課）'}</b>
-              <p className="muted small">{c.teacher.title}</p>
+        {c.fee > 0 && ['booked', 'attended', 'absent'].includes(c.my_reservation?.status) && <PaymentBox c={c} onSaved={load} />}
+
+        {c.attendees.length > 0 && (
+          <section className="card">
+            <div className="sec-head">
+              <h3>要去的球友（{c.attendees.length}）</h3>
+              {c.dupr_required && c.attendees.some((x) => x.dupr != null) && (
+                <span>平均 DUPR {(c.attendees.filter((x) => x.dupr != null).reduce((t, x) => t + x.dupr, 0) / c.attendees.filter((x) => x.dupr != null).length).toFixed(3)}</span>
+              )}
             </div>
-            <span className="muted">›</span>
-          </Link>
+            {c.dupr_required ? (
+              <div className="players">
+                {c.attendees.map((a, i) => (
+                  <div key={i} className="prow">
+                    <Avatar src={a.avatar_url} name={a.name} size={30} />
+                    <span className="flex1">{a.name}</span>
+                    <span className={`dupr-chip ${a.dupr_verified ? 'verified' : ''} ${a.dupr == null ? 'none' : ''}`} title={a.dupr_verified ? '主辦已驗證' : '未驗證'}>
+                      {a.dupr == null ? '尚無分數' : Number(a.dupr).toFixed(3)}{a.dupr_verified && ' ✓'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="attendee-grid">
+                {c.attendees.map((a, i) => (
+                  <div key={i} className="attendee-cell">
+                    <Avatar src={a.avatar_url} name={a.name} size={44} />
+                    <span className="attendee-name">{a.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
         )}
 
         {c.dupr_required && (
@@ -163,9 +197,18 @@ export default function CourseDetail() {
           </section>
         )}
 
-        {c.fee > 0 && ['booked', 'attended', 'absent'].includes(c.my_reservation?.status) && <PaymentBox c={c} onSaved={load} />}
-
         {c.dupr_required && <EventSection c={c} />}
+
+        {c.teacher && (
+          <Link to={`/teachers/${c.teacher.id}`} className="card row gap teacher-row">
+            <Avatar src={c.teacher.photo_url} name={c.teacher.name} />
+            <div className="flex1">
+              <b>{c.teacher.name}{c.substitute && '（代課）'}</b>
+              <p className="muted small">{c.teacher.title}</p>
+            </div>
+            <span className="muted">›</span>
+          </Link>
+        )}
 
         {standalone && venue && (venue.address || venue.phone || venue.line_url) && (
           <section className="card">
@@ -209,27 +252,6 @@ export default function CourseDetail() {
           </section>
         )}
 
-        {c.attendees.length > 0 && (
-          <section className="card">
-            <h3 className="card-title">已報名（{c.attendees.length}）</h3>
-            <div className="attendee-grid">
-              {c.attendees.map((a, i) => (
-                <div key={i} className="attendee-cell">
-                  <Avatar src={a.avatar_url} name={a.name} size={48} />
-                  <span className="attendee-name">{a.name}</span>
-                  {c.dupr_required && (
-                    <span className={`dupr-chip ${a.dupr_verified ? 'verified' : ''}`} title={a.dupr_verified ? '場館已驗證' : '未驗證'}>
-                      {a.dupr == null ? '尚無分數' : Number(a.dupr).toFixed(3)}{a.dupr_verified && ' ✓'}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-            {c.dupr_required && c.attendees.length > 1 && (
-              <p className="muted small">平均 DUPR {c.dupr_format === 'singles' ? '單打' : '雙打'}：{(c.attendees.filter((a) => a.dupr != null).reduce((s, a) => s + a.dupr, 0) / Math.max(c.attendees.filter((a) => a.dupr != null).length, 1)).toFixed(3)}</p>
-            )}
-          </section>
-        )}
       </main>
 
       <div className="action-bar">
@@ -383,12 +405,16 @@ function StandaloneBar() {
   const navigate = useNavigate()
   const location = useLocation()
   return (
-    <header className="topbar standalone-bar">
-      <span className="standalone-venue">{venue?.name || ''}</span>
-      <div className="topbar-right">
+    <header className="vhead">
+      <div className="vbar">
+        <VenueAvatar venue={venue} />
+        <div className="vbar-text">
+          <p className="vbar-name">{venue?.name || ''}</p>
+          <p className="vbar-sub">活動報名</p>
+        </div>
         {user
           ? <span className="standalone-user"><span className="player-avatar"><AvatarImg src={user.avatar_url} name={user.name} /></span>{user.name}</span>
-          : <button className="btn btn-small" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
+          : <button className="btn btn-small btn-outline" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
       </div>
     </header>
   )

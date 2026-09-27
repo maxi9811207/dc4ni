@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useApp } from '../App'
-import { api } from '../api'
+import { api, asset } from '../api'
 import VenueHeader from '../components/VenueHeader'
 import ReviewItem from '../components/ReviewItem'
 import { Empty, Stars } from '../components/ui'
@@ -14,6 +14,7 @@ export default function About() {
     <>
       <VenueHeader />
       <main className="page">
+        {venue?.cover_url && <img className="about-cover" src={asset(venue.cover_url)} alt={venue.name} />}
         <section className="card">
           <h3 className="card-title">關於場館</h3>
           {venue?.address && (

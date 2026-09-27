@@ -41,7 +41,7 @@ export default function Dashboard() {
         <Link to="/admin/courses/new" className="btn btn-small">＋ 新增課程</Link>
       </div>
       {d.today.length === 0 ? <Empty text="今天沒有課程" />
-        : d.today.map((c) => <CourseCard key={c.id} course={{ ...c, button: '名單', state: 'booked' }} to={`/admin/courses/${c.id}`} />)}
+        : d.today.map((c) => <CourseCard key={c.id} course={c} admin to={`/admin/courses/${c.id}`} />)}
     </>
   )
 }

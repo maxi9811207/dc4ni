@@ -98,11 +98,8 @@ export function Loading({ text = '載入中' }) {
 export function Empty({ text, children }) {
   return (
     <div className="empty">
-      <svg width="96" height="96" viewBox="0 0 96 96" fill="none" aria-hidden="true">
-        <rect x="18" y="22" width="60" height="56" rx="10" fill="var(--brand-soft)" />
-        <rect x="18" y="22" width="60" height="14" rx="7" fill="var(--brand-200)" />
-        <circle cx="34" cy="18" r="4" fill="var(--brand)" /><circle cx="62" cy="18" r="4" fill="var(--brand)" />
-        <path d="M36 56h24M36 64h14" stroke="var(--brand-300)" strokeWidth="4" strokeLinecap="round" />
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--line-2)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+        <rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 9.5h17M8 3v4M16 3v4" />
       </svg>
       <p>{text}</p>
       {children}

@@ -2,7 +2,7 @@ import { addDays, fromISO, mondayOf, today } from '../util'
 
 const HEAD = ['一', '二', '三', '四', '五', '六', '日']
 
-// FitBook 式週曆：今天按鈕、月份、左右切換週
+// 日期方塊列：一次一週，選到的那天用綠色；今天下方有小點
 export default function WeekPicker({ value, onChange, maxDate, allowPast = true }) {
   const monday = mondayOf(value)
   const days = Array.from({ length: 7 }, (_, i) => addDays(monday, i))
@@ -19,27 +19,26 @@ export default function WeekPicker({ value, onChange, maxDate, allowPast = true 
 
   return (
     <div className="card week">
-      <div className="week-head">
-        <button className="today-btn" onClick={() => onChange(t)}>今天</button>
-        <b>{d.getFullYear()}年{String(d.getMonth() + 1).padStart(2, '0')}月</b>
-        <span />
+      <div className="week-top">
+        <b>{d.getFullYear()} 年 {d.getMonth() + 1} 月</b>
+        {value !== t && <button className="today-btn" onClick={() => onChange(t)}>今天</button>}
+        <button className="week-nav" aria-label="上一週" disabled={!allowPast && monday <= t} onClick={() => shift(-1)}>‹</button>
+        <button className="week-nav" aria-label="下一週" disabled={Boolean(maxDate) && addDays(monday, 7) > maxDate} onClick={() => shift(1)}>›</button>
       </div>
-      <div className="week-body">
-        <button className="week-arrow" aria-label="上一週" onClick={() => shift(-1)}>‹</button>
-        <div className="week-grid">
-          {HEAD.map((h) => <span key={h} className="week-label">{h}</span>)}
-          {days.map((iso) => (
-            <button
-              key={iso}
-              className={`week-day ${iso === value ? 'selected' : ''} ${iso === t ? 'is-today' : ''}`}
-              disabled={disabled(iso)}
-              onClick={() => onChange(iso)}
-            >
-              {fromISO(iso).getDate()}
-            </button>
-          ))}
-        </div>
-        <button className="week-arrow" aria-label="下一週" onClick={() => shift(1)}>›</button>
+      <div className="dstrip">
+        {days.map((iso, i) => (
+          <button
+            key={iso}
+            className={`dtile ${iso === value ? 'selected' : ''} ${iso === t ? 'is-today' : ''}`}
+            disabled={disabled(iso)}
+            aria-pressed={iso === value}
+            aria-label={`${fromISO(iso).getMonth() + 1} 月 ${fromISO(iso).getDate()} 日（${HEAD[i]}）${iso === t ? '，今天' : ''}`}
+            onClick={() => onChange(iso)}
+          >
+            <span>{iso === t ? '今天' : HEAD[i]}</span>
+            <b>{fromISO(iso).getDate()}</b>
+          </button>
+        ))}
       </div>
     </div>
   )
