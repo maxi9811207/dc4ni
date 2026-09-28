@@ -1,7 +1,7 @@
 # Digital Court — 歡迎搜尋引擎與 AI 助理讀取公開頁面
 User-agent: *
 Allow: /
-Disallow: /active/api/
+Disallow: /*/api/
 Disallow: /platform/
 Disallow: /account
 Disallow: /console
