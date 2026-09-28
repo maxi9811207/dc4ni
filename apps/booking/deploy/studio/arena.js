@@ -233,9 +233,18 @@
   const say = (text) => { call.textContent = text; call.classList.toggle('on', !!text) }
   const hpUI = () => P.forEach((F, i) => { hpBars[i].style.width = Math.max(0, F.hp) + '%' })
 
+  // 每次重新整理都洗牌：出場順序、對手、左右邊都隨機；第一組也不會跟上次看到的一樣
+  const shuffle = (a) => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]] } return a }
+  const mOrder = shuffle(MARVEL), dOrder = shuffle(DCU)
+  let lastPair = ''
+  try { lastPair = localStorage.getItem('dc-arena-last') || '' } catch (e) { /* 無痕模式 */ }
+  if (lastPair === mOrder[0] + ',' + dOrder[0]) dOrder.push(dOrder.shift())
+  try { localStorage.setItem('dc-arena-last', mOrder[0] + ',' + dOrder[0]) } catch (e) { /* 無痕模式 */ }
+  const leftFirst = Math.random() < 0.5
+
   function newMatch() {
-    const m = MARVEL[round % 5], d = DCU[(round * 2 + 1) % 5]
-    const left = round % 2 === 0
+    const m = mOrder[round % 5], d = dOrder[(round + Math.floor(round / 5)) % 5]
+    const left = (round % 2 === 0) === leftFirst
     P = left ? [fighter(m, 0), fighter(d, 1)] : [fighter(d, 0), fighter(m, 1)]
     round++; state = 'enter'; st = 0; act = null; rest = 0; specials = [0, 0]; fx = []
     say(''); hpUI()
