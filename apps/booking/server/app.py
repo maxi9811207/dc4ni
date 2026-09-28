@@ -30,6 +30,7 @@ import line_push
 import mailer
 import matches
 import reports
+import demo  # noqa: E402
 import tenancy
 
 # 每個場館一個資料庫與上傳資料夾（見 tenancy.py）；這裡一律透過 tenancy.current() 取得目前場館
@@ -495,6 +496,8 @@ def init_tenant(t: "tenancy.Tenant", owner: dict | None = None, name: str = ""):
             conn.execute("INSERT INTO kv VALUES ('share_codes_v2', ?)", (stamp(),))
         conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_courses_share ON courses(share_code)")
         conn.execute("CREATE INDEX IF NOT EXISTS idx_courses_slot ON courses(slot_set_id, date)")
+        if demo.kind_of(t.slug):  # 虛構的示範場館：補齊未來兩週的活動
+            demo.top_up(conn)
 
 
 SHARE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 0/o、1/l/i
@@ -1602,7 +1605,8 @@ def sweeper():
         for t in tenancy.all_with_data():  # 逐館處理；停用的場館不再提醒、釋出名額
             if t.status not in ("active", "past_due"):
                 continue
-            for job in (release_overdue, send_reminders):
+            jobs = (release_overdue, send_reminders) + ((demo.top_up,) if demo.kind_of(t.slug) else ())
+            for job in jobs:
                 try:
                     with tenancy.use(t), db() as conn:
                         job(conn)
@@ -3135,6 +3139,7 @@ def head_tags(base: str, url: str, title: str, desc: str, image: str, site: str,
     e = lambda v: html.escape(str(v), quote=True)  # noqa: E731
     if image and not re.match(r"^https?:", image):
         image = base + image.lstrip("/")
+    index = index and not demo.is_demo()  # 示範場館的活動都是假的，不給搜尋引擎收錄
     tags = [f'<meta name="description" content="{e(desc)}">', f'<link rel="canonical" href="{e(url)}">',
             f'<meta name="robots" content="{"index,follow,max-image-preview:large" if index else "noindex,nofollow"}">']
     for k, v in (("og:type", og_type), ("og:site_name", site), ("og:title", title), ("og:description", desc), ("og:url", url),

@@ -24,5 +24,9 @@
 - 註冊開通：https://dc-studio.cc/signup
 - 服務條款：https://dc-studio.cc/terms
 - 隱私權政策：https://dc-studio.cc/privacy
-- 示範場館：https://dc-studio.cc/active/
+- 示範場館（都是虛構的，可自由操作）：
+  - 球團俱樂部（單次球敘、固定團課）：https://dc-studio.cc/demo-club/
+  - 教練課（團體課、一對一私人課）：https://dc-studio.cc/demo-coach/
+  - DUPR 比賽／活動報名：https://dc-studio.cc/demo-dupr/
+  - 球館租借預約：https://dc-studio.cc/demo-court/
 - 場館公開活動清單（sitemap）：https://dc-studio.cc/active/sitemap.xml
