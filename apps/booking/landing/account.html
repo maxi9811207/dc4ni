@@ -42,7 +42,7 @@
   </section>
   <p class="msg" id="msg" hidden></p>
 </main>
-<footer><a href="/terms">服務條款</a> · <a href="/privacy">隱私權政策</a> · 有問題請來信 dc@dc-tools.cc</footer>
+<footer><a href="/terms">服務條款</a> · <a href="/privacy">隱私權政策</a> · 有問題請來信 dc@dc-studio.cc</footer>
 <script src="/platform.js"></script>
 <script>
 (function () {
@@ -67,7 +67,7 @@
     if (t.features.indexOf('domain') >= 0) {
       domain = '<details><summary class="hint" style="cursor:pointer">自訂網域' + (t.custom_domain ? '：' + DC.esc(t.custom_domain) + '（' + ({ pending: '開通中', approved: '等 DNS 生效，自動開通中', active: '已啟用', failed: '開通失敗，請檢查 DNS 後重新儲存' }[t.domain_status] || '') + '）' : '') + '</summary>' +
         '<form data-domain="' + t.slug + '" class="row" style="margin-top:8px"><input class="grow" name="domain" placeholder="booking.yourclub.tw" value="' + DC.esc(t.custom_domain) + '"><button class="btn ghost small">儲存</button></form>' +
-        '<p class="hint">在你的網域 DNS 新增一筆 A 記錄指向 <b>172.237.11.215</b>，DNS 生效後幾分鐘內會自動開通 HTTPS，完成會寄信通知你。還沒有網域的話來信 dc@dc-tools.cc，我們協助購買與設定。</p></details>'
+        '<p class="hint">在你的網域 DNS 新增一筆 A 記錄指向 <b>172.237.11.215</b>，DNS 生效後幾分鐘內會自動開通 HTTPS，完成會寄信通知你。還沒有網域的話來信 dc@dc-studio.cc，我們協助購買與設定。</p></details>'
     }
     return '<section class="card tenant"><div class="row" style="justify-content:space-between"><h2>' + DC.esc(t.name) + '</h2>' + status + '</div>' +
       '<p class="meta">' + DC.esc(t.plan_name) + '方案・' + bill + (t.url ? '<br><a href="' + DC.esc(t.url) + '" target="_blank">' + DC.esc(t.url.replace(/^https?:\/\//, '')) + '</a>' : '') + '</p>' +

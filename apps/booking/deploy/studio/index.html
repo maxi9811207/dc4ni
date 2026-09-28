@@ -19,7 +19,7 @@
 <meta name="theme-color" content="#E4000F">
 <script type="application/ld+json">
 {"@context":"https://schema.org","@type":"Organization","name":"不是漫威有限公司","alternateName":"DC","url":"https://dc-studio.cc/",
- "logo":"https://dc-studio.cc/logo.svg","email":"dc@dc-tools.cc",
+ "logo":"https://dc-studio.cc/logo.svg","email":"dc@dc-studio.cc",
  "description":"AI 顧問、產品顧問、軟體開發",
  "makesOffer":[{"@type":"Offer","itemOffered":{"@type":"Service","name":"AI 顧問"}},
                {"@type":"Offer","itemOffered":{"@type":"Service","name":"產品顧問"}},
@@ -27,7 +27,7 @@
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Press+Start+2P&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
 <style>
 /* 品牌只有紅與白：刻意只做一套配色，不跟著系統切換深色 */
 :root{
@@ -73,11 +73,19 @@ a:focus-visible,.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3
 .hero h1 .en{font-family:var(--display);font-weight:400;letter-spacing:0}
 .hero .lead{font-size:clamp(18px,2vw,21px);margin-top:22px;max-width:30em;opacity:.95}
 .hero .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
-.mark{justify-self:end;width:100%;max-width:420px}
-.mark svg{width:100%;height:auto;border:6px solid var(--white);box-shadow:18px 18px 0 var(--red-deep)}
+/* 像素擂台：canvas 用 128×80 的邏輯像素畫，放大時保持方塊不模糊 */
+.mark{justify-self:end;width:100%;max-width:540px;position:relative;aspect-ratio:128/80;border:6px solid var(--white);box-shadow:18px 18px 0 var(--red-deep);background:#140a24;overflow:hidden}
+.mark canvas{display:block;width:100%;height:100%;image-rendering:pixelated;image-rendering:crisp-edges}
+.hud{position:absolute;left:8px;right:8px;top:8px;display:flex;align-items:center;gap:8px}
+.hud svg{width:clamp(26px,6%,38px);flex:none;height:auto;border:2px solid var(--white)}
+.hp{flex:1;height:clamp(8px,2.2vw,12px);background:#4a0a12;border:2px solid var(--white)}
+.hp i{display:block;height:100%;width:100%;background:#FFD21A;transition:width .25s steps(4)}
+.hp.r{transform:scaleX(-1)}
+.call{position:absolute;inset:0;display:grid;place-items:center;font-family:"Press Start 2P",monospace;color:var(--white);font-size:clamp(14px,3.2vw,30px);letter-spacing:.06em;text-shadow:3px 3px 0 var(--red-deep),-2px -2px 0 #000;pointer-events:none;opacity:0}
+.call.on{opacity:1}
 @media (max-width:860px){
   .hero .wrap{grid-template-columns:1fr;gap:40px;padding-block:56px 64px}
-  .mark{justify-self:start;max-width:260px;order:-1}
+  .mark{justify-self:stretch;max-width:none;order:-1;box-shadow:10px 10px 0 var(--red-deep)}
 }
 
 /* 服務項目 */
@@ -100,14 +108,20 @@ h2{font-weight:900;font-size:clamp(30px,4.2vw,46px);line-height:1.25;margin-top:
 
 /* 作品 */
 .work{background:var(--paper)}
-.work-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:40px}
-.work-item{display:flex;flex-direction:column;background:var(--white);border:1px solid var(--rule);padding:30px;text-decoration:none;transition:border-color .15s}
-.work-item:hover{border-color:var(--red)}
-.work-item .tag{align-self:flex-start;font-size:13px;font-weight:700;color:var(--white);background:var(--red);padding:2px 10px}
-.work-item h3{font-size:26px;font-weight:900;margin-top:16px}
-.work-item p{color:var(--soft);margin-top:8px;flex:1}
-.work-item .go{margin-top:20px;font-weight:700;color:var(--red)}
-@media (max-width:720px){.work-list{grid-template-columns:1fr}}
+.cases{margin-top:40px;display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.case{min-width:0;padding-block:36px 40px;border-top:1px solid var(--rule)}
+.case.feature{border-top:4px solid var(--red)}
+.cap{display:flex;justify-content:space-between;align-items:flex-end;gap:12px 40px;flex-wrap:wrap;margin-bottom:22px}
+.cap .tag{display:inline-block;font-size:13px;font-weight:700;color:var(--white);background:var(--red);padding:2px 10px}
+.cap h3{font-size:clamp(24px,2.8vw,32px);font-weight:900;line-height:1.3;margin-top:12px}
+.cap p{color:var(--soft);margin-top:6px;max-width:34em}
+.cap .go{font-weight:700;color:var(--red);text-decoration:none;white-space:nowrap}
+.cap .go:hover{text-decoration:underline}
+.strip{--gh:clamp(320px,110vw,460px);display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding-inline:24px;margin-inline:-24px;padding:4px 24px 14px;scrollbar-width:thin;overscroll-behavior-x:contain}
+.strip:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+.scr{margin:0;flex:none;scroll-snap-align:start}
+.scr img{display:block;height:var(--gh);width:auto;max-width:none;border-radius:14px;border:1px solid var(--rule);background:var(--white)}
+.scr figcaption{font-size:13px;color:var(--soft);margin-top:8px}
 
 /* 關於：名字的由來 */
 .about .wrap{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:56px;align-items:start}
@@ -162,7 +176,9 @@ footer a:hover{color:var(--white)}
         </div>
       </div>
       <div class="mark" aria-hidden="true">
-        <svg viewBox="0 0 144 100"><rect width="144" height="100" fill="#E4000F"/><path fill="#fff" fill-rule="evenodd" d="M13 10H52Q70 10 70 30V70Q70 90 52 90H13ZM34 25H44Q51 25 51 34V66Q51 75 44 75H34Z"/><path fill="#fff" d="M96 8H110Q131 8 131 30V40H112V30Q112 23 104 23Q96 23 96 30V70Q96 77 104 77Q112 77 112 70V60H131V70Q131 92 110 92H96Q74 92 74 70V30Q74 8 96 8Z"/></svg>
+        <canvas id="arena" width="128" height="80"></canvas>
+        <div class="hud"><div class="hp l"><i></i></div><svg viewBox="0 0 144 100"><rect width="144" height="100" fill="#E4000F"/><path fill="#fff" fill-rule="evenodd" d="M13 10H52Q70 10 70 30V70Q70 90 52 90H13ZM34 25H44Q51 25 51 34V66Q51 75 44 75H34Z"/><path fill="#fff" d="M96 8H110Q131 8 131 30V40H112V30Q112 23 104 23Q96 23 96 30V70Q96 77 104 77Q112 77 112 70V60H131V70Q131 92 110 92H96Q74 92 74 70V30Q74 8 96 8Z"/></svg><div class="hp r"><i></i></div></div>
+        <div class="call"></div>
       </div>
     </div>
   </section>
@@ -195,19 +211,49 @@ footer a:hover{color:var(--white)}
     <div class="wrap">
       <p class="kicker">WORK</p>
       <h2 id="work-title">我們做的東西</h2>
-      <div class="work-list">
-        <a class="work-item" href="https://digital-court.cc/">
-          <span class="tag">旗下產品</span>
-          <h3>Digital Court</h3>
-          <p>匹克球的報名與場館預約系統：開團、收費對帳、候補、DUPR 賽事、場地租借，一個連結就搞定。</p>
-          <span class="go">digital-court.cc →</span>
-        </a>
-        <a class="work-item" href="/dc/">
-          <span class="tag">作品集</span>
-          <h3>更多作品</h3>
-          <p>預約系統、官網、即時翻譯、圖床等產品與網站，每一個都附上實際畫面。</p>
-          <span class="go">看作品集 →</span>
-        </a>
+      <div class="cases">
+        <article class="case feature" id="digital-court">
+          <div class="cap">
+            <div><span class="tag">旗下產品</span><h3>Digital Court</h3><p>匹克球的報名與場館預約系統：開團、收費對帳、候補、DUPR 賽事、場地租借，一個連結就搞定。</p></div>
+            <a class="go" href="https://digital-court.cc/">digital-court.cc →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="Digital Court 畫面"><figure class="scr"><img src="g/booking-1.jpg?v=20260928" alt="Digital Court：課表" width="560" height="1120"><figcaption>課表</figcaption></figure><figure class="scr"><img src="g/booking-2.jpg?v=20260928" alt="Digital Court：課程與報名名單" width="560" height="1120"><figcaption>課程與報名名單</figcaption></figure><figure class="scr"><img src="g/booking-3.jpg?v=20260928" alt="Digital Court：一頁式分享報名" width="560" height="1120"><figcaption>一頁式分享報名</figcaption></figure><figure class="scr"><img src="g/booking-4.jpg?v=20260928" alt="Digital Court：課卡方案" width="560" height="1120" loading="lazy"><figcaption>課卡方案</figcaption></figure><figure class="scr"><img src="g/booking-5.jpg?v=20260928" alt="Digital Court：LINE 一鍵登入" width="560" height="1120" loading="lazy"><figcaption>LINE 一鍵登入</figcaption></figure></div>
+        </article>
+        <article class="case" id="dc-tools">
+          <div class="cap">
+            <div><span class="tag">線上工具站</span><h3>DC Tools</h3><p>200 多個免費線上工具：圖片、PDF、文件、CSV、文字與開發者工具，打開網頁就能用。</p></div>
+            <a class="go" href="https://dc-tools.cc/">dc-tools.cc →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="DC Tools 畫面"><figure class="scr"><img src="g/tl-1.jpg?v=20260928" alt="DC Tools：首頁" width="560" height="1120" loading="lazy"><figcaption>首頁</figcaption></figure><figure class="scr"><img src="g/tl-2.jpg?v=20260928" alt="DC Tools：全站搜尋" width="560" height="1120" loading="lazy"><figcaption>全站搜尋</figcaption></figure><figure class="scr"><img src="g/tl-3.jpg?v=20260928" alt="DC Tools：圖片壓縮" width="560" height="1120" loading="lazy"><figcaption>圖片壓縮</figcaption></figure><figure class="scr"><img src="g/tl-4.jpg?v=20260928" alt="DC Tools：JSON 格式化" width="560" height="1120" loading="lazy"><figcaption>JSON 格式化</figcaption></figure></div>
+        </article>
+        <article class="case" id="translator">
+          <div class="cap">
+            <div><span class="tag">即時翻譯</span><h3>DC Translator</h3><p>現場語音 1–2 秒變成雙語字幕，支援 13 種語言。聽眾掃 QR Code 就能看，不用下載 App。</p></div>
+            <a class="go" href="https://dc-tools.cc/dctranslator">看即時翻譯 →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="DC Translator 畫面"><figure class="scr"><img src="g/tr-1.jpg?v=20260928" alt="DC Translator：講者端" width="560" height="1120" loading="lazy"><figcaption>講者端</figcaption></figure><figure class="scr"><img src="g/tr-2.jpg?v=20260928" alt="DC Translator：定價方案" width="560" height="1120" loading="lazy"><figcaption>定價方案</figcaption></figure><figure class="scr"><img src="g/tr-3.jpg?v=20260928" alt="DC Translator：教會用例頁" width="560" height="1120" loading="lazy"><figcaption>教會用例頁</figcaption></figure></div>
+        </article>
+        <article class="case" id="image-host">
+          <div class="cap">
+            <div><span class="tag">圖片託管</span><h3>圖床</h3><p>上傳圖片取得永久直連網址，可以直接嵌入網站與電商頁面，每張圖都有瀏覽與流量統計。</p></div>
+            <a class="go" href="https://dc-tools.cc/img_host">看圖床 →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="圖床 畫面"><figure class="scr"><img src="g/ih-1.jpg?v=20260928" alt="圖床：帳號與上傳" width="560" height="1120" loading="lazy"><figcaption>帳號與上傳</figcaption></figure><figure class="scr"><img src="g/ih-4.jpg?v=20260928" alt="圖床：上傳紀錄" width="560" height="1120" loading="lazy"><figcaption>上傳紀錄</figcaption></figure><figure class="scr"><img src="g/ih-5.jpg?v=20260928" alt="圖床：單張圖片的流量" width="560" height="1120" loading="lazy"><figcaption>單張圖片的流量</figcaption></figure><figure class="scr"><img src="g/ih-2.jpg?v=20260928" alt="圖床：流量分析" width="560" height="1120" loading="lazy"><figcaption>流量分析</figcaption></figure></div>
+        </article>
+        <article class="case" id="short-url">
+          <div class="cap">
+            <div><span class="tag">連結追蹤</span><h3>短網址</h3><p>把長網址縮短，追蹤每個連結的點擊數、裝置與流量來源。</p></div>
+            <a class="go" href="https://dc-tools.cc/short_url">看短網址 →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="短網址 畫面"><figure class="scr"><img src="g/ih-6.jpg?v=20260928" alt="短網址：短網址清單" width="560" height="1120" loading="lazy"><figcaption>短網址清單</figcaption></figure><figure class="scr"><img src="g/ih-3.jpg?v=20260928" alt="短網址：裝置、瀏覽器與熱門連結" width="560" height="1120" loading="lazy"><figcaption>裝置、瀏覽器與熱門連結</figcaption></figure></div>
+        </article>
+        <article class="case" id="tarot">
+          <div class="cap">
+            <div><span class="tag">塔羅占卜</span><h3>薛丁格的貓</h3><p>每日塔羅與生日牌免費抽，也能帶著牌面發問，由真人塔羅老師錄語音解答。</p></div>
+            <a class="go" href="https://dc-tools.cc/ai_tarot">看塔羅 →</a>
+          </div>
+          <div class="strip" tabindex="0" role="region" aria-label="薛丁格的貓 畫面"><figure class="scr"><img src="g/ta-1.jpg?v=20260928" alt="薛丁格的貓：每日抽牌" width="560" height="1120" loading="lazy"><figcaption>每日抽牌</figcaption></figure><figure class="scr"><img src="g/ta-3.jpg?v=20260928" alt="薛丁格的貓：生日塔羅" width="560" height="1120" loading="lazy"><figcaption>生日塔羅</figcaption></figure><figure class="scr"><img src="g/ta-4.jpg?v=20260928" alt="薛丁格的貓：牌義圖書館" width="560" height="1120" loading="lazy"><figcaption>牌義圖書館</figcaption></figure><figure class="scr"><img src="g/ta-5.jpg?v=20260928" alt="薛丁格的貓：單張牌義" width="560" height="1120" loading="lazy"><figcaption>單張牌義</figcaption></figure><figure class="scr"><img src="g/ta-6.jpg?v=20260928" alt="薛丁格的貓：老師招募" width="560" height="1120" loading="lazy"><figcaption>老師招募</figcaption></figure></div>
+        </article>
       </div>
     </div>
   </section>
@@ -230,7 +276,7 @@ footer a:hover{color:var(--white)}
         <h2 id="contact-title">有想法？寫信給我們</h2>
         <p>簡單說明你想做的事情、目前卡在哪裡，我們會回信跟你約時間聊。</p>
       </div>
-      <a class="mail" href="mailto:dc@dc-tools.cc">dc@dc-tools.cc</a>
+      <a class="mail" href="mailto:dc@dc-studio.cc">dc@dc-studio.cc</a>
     </div>
   </section>
 </main>
@@ -241,5 +287,6 @@ footer a:hover{color:var(--white)}
     <span>本公司與 Marvel、DC Comics 沒有任何關係，名字只是個玩笑。</span>
   </div>
 </footer>
+<script src="/arena.js" defer></script>
 </body>
 </html>

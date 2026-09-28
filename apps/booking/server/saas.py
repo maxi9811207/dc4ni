@@ -438,7 +438,7 @@ def create_checkout(slug: str, plan: str, cycle: str, email: str) -> str:
     pid = _product_for(plan, cycle)
     if not pid or not os.getenv("POLAR_ACCESS_TOKEN"):
         _alert("結帳設定不完整", f"場館 {slug} 選了 {plan}/{cycle}，但沒有對應的 Polar 商品或 API 金鑰")
-        raise HTTPException(503, "付款系統暫時無法使用，請稍後再試或來信 dc@dc-tools.cc")
+        raise HTTPException(503, "付款系統暫時無法使用，請稍後再試或來信 dc@dc-studio.cc")
     success = _root_url(f"/signup/done?t={slug}&checkout_id={{CHECKOUT_ID}}")
     try:
         d = _polar("POST", "/v1/checkouts/", {"products": [pid], "customer_email": email, "metadata": {"tenant": slug, "source": "digital-court"},
@@ -602,7 +602,7 @@ def lead(body: dict, request: Request):
     if body.get("website"):
         return {"ok": True}
     ip = _client_ip(request)
-    _limit(f"lead:{ip}", 5, 3600, "送出太多次了，請稍後再試，或直接寄信到 dc@dc-tools.cc")
+    _limit(f"lead:{ip}", 5, 3600, "送出太多次了，請稍後再試，或直接寄信到 dc@dc-studio.cc")
     clean = lambda k, n: str(body.get(k) or "").strip()[:n]  # noqa: E731
     name, contact = clean("name", 40), clean("contact", 100)
     if not name or not contact:

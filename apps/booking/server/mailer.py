@@ -2,7 +2,7 @@
 
 環境變數：
   RESEND_API_KEY   Resend 的 API 金鑰（沒填就不寄）
-  MAIL_FROM        寄件者，例如  Digital Court <dc@dc-tools.cc>（網域需在 Resend 驗證過）
+  MAIL_FROM        寄件者，例如  Digital Court <dc@dc-studio.cc>（網域需在 Resend 驗證過）
 """
 import json
 import logging
