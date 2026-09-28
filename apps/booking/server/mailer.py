@@ -25,7 +25,7 @@ def _send(to: list[str], subject: str, text: str, reply_to: str | None):
         os.getenv("RESEND_API_URL", "https://api.resend.com/emails"), data=json.dumps(body).encode(), method="POST",
         # Resend 前面有 Cloudflare，urllib 預設的 User-Agent 會被擋
         headers={"Authorization": f"Bearer {os.environ['RESEND_API_KEY']}", "Content-Type": "application/json",
-                 "User-Agent": "DigitalCourt/1.0 (+https://dc-studio.cc)"})
+                 "User-Agent": "DigitalCourt/1.0 (+https://digital-court.cc)"})
     try:
         with urllib.request.urlopen(req, timeout=15) as r:
             log.info("mail sent to %s: %s", to, r.status)

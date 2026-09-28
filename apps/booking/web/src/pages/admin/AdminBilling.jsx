@@ -54,7 +54,7 @@ export default function AdminBilling() {
               </>
             ) : <p className="plan-price">專人報價</p>}
             <ul>{PLAN_FEATURES[k].map((f) => <li key={f}>{f}</li>)}</ul>
-            {k === 'enterprise' && k !== p.plan && <a className="btn btn-small btn-light mt" href="https://dc-studio.cc/#apply" target="_blank" rel="noreferrer">聯絡我們</a>}
+            {k === 'enterprise' && k !== p.plan && <a className="btn btn-small btn-light mt" href="https://digital-court.cc/#apply" target="_blank" rel="noreferrer">聯絡我們</a>}
           </section>
         ))}
       </div>

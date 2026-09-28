@@ -46,6 +46,10 @@ if [ -d "$SRC/apps/booking/landing" ]; then
   rm -rf "$APP/landing" && mv "$APP/landing.new" "$APP/landing"
   chmod -R a+rX "$APP/landing"
 fi
+# DC 工作室首頁（dc-studio.cc/，nginx 直接提供）
+if [ -d "$SRC/apps/booking/deploy/studio" ]; then
+  mkdir -p /var/www/dc-studio && cp -r "$SRC/apps/booking/deploy/studio/." /var/www/dc-studio/ && chmod -R a+rX /var/www/dc-studio
+fi
 # 填 LINE 金鑰的小工具：sudo booking-line-setup
 [ -f "$SRC/apps/booking/deploy/line-setup.sh" ] && install -m 755 "$SRC/apps/booking/deploy/line-setup.sh" /usr/local/sbin/booking-line-setup
 # 自訂網域自動開通（每分鐘檢查一次；紀錄：journalctl -u booking-domains）

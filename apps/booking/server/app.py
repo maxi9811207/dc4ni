@@ -1073,7 +1073,7 @@ LINE_STATE_COOKIE = "line_state"
 
 def with_state_cookie(response, state: str):
     """把這次授權的 state 綁在發起的瀏覽器上；callback 時比對，別人丟來的授權連結（CSRF）會被擋下。"""
-    # 網站可能掛在子路徑（例如 https://dc-studio.cc/active/），cookie 路徑要跟著
+    # 網站可能掛在子路徑（例如 https://digital-court.cc/active/），cookie 路徑要跟著
     prefix = urllib.parse.urlparse(tenancy.current().public_url or "/").path.rstrip("/")
     response.set_cookie(LINE_STATE_COOKIE, state, max_age=1800, httponly=True, samesite="lax",
                         secure=public_base_is_https(), path=f"{prefix}/api/auth/line")
@@ -3035,7 +3035,7 @@ def hide_review(review_id: int, body: dict = Depends(json_body), owner=Depends(r
 
 @app.put("/api/admin/venue-slug")
 def update_venue_slug(body: dict = Depends(json_body), owner=Depends(require_owner)):
-    """改場館網址（dc-studio.cc/<代碼>）。舊網址會自動轉到新網址。"""
+    """改場館網址（digital-court.cc/<代碼>）。舊網址會自動轉到新網址。"""
     return saas.rename_tenant(str(body.get("slug") or ""))
 
 

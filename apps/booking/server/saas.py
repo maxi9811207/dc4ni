@@ -429,7 +429,7 @@ def _polar(method: str, path: str, body: dict | None = None) -> dict:
     base = os.getenv("POLAR_API", "https://api.polar.sh").rstrip("/")
     req = urllib.request.Request(base + path, data=json.dumps(body).encode() if body is not None else None, method=method,
                                  headers={"Authorization": f"Bearer {os.environ['POLAR_ACCESS_TOKEN']}", "Content-Type": "application/json",
-                                          "Accept": "application/json", "User-Agent": "DigitalCourt/1.0 (+https://dc-studio.cc)"})
+                                          "Accept": "application/json", "User-Agent": "DigitalCourt/1.0 (+https://digital-court.cc)"})
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.load(r)
 
@@ -619,7 +619,7 @@ def lead(body: dict, request: Request):
         text = "\n".join([f"有人在 Digital Court 首頁留言詢問（#{lead_id}，{_stamp().replace('T', ' ')}）", "",
                           f"稱呼：{name}", f"聯絡方式：{contact}", f"場館或球團：{org or '（未填）'}", f"規模：{size or '（未填）'}",
                           f"想用的功能：{needs or '（未填）'}", "", "想說的話：", message or "（未填）", "",
-                          "—", "這封信由 dc-studio.cc 自動寄出。" + ("直接回覆就會寄給對方。" if email else "")])
+                          "—", "這封信由 digital-court.cc 自動寄出。" + ("直接回覆就會寄給對方。" if email else "")])
         mailer.send(to, f"【Digital Court】新的詢問：{name}" + (f"（{org}）" if org else ""), text,
                     reply_to=email.group(0) if email else None)
     return {"ok": True}
@@ -633,7 +633,7 @@ def report(body: dict, request: Request):
     reason = str(body.get("reason") or "").strip()[:1000]
     if not url or not reason:
         raise HTTPException(400, "請填寫網址與原因")
-    m = re.search(r"dc-studio\.cc/([a-z0-9-]+)", url)
+    m = re.search(r"(?:digital-court|dc-studio)\.cc/([a-z0-9-]+)", url)
     with tenancy.platform_db() as conn:
         conn.execute("INSERT INTO reports (tenant_slug, url, reason, contact, ip, created_at) VALUES (?,?,?,?,?,?)",
                      (m.group(1) if m else "", url, reason, str(body.get("contact") or "")[:100], ip, _stamp()))
@@ -752,7 +752,7 @@ def set_domain(a: dict, slug: str, body: dict):
     if "domain" not in FEATURES.get(r["plan"], set()):
         raise HTTPException(402, "自訂網域是進階方案以上的功能")
     domain = str(body.get("domain") or "").strip().lower().removeprefix("https://").removeprefix("http://").strip("/")
-    if domain and (not DOMAIN_RE.match(domain) or domain.endswith(("dc-studio.cc", "sslip.io", "nip.io"))):
+    if domain and (not DOMAIN_RE.match(domain) or domain.endswith(("digital-court.cc", "dc-studio.cc", "sslip.io", "nip.io"))):
         raise HTTPException(400, "網域格式不正確，例如 booking.yourclub.tw")
     with tenancy.platform_db() as conn:
         if domain and conn.execute("SELECT 1 FROM tenants WHERE custom_domain=? AND slug!=?", (domain, slug)).fetchone():
@@ -779,7 +779,7 @@ def domain_result(body: dict, request: Request):
     with tenancy.platform_db() as conn:
         acc = conn.execute("SELECT email, name FROM accounts WHERE id=?", (r["account_id"],)).fetchone() if r["account_id"] else None
     if ok:
-        text = (f"你的自訂網域已經開通：https://{domain}/\n\n之後分享給球友的活動連結都會用這個網址，舊的 dc-studio.cc 網址也還能用。\n"
+        text = (f"你的自訂網域已經開通：https://{domain}/\n\n之後分享給球友的活動連結都會用這個網址，舊的 digital-court.cc 網址也還能用。\n"
                 "如果有用 LINE 登入，請到 LINE Developers 把 Callback URL 加上 "
                 f"https://{domain}/api/auth/line/callback（不會設定的話直接回信，我們幫你處理）。\n\nDigital Court")
     else:

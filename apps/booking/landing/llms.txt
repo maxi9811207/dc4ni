@@ -1,6 +1,6 @@
 # Digital Court
 
-> Digital Court（https://dc-studio.cc）是給台灣匹克球團主、教練與場館使用的線上報名與營運系統。場主開活動、把連結分享到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額與候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組與記分都由系統自動處理。球友不需要下載 App。
+> Digital Court（https://digital-court.cc）是給台灣匹克球團主、教練與場館使用的線上報名與營運系統。場主開活動、把連結分享到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額與候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組與記分都由系統自動處理。球友不需要下載 App。
 
 ## 重點事實
 
@@ -13,19 +13,19 @@
 - 通知：報名成功、候補遞補、收款確認、停課、賽程排好、比分待確認都推播到 LINE；開課前一天自動提醒，場主收到明日總覽
 - 缺席（No-show）管理：例如最近 90 天缺席 3 次自動暫停報名 14 天，可免記、解除或手動暫停
 - DUPR：可限制雙打或單打分數範圍；依分數自動分組；賽制有輪換搭檔（每組 4～7 人）、固定搭檔、單打循環；任一方回報比分、對手確認才算數；比分可匯出 CSV（含 DUPR ID）。Digital Court 與 DUPR 官方無隸屬關係
-- 網址：預設提供「dc-studio.cc/場館」；支援自訂網域（場館自己的網址），還沒有網域可協助購買與設定，已有網站或其他報名系統可協助轉移網址與舊連結
+- 網址：預設提供「digital-court.cc/場館」；支援自訂網域（場館自己的網址），還沒有網域可協助購買與設定，已有網站或其他報名系統可協助轉移網址與舊連結
 - 其他：活動短網址與 LINE 分享預覽、可設不公開活動與自訂網址、名單下載 Excel、營收與出席報表、報名名單姓名遮罩
 - 價格（新台幣／月）：輕量 490（建立、查看單次活動與線上報名）、標準 1,490（加收費對帳、課卡、開課前一天 LINE 提醒、缺席管理）、專業 4,900（再加 LINE 推播通知、DUPR 活動、時段預約、報表、名單下載、多位管理員與教練帳號）、進階 12,900（再加多館管理、自訂網域、優先客服與協助搬家）。年繳送一個月（輕量 5,390／標準 16,390／專業 53,900／進階 141,900）。企業方案（含場館專屬 App）專人報價。沒有試用期，註冊付款後自動開通、可隨時取消；付款由 Polar 處理
-- 開始使用：https://dc-studio.cc/signup（Email 驗證碼註冊 → 設定場館網址 → 信用卡訂閱 → 自動開通）
+- 開始使用：https://digital-court.cc/signup（Email 驗證碼註冊 → 設定場館網址 → 信用卡訂閱 → 自動開通）
 
 ## 連結
 
-- 首頁：https://dc-studio.cc/
-- 註冊開通：https://dc-studio.cc/signup
-- 服務條款：https://dc-studio.cc/terms
-- 隱私權政策：https://dc-studio.cc/privacy
+- 首頁：https://digital-court.cc/
+- 註冊開通：https://digital-court.cc/signup
+- 服務條款：https://digital-court.cc/terms
+- 隱私權政策：https://digital-court.cc/privacy
 - 示範場館（都是虛構的，可自由操作）：
-  - 球團俱樂部（單次球敘、固定團課）：https://dc-studio.cc/demo-club/
-  - 教練課（團體課、一對一私人課）：https://dc-studio.cc/demo-coach/
-  - DUPR 比賽／活動報名：https://dc-studio.cc/demo-dupr/
-  - 球館租借預約：https://dc-studio.cc/demo-court/
+  - 球團俱樂部（單次球敘、固定團課）：https://digital-court.cc/demo-club/
+  - 教練課（團體課、一對一私人課）：https://digital-court.cc/demo-coach/
+  - DUPR 比賽／活動報名：https://digital-court.cc/demo-dupr/
+  - 球館租借預約：https://digital-court.cc/demo-court/

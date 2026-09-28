@@ -1,7 +1,7 @@
 // 以目前頁面所在路徑為基準，打包後可掛在任何子路徑下
 export const BASE = new URL('.', window.location.href.split('#')[0]).href
 
-// 同一個網域底下有很多場館（dc-studio.cc/<代碼>/），localStorage 是整個網域共用的，
+// 同一個網域底下有很多場館（digital-court.cc/<代碼>/），localStorage 是整個網域共用的，
 // 登入 token 要依場館路徑分開存，否則在 B 館登入會把 A 館的登入蓋掉。
 const tokenKey = (base) => 'booking-token:' + new URL(base).pathname
 const TOKEN_KEY = tokenKey(BASE)

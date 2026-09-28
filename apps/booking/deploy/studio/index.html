@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>不是漫威有限公司｜DC — AI 顧問・產品顧問・軟體開發</title>
+<meta name="description" content="不是漫威有限公司（DC）：AI 顧問、產品顧問、軟體開發。從想法、產品規劃到上線，陪你把事情做出來。">
+<link rel="canonical" href="https://dc-studio.cc/">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="不是漫威有限公司">
+<meta property="og:title" content="不是漫威有限公司｜DC">
+<meta property="og:description" content="AI 顧問・產品顧問・軟體開發。從想法、產品規劃到上線，陪你把事情做出來。">
+<meta property="og:url" content="https://dc-studio.cc/">
+<meta property="og:image" content="https://dc-studio.cc/og-20260928.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#E4000F">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"Organization","name":"不是漫威有限公司","alternateName":"DC","url":"https://dc-studio.cc/",
+ "logo":"https://dc-studio.cc/logo.svg","email":"dc@dc-tools.cc",
+ "description":"AI 顧問、產品顧問、軟體開發",
+ "makesOffer":[{"@type":"Offer","itemOffered":{"@type":"Service","name":"AI 顧問"}},
+               {"@type":"Offer","itemOffered":{"@type":"Service","name":"產品顧問"}},
+               {"@type":"Offer","itemOffered":{"@type":"Service","name":"軟體開發"}}]}
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* 品牌只有紅與白：刻意只做一套配色，不跟著系統切換深色 */
+:root{
+  --red:#E4000F; --red-deep:#B8000C; --white:#FFFFFF; --paper:#FAF7F6; --ink:#141010; --soft:#6B5F5E; --rule:#EADFDD;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
+  --display:"Archivo Black","Noto Sans TC","PingFang TC",system-ui,sans-serif;
+  color-scheme:light;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--white);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.8}
+h1,h2,h3,p,ul{margin:0}
+img,svg{max-width:100%;display:block}
+a{color:inherit}
+.wrap{max-width:1120px;margin:0 auto;padding-inline:24px}
+a:focus-visible,.btn:focus-visible{outline:3px solid var(--ink);outline-offset:3px}
+
+/* 上方列 */
+.top{position:sticky;top:0;z-index:10;background:var(--white);border-bottom:1px solid var(--rule)}
+.top .wrap{display:flex;align-items:center;gap:20px;padding-block:12px}
+.brand{display:flex;align-items:center;gap:10px;text-decoration:none;font-weight:900;letter-spacing:.02em}
+.brand svg{width:44px;height:auto}
+.nav{display:flex;gap:22px;margin-left:auto;font-size:15px;font-weight:500}
+.nav a{text-decoration:none}
+.nav a:hover{color:var(--red)}
+@media (max-width:720px){.nav{display:none}}
+.btn{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:0 22px;border-radius:0;font-weight:700;font-size:16px;text-decoration:none;border:2px solid currentColor;transition:background .15s,color .15s}
+.btn.red{background:var(--red);color:var(--white);border-color:var(--red)}
+.btn.red:hover{background:var(--red-deep);border-color:var(--red-deep)}
+.btn.white{background:var(--white);color:var(--red);border-color:var(--white)}
+.btn.white:hover{background:transparent;color:var(--white)}
+.btn.line{color:var(--white)}
+.btn.line:hover{background:var(--white);color:var(--red)}
+.top .btn{min-height:40px;padding:0 16px;font-size:14px}
+@media (max-width:720px){.top .btn{margin-left:auto}}
+
+/* 開場：紅色大區塊 */
+.hero{background:var(--red);color:var(--white);overflow:hidden}
+.hero .wrap{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:48px;align-items:center;padding-block:88px 96px}
+.hero .eyebrow{font-size:14px;font-weight:700;letter-spacing:.12em;opacity:.85}
+.hero h1{font-family:var(--sans);font-weight:900;font-size:clamp(42px,6.4vw,84px);line-height:1.12;letter-spacing:.01em;margin-top:14px;text-wrap:balance}
+.hero h1 .en{font-family:var(--display);font-weight:400;letter-spacing:0}
+.hero .lead{font-size:clamp(18px,2vw,21px);margin-top:22px;max-width:30em;opacity:.95}
+.hero .actions{display:flex;flex-wrap:wrap;gap:12px;margin-top:34px}
+.mark{justify-self:end;width:100%;max-width:420px}
+.mark svg{width:100%;height:auto;border:6px solid var(--white);box-shadow:18px 18px 0 var(--red-deep)}
+@media (max-width:860px){
+  .hero .wrap{grid-template-columns:1fr;gap:40px;padding-block:56px 64px}
+  .mark{justify-self:start;max-width:260px;order:-1}
+}
+
+/* 服務項目 */
+section{padding-block:88px}
+.kicker{font-family:var(--display);color:var(--red);font-size:15px;letter-spacing:.08em}
+h2{font-weight:900;font-size:clamp(30px,4.2vw,46px);line-height:1.25;margin-top:10px;text-wrap:balance}
+.services{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;margin-top:44px;border-top:4px solid var(--red)}
+.svc{padding:30px 28px 34px 0}
+.svc + .svc{padding-left:28px;border-left:1px solid var(--rule)}
+.svc h3{font-weight:900;font-size:26px;line-height:1.3}
+.svc h3 .en{display:block;font-family:var(--display);font-size:13px;color:var(--red);letter-spacing:.1em;margin-bottom:6px}
+.svc p{color:var(--soft);margin-top:12px;font-size:16px}
+.svc ul{list-style:none;padding:0;margin-top:18px;display:grid;gap:8px}
+.svc li{font-weight:500;padding-left:18px;position:relative;font-size:16px}
+.svc li::before{content:"";position:absolute;left:0;top:.72em;width:9px;height:9px;background:var(--red)}
+@media (max-width:860px){
+  .services{grid-template-columns:1fr}
+  .svc,.svc + .svc{padding:26px 0;border-left:0;border-bottom:1px solid var(--rule)}
+}
+
+/* 作品 */
+.work{background:var(--paper)}
+.work-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-top:40px}
+.work-item{display:flex;flex-direction:column;background:var(--white);border:1px solid var(--rule);padding:30px;text-decoration:none;transition:border-color .15s}
+.work-item:hover{border-color:var(--red)}
+.work-item .tag{align-self:flex-start;font-size:13px;font-weight:700;color:var(--white);background:var(--red);padding:2px 10px}
+.work-item h3{font-size:26px;font-weight:900;margin-top:16px}
+.work-item p{color:var(--soft);margin-top:8px;flex:1}
+.work-item .go{margin-top:20px;font-weight:700;color:var(--red)}
+@media (max-width:720px){.work-list{grid-template-columns:1fr}}
+
+/* 關於：名字的由來 */
+.about .wrap{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:56px;align-items:start}
+.about .quote{font-weight:900;font-size:clamp(28px,3.6vw,40px);line-height:1.35;text-wrap:balance}
+.about .quote em{font-style:normal;color:var(--red)}
+.about .body p + p{margin-top:16px}
+.about .body p{font-size:18px}
+.about .sign{margin-top:22px;font-weight:700}
+@media (max-width:860px){.about .wrap{grid-template-columns:1fr;gap:28px}}
+
+/* 聯絡 */
+.contact{background:var(--red);color:var(--white)}
+.contact .wrap{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:28px}
+.contact h2{color:var(--white)}
+.contact p{margin-top:12px;font-size:18px;opacity:.95;max-width:30em}
+.contact .mail{font-family:var(--display);font-size:clamp(22px,3vw,34px);color:var(--white);text-decoration:none;border-bottom:3px solid var(--white);user-select:all;word-break:break-all}
+.contact .mail:hover{border-bottom-color:transparent}
+
+footer{background:var(--ink);color:#CFC6C5;font-size:14px}
+footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px 24px;padding-block:28px}
+footer a{text-decoration:none}
+footer a:hover{color:var(--white)}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="brand" href="#top" aria-label="不是漫威有限公司 首頁">
+      <svg viewBox="0 0 144 100" aria-hidden="true"><rect width="144" height="100" fill="#E4000F"/><path fill="#fff" fill-rule="evenodd" d="M13 10H52Q70 10 70 30V70Q70 90 52 90H13ZM34 25H44Q51 25 51 34V66Q51 75 44 75H34Z"/><path fill="#fff" d="M96 8H110Q131 8 131 30V40H112V30Q112 23 104 23Q96 23 96 30V70Q96 77 104 77Q112 77 112 70V60H131V70Q131 92 110 92H96Q74 92 74 70V30Q74 8 96 8Z"/></svg>
+      <span>不是漫威有限公司</span>
+    </a>
+    <nav class="nav" aria-label="主選單">
+      <a href="#services">服務項目</a>
+      <a href="#work">作品</a>
+      <a href="#about">關於</a>
+    </nav>
+    <a class="btn red" href="#contact">聯絡我們</a>
+  </div>
+</header>
+
+<main id="top">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="eyebrow">AI 顧問・產品顧問・軟體開發</p>
+        <h1 id="hero-title">不是漫威，<br>是 <span class="en">DC</span>。</h1>
+        <p class="lead">從一個想法、產品規劃，到真正上線給人用。需要懂 AI、懂產品，也能動手寫程式的夥伴，就是我們。</p>
+        <div class="actions">
+          <a class="btn white" href="#contact">聊聊你的專案</a>
+          <a class="btn line" href="#work">看看作品</a>
+        </div>
+      </div>
+      <div class="mark" aria-hidden="true">
+        <svg viewBox="0 0 144 100"><rect width="144" height="100" fill="#E4000F"/><path fill="#fff" fill-rule="evenodd" d="M13 10H52Q70 10 70 30V70Q70 90 52 90H13ZM34 25H44Q51 25 51 34V66Q51 75 44 75H34Z"/><path fill="#fff" d="M96 8H110Q131 8 131 30V40H112V30Q112 23 104 23Q96 23 96 30V70Q96 77 104 77Q112 77 112 70V60H131V70Q131 92 110 92H96Q74 92 74 70V30Q74 8 96 8Z"/></svg>
+      </div>
+    </div>
+  </section>
+
+  <section id="services" aria-labelledby="services-title">
+    <div class="wrap">
+      <p class="kicker">SERVICES</p>
+      <h2 id="services-title">我們可以幫你做什麼</h2>
+      <div class="services">
+        <div class="svc">
+          <h3><span class="en">AI CONSULTING</span>AI 顧問</h3>
+          <p>AI 能幫上哪裡、該從哪裡開始、值不值得做，先想清楚再投入。</p>
+          <ul><li>AI 導入評估與規劃</li><li>流程自動化、AI 助理</li><li>大型語言模型應用開發</li></ul>
+        </div>
+        <div class="svc">
+          <h3><span class="en">PRODUCT</span>產品顧問</h3>
+          <p>把想法變成做得出來、有人要用的產品：先驗證，再做對的東西。</p>
+          <ul><li>產品策略與定位</li><li>MVP 規劃與功能取捨</li><li>使用流程與介面設計</li></ul>
+        </div>
+        <div class="svc">
+          <h3><span class="en">DEVELOPMENT</span>軟體開發</h3>
+          <p>從網站到完整的服務，一路做到上線，上線之後也持續維護。</p>
+          <ul><li>官網、Web App</li><li>LINE 登入與推播、金流串接</li><li>雲端部署與維運</li></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="work" class="work" aria-labelledby="work-title">
+    <div class="wrap">
+      <p class="kicker">WORK</p>
+      <h2 id="work-title">我們做的東西</h2>
+      <div class="work-list">
+        <a class="work-item" href="https://digital-court.cc/">
+          <span class="tag">旗下產品</span>
+          <h3>Digital Court</h3>
+          <p>匹克球的報名與場館預約系統：開團、收費對帳、候補、DUPR 賽事、場地租借，一個連結就搞定。</p>
+          <span class="go">digital-court.cc →</span>
+        </a>
+        <a class="work-item" href="/dc/">
+          <span class="tag">作品集</span>
+          <h3>更多作品</h3>
+          <p>預約系統、官網、即時翻譯、圖床等產品與網站，每一個都附上實際畫面。</p>
+          <span class="go">看作品集 →</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section id="about" class="about" aria-labelledby="about-title">
+    <div class="wrap">
+      <h2 id="about-title" class="quote">我很喜歡漫威電影，<br>但我叫 <em>DC</em>。</h2>
+      <div class="body">
+        <p>所以公司就叫「不是漫威」。名字是個玩笑，做的事情很認真。</p>
+        <p>我是 DC，一間 AI 新創公司的產品總監，也是一個獨立開發者。從產品規劃、介面設計到寫程式、部署上線，都自己來，所以很清楚一個產品從想法到有人用，中間會卡在哪裡。</p>
+        <p class="sign">— DC，不是漫威有限公司</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="contact" aria-labelledby="contact-title">
+    <div class="wrap">
+      <div>
+        <p class="kicker" style="color:#fff;opacity:.85">CONTACT</p>
+        <h2 id="contact-title">有想法？寫信給我們</h2>
+        <p>簡單說明你想做的事情、目前卡在哪裡，我們會回信跟你約時間聊。</p>
+      </div>
+      <a class="mail" href="mailto:dc@dc-tools.cc">dc@dc-tools.cc</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>© 2026 不是漫威有限公司（DC）</span>
+    <span>本公司與 Marvel、DC Comics 沒有任何關係，名字只是個玩笑。</span>
+  </div>
+</footer>
+</body>
+</html>
