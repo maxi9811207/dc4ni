@@ -113,6 +113,8 @@ def venue_info() -> dict:
         "period_end": row.get("period_end", ""), "cancel_at_period_end": bool(row.get("cancel_at_period_end")),
         "billing_cycle": row.get("billing_cycle", "month"),
         "grace_until": _grace_until(row), "account_url": _root_url("/account"),
+        "url": t.public_url, "platform_root": os.getenv("BOOKING_PUBLIC_ROOT", "").rstrip("/"),
+        "can_rename": t.slug != tenancy.DEFAULT_SLUG,
         "feature_plans": {f: feature_plan(f) for f in FEATURE_NAMES},
     }
 
@@ -247,7 +249,21 @@ def slug_status(slug: str) -> dict:
     r = tenant_row(slug)
     if r and not _stale_pending(r):
         return {"ok": False, "reason": "這個網址已經有人用了，換一個試試"}
+    if tenancy.alias_target(slug):
+        return {"ok": False, "reason": "這個網址之前被其他場館用過，換一個試試"}
     return {"ok": True}
+
+
+SLUG_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"  # 去掉容易看錯的 i l o 0 1
+
+
+def auto_slug() -> str:
+    """註冊時自動產生場館網址，例如 club-k7m2q；場主之後可以在後台「場館設定」改。"""
+    for _ in range(50):
+        slug = "club-" + "".join(secrets.choice(SLUG_ALPHABET) for _ in range(5))
+        if slug_status(slug)["ok"] and not tenant_row(slug):
+            return slug
+    raise HTTPException(503, "暫時無法建立場館，請稍後再試")
 
 
 def _stale_pending(r: dict) -> bool:
@@ -261,7 +277,6 @@ def signup(body: dict, request: Request):
     password = str(body.get("password") or "")
     name = str(body.get("name") or "").strip()[:40]
     venue_name = str(body.get("venue_name") or "").strip()[:60]
-    slug = str(body.get("slug") or "").strip().lower()
     plan, cycle = str(body.get("plan") or ""), str(body.get("cycle") or "month")
     if plan not in SELLABLE or cycle not in ("month", "year"):
         raise HTTPException(400, "請選擇方案")
@@ -269,9 +284,7 @@ def signup(body: dict, request: Request):
         raise HTTPException(400, "請填寫你的稱呼與場館名稱")
     if not body.get("agree"):
         raise HTTPException(400, "請先同意服務條款與隱私權政策")
-    st = slug_status(slug)
-    if not st["ok"]:
-        raise HTTPException(400, st["reason"])
+    slug = auto_slug()
     with tenancy.platform_db() as conn:
         a = conn.execute("SELECT * FROM accounts WHERE email=?", (email,)).fetchone()
         if a:
@@ -285,9 +298,6 @@ def signup(body: dict, request: Request):
                 raise HTTPException(400, "驗證碼不正確")
             account_id = conn.execute("INSERT INTO accounts (email, name, phone, password_hash, email_verified, created_at) VALUES (?,?,?,?,1,?)",
                                       (email, name, str(body.get("phone") or "")[:20], core.hash_password(password), _stamp())).lastrowid
-        old = conn.execute("SELECT * FROM tenants WHERE slug=?", (slug,)).fetchone()
-        if old:  # 別人放著沒付款的網址
-            conn.execute("DELETE FROM tenants WHERE slug=?", (slug,))
         conn.execute("INSERT INTO tenants (slug, name, data_dir, plan, billing_cycle, status, account_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
                      (slug, venue_name, str(tenancy.new_data_dir(slug)), plan, cycle, "pending", account_id, _stamp()))
         token = _issue_account_token(conn, account_id)
@@ -496,10 +506,15 @@ def apply_event(event_id: str, etype: str, data: dict) -> dict:
             return {"applied": False, "reason": "duplicate"}
         sub_id = data.get("id") if etype.startswith("subscription.") else data.get("subscription_id") or ""
         cust = data.get("customer_id") or (data.get("customer") or {}).get("id") or ""
+        # 先用訂閱編號對（不受場主改網址影響），對不到才用結帳時 metadata 帶的代碼；
+        # 代碼可能已經改名，舊代碼透過 slug_aliases 找到現在的場館
+        r = conn.execute("SELECT * FROM tenants WHERE polar_subscription_id=?", (sub_id,)).fetchone() if sub_id else None
         slug = str(meta.get("tenant") or "")
-        r = conn.execute("SELECT * FROM tenants WHERE slug=?", (slug,)).fetchone() if slug else None
-        if not r and sub_id:
-            r = conn.execute("SELECT * FROM tenants WHERE polar_subscription_id=?", (sub_id,)).fetchone()
+        if not r and slug:
+            r = conn.execute("SELECT * FROM tenants WHERE slug=?", (slug,)).fetchone()
+            if not r:
+                a = conn.execute("SELECT slug FROM slug_aliases WHERE old_slug=?", (slug,)).fetchone()
+                r = conn.execute("SELECT * FROM tenants WHERE slug=?", (a[0],)).fetchone() if a else None
         if not r:
             conn.execute("INSERT INTO payment_events VALUES (?,?,?,?,?)", (event_id or secrets.token_hex(8), etype, "", "unmatched", _stamp()))
             _alert("付款對不到場館", f"{etype} 商品 {plan}/{cycle}，訂閱 {sub_id}、顧客 {cust}，metadata={meta}")
@@ -563,7 +578,7 @@ def _welcome(slug: str, account: dict):
     url = (t.public_url + "/") if t and t.public_url else ""
     mailer.send(account["email"], "【Digital Court】你的場館開好了",
                 f"{account.get('name') or ''} 你好：\n\n你的場館已經開通，方案：{PLANS[t.plan]['name']}。\n\n"
-                f"・場館網址（分享給球友）：{url}\n・進入後台：{_root_url('/account')} 登入後按「進入後台」\n\n"
+                f"・場館網址（分享給球友）：{url}\n　想換成好記的名字，到後台「場館設定」就能改\n・進入後台：{_root_url('/account')} 登入後按「進入後台」\n\n"
                 "第一次進後台，照著「開站步驟」設定場館名稱與介紹、建立第一個活動，再把報名連結貼到 LINE 群組就可以開始報名了。\n\n"
                 "有任何問題直接回覆這封信。\n\nDigital Court")
 
@@ -691,6 +706,40 @@ def admin_update_tenant(slug: str, body: dict):
             a = conn.execute("SELECT * FROM accounts WHERE id=?", (r["account_id"],)).fetchone()
         provision(slug, dict(a) if a else {})
     return {"ok": True}
+
+
+# ---------------------------------------------------------------- 改場館網址
+
+def rename_tenant(new_slug: str) -> dict:
+    """場主在後台改自己的場館網址。舊網址記進 slug_aliases：舊連結會轉到新網址，舊代碼也不會被別人拿走。"""
+    t = tenancy.current()
+    new_slug = (new_slug or "").strip().lower()
+    if t.slug == tenancy.DEFAULT_SLUG:
+        raise HTTPException(400, "示範場館的網址不能改")
+    if new_slug == t.slug:
+        return {"ok": True, "slug": t.slug, "url": t.public_url}
+    problem = tenancy.slug_problem(new_slug)
+    if problem:
+        raise HTTPException(400, problem)
+    owner_of_alias = tenancy.alias_target(new_slug)
+    if owner_of_alias and owner_of_alias != t.slug:  # 改回自己用過的舊網址可以，別人的不行
+        raise HTTPException(400, "這個網址之前被其他場館用過，換一個試試")
+    _limit(f"rename:{t.slug}", 5, 86400, "網址一天最多改 5 次，請明天再試")
+    with tenancy.platform_db() as conn:
+        taken = conn.execute("SELECT * FROM tenants WHERE slug=?", (new_slug,)).fetchone()
+        if taken and not _stale_pending(dict(taken)):
+            raise HTTPException(400, "這個網址已經有人用了，換一個試試")
+        if taken:  # 別人註冊後一直沒付款的網址
+            conn.execute("DELETE FROM tenants WHERE slug=?", (new_slug,))
+        conn.execute("DELETE FROM slug_aliases WHERE old_slug=?", (new_slug,))
+        conn.execute("UPDATE tenants SET slug=? WHERE slug=?", (new_slug, t.slug))
+        conn.execute("UPDATE slug_aliases SET slug=? WHERE slug=?", (new_slug, t.slug))  # 更早的舊網址也一起指過來
+        conn.execute("INSERT OR REPLACE INTO slug_aliases (old_slug, slug, created_at) VALUES (?,?,?)", (t.slug, new_slug, _stamp()))
+        conn.execute("UPDATE login_links SET tenant_slug=? WHERE tenant_slug=?", (new_slug, t.slug))
+        conn.execute("UPDATE reports SET tenant_slug=? WHERE tenant_slug=?", (new_slug, t.slug))
+    nt = tenancy.get(new_slug)
+    log.info("場館改網址 %s → %s", t.slug, new_slug)
+    return {"ok": True, "slug": new_slug, "url": nt.public_url if nt else ""}
 
 
 # ---------------------------------------------------------------- 自訂網域（進階方案）

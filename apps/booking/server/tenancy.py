@@ -16,6 +16,7 @@ import contextvars
 import os
 import re
 import sqlite3
+import urllib.parse
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -117,6 +118,8 @@ CREATE TABLE IF NOT EXISTS leads (
   id INTEGER PRIMARY KEY, name TEXT NOT NULL, contact TEXT NOT NULL, org TEXT NOT NULL DEFAULT '', size TEXT NOT NULL DEFAULT '',
   needs TEXT NOT NULL DEFAULT '', message TEXT NOT NULL DEFAULT '', ip TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new',
   created_at TEXT NOT NULL);
+-- 場主改過的舊網址代碼：舊連結轉到新網址，而且永遠不能再被別的場館拿去用
+CREATE TABLE IF NOT EXISTS slug_aliases (old_slug TEXT PRIMARY KEY, slug TEXT NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY, tenant_slug TEXT NOT NULL, url TEXT NOT NULL, reason TEXT NOT NULL, contact TEXT NOT NULL DEFAULT '',
   ip TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL);
@@ -165,6 +168,16 @@ def get(slug: str) -> Tenant | None:
     finally:
         conn.close()
     return _row_to_tenant(r) if r else None
+
+
+def alias_target(old_slug: str) -> str | None:
+    """舊網址代碼現在指向哪個場館（沒改過名回 None）。"""
+    conn = sqlite3.connect(PLATFORM_DB, timeout=15)
+    try:
+        r = conn.execute("SELECT slug FROM slug_aliases WHERE old_slug=?", (old_slug,)).fetchone()
+    finally:
+        conn.close()
+    return r[0] if r else None
 
 
 def by_domain(host: str) -> Tenant | None:
@@ -228,6 +241,17 @@ class TenantMiddleware:
         tenant = None
         if slug:
             tenant = get(slug)
+            if tenant is None and (new := alias_target(slug)):
+                # 場主改過網址：平台網址上的舊連結永久轉到新網址；
+                # 自訂網域（nginx 設定每分鐘才更新）直接用新場館回應，不轉址
+                root = os.getenv("BOOKING_PUBLIC_ROOT", "").rstrip("/")
+                host = headers.get("host", "").split(":")[0].lower()
+                if root and host == urllib.parse.urlparse(root).hostname:
+                    qs = scope.get("query_string", b"").decode()
+                    loc = f"{root}/{new}{path}" + (f"?{qs}" if qs else "")
+                    code = 301 if scope.get("method", "GET") in ("GET", "HEAD") else 308
+                    return await self._redirect(send, code, loc)
+                tenant = get(new)
             if tenant is None or tenant.status == "pending":
                 return await self._reply(send, *_html(404, "找不到這個場館", "網址可能打錯了，或這個場館還沒開通。"))
         elif not path.startswith(self.PLATFORM_PREFIXES):
@@ -237,6 +261,12 @@ class TenantMiddleware:
             await self.app(scope, receive, send)
         finally:
             _current.reset(token)
+
+    @staticmethod
+    async def _redirect(send, status: int, location: str):
+        await send({"type": "http.response.start", "status": status,
+                    "headers": [(b"location", location.encode()), (b"cache-control", b"no-store")]})
+        await send({"type": "http.response.body", "body": b""})
 
     @staticmethod
     async def _reply(send, status: int, body: bytes):

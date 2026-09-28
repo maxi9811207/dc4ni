@@ -3029,6 +3029,12 @@ def hide_review(review_id: int, body: dict = Depends(json_body), owner=Depends(r
         return {"ok": True}
 
 
+@app.put("/api/admin/venue-slug")
+def update_venue_slug(body: dict = Depends(json_body), owner=Depends(require_owner)):
+    """改場館網址（dc-studio.cc/<代碼>）。舊網址會自動轉到新網址。"""
+    return saas.rename_tenant(str(body.get("slug") or ""))
+
+
 @app.put("/api/admin/settings")
 def update_settings(body: dict = Depends(json_body), owner=Depends(require_owner)):
     b = body

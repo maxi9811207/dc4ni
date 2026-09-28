@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useApp } from '../../App'
-import { api } from '../../api'
+import { api, carryTokenTo } from '../../api'
 import ImageInput from '../../components/ImageInput'
 import { Field, UpgradeNote } from '../../components/ui'
 import { planOf } from '../../util'
@@ -33,6 +33,7 @@ export default function AdminSettings() {
 
   return (
     <>
+    {venue?.platform?.can_rename && <VenueUrlEditor venue={venue} />}
     <form className="card form" onSubmit={save}>
       <h3 className="card-title">場館資訊</h3>
       <Field label="場館名稱"><input className="input" value={form.name} onChange={set('name')} required /></Field>
@@ -93,6 +94,44 @@ export default function AdminSettings() {
     </form>
     <BranchManager />
     </>
+  )
+}
+
+// 場館網址：註冊時自動產生（例如 club-k7m2q），場主可以改成好記的名字。
+// 舊網址會自動轉到新網址，已經分享出去的活動連結不會斷。
+function VenueUrlEditor({ venue }) {
+  const { handleError } = useApp()
+  const p = venue.platform
+  const [slug, setSlug] = useState(p.slug)
+  const [saving, setSaving] = useState(false)
+  const root = (p.platform_root || '').replace(/^https?:\/\//, '')
+  const clean = (v) => v.toLowerCase().replace(/[\s_]+/g, '-').replace(/[^a-z0-9-]/g, '').replace(/-{2,}/g, '-').slice(0, 30)
+
+  const save = async (e) => {
+    e.preventDefault()
+    if (slug === p.slug) return
+    setSaving(true)
+    try {
+      const r = await api('admin/venue-slug', { method: 'PUT', body: { slug } })
+      const next = r.url.replace(/\/?$/, '/')
+      carryTokenTo(next)
+      window.location.href = next + '#/admin/settings'
+    } catch (err) { handleError(err); setSaving(false) }
+  }
+
+  return (
+    <form className="card form" onSubmit={save}>
+      <h3 className="card-title">場館網址</h3>
+      <Field label="網址" hint="3～30 碼小寫英文、數字或連字號。改了之後舊網址會自動轉到新網址，已經分享的連結不會失效。">
+        <div className="slug-input">
+          <span className="muted">{root}/</span>
+          <input className="input" value={slug} onChange={(e) => setSlug(clean(e.target.value))}
+            autoCapitalize="off" spellCheck="false" required minLength={3} />
+        </div>
+      </Field>
+      {venue.platform.url && <p className="muted small">目前網址：{venue.platform.url.replace(/^https?:\/\//, '')}</p>}
+      <button className="btn btn-block" disabled={saving || slug === p.slug || slug.length < 3}>{saving ? '更新中…' : '改成這個網址'}</button>
+    </form>
   )
 }
 

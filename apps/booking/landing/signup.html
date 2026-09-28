@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>開始使用 Digital Court｜選方案、開你的場館</title>
-<meta name="description" content="三分鐘開好你的匹克球場館：選方案、驗證 Email、設定場館網址，付款後馬上可以開活動、收報名。">
+<meta name="description" content="三分鐘開好你的匹克球場館：選方案、驗證 Email，付款後馬上可以開活動、收報名。">
 <link rel="canonical" href="https://dc-studio.cc/signup">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="/site.css">
@@ -14,7 +14,7 @@
 <main class="narrow">
   <div>
     <h1>開你的場館</h1>
-    <p class="lead">選方案、驗證 Email、設定網址，付款後馬上就能開活動。</p>
+    <p class="lead">選方案、驗證 Email，付款後馬上就能開活動。</p>
   </div>
 
   <form id="f" novalidate>
@@ -42,10 +42,7 @@
     <section class="card">
       <p class="step">3　你的場館</p>
       <label>場館或球團名稱 <input name="venue_name" maxlength="60" required placeholder="例：中和週六球敘團"></label>
-      <label>場館網址 <small>3～30 碼小寫英文、數字或連字號，之後分享給球友就是這個網址</small>
-        <div class="slug"><span>dc-studio.cc/</span><input name="slug" required maxlength="30" autocapitalize="off" spellcheck="false" placeholder="zhonghe-club"></div>
-      </label>
-      <p class="hint" id="slug-msg"></p>
+      <p class="hint">場館網址會自動產生，開通後可以在後台「場館設定」改成你想要的名字。</p>
       <label class="check"><input type="checkbox" name="agree"> <span>我已閱讀並同意 <a href="/terms" target="_blank">服務條款</a> 與 <a href="/privacy" target="_blank">隱私權政策</a></span></label>
     </section>
 
@@ -92,25 +89,11 @@
     }).catch(function (e) { DC.msg(msg, e.message) })
   })
 
-  var slugMsg = DC.$('#slug-msg'), timer
-  f.slug.addEventListener('input', function () {
-    f.slug.value = f.slug.value.toLowerCase().replace(/[^a-z0-9-]/g, '')
-    clearTimeout(timer)
-    var v = f.slug.value
-    if (v.length < 3) { slugMsg.textContent = ''; return }
-    timer = setTimeout(function () {
-      DC.api('slug/' + encodeURIComponent(v)).then(function (d) {
-        slugMsg.textContent = d.ok ? '✓ dc-studio.cc/' + v + ' 可以使用' : d.reason
-        slugMsg.style.color = d.ok ? 'var(--g)' : 'var(--warn)'
-      })
-    }, 300)
-  })
-
   f.addEventListener('submit', function (e) {
     e.preventDefault()
     var b = { email: f.email.value, code: f.code.value, password: f.password.value, name: f.name.value, phone: f.phone.value,
-      venue_name: f.venue_name.value, slug: f.slug.value, plan: st.plan, cycle: st.cycle, agree: f.agree.checked }
-    if (!b.email || !b.password || !b.name || !b.venue_name || !b.slug) return DC.msg(msg, '請填完 Email、密碼、稱呼、場館名稱與網址')
+      venue_name: f.venue_name.value, plan: st.plan, cycle: st.cycle, agree: f.agree.checked }
+    if (!b.email || !b.password || !b.name || !b.venue_name) return DC.msg(msg, '請填完 Email、密碼、稱呼與場館名稱')
     if (!b.agree) return DC.msg(msg, '請先勾選同意服務條款與隱私權政策')
     var go = DC.$('#go'); go.disabled = true; go.textContent = '建立中…'
     DC.api('signup', { method: 'POST', body: b }).then(function (d) {
