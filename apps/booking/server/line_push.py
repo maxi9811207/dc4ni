@@ -10,6 +10,7 @@ import os
 import queue
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API = os.getenv("LINE_MESSAGING_API", "https://api.line.me").rstrip("/")
@@ -46,6 +47,27 @@ def _run():
             _send(to, text)
         finally:
             _queue.task_done()
+
+
+def is_friend(line_user_id: str) -> bool | None:
+    """這個 LINE 使用者有沒有加官方帳號好友（取得不到個人資料＝沒加好友或封鎖）。無法判斷時回 None。"""
+    if not enabled() or not line_user_id:
+        return None
+    req = urllib.request.Request(f"{API}/v2/bot/profile/{urllib.parse.quote(line_user_id)}",
+                                 headers={"Authorization": f"Bearer {os.environ['LINE_MESSAGING_TOKEN']}"})
+    try:
+        with urllib.request.urlopen(req, timeout=6):
+            return True
+    except urllib.error.HTTPError as e:
+        return False if e.code == 404 else None
+    except (urllib.error.URLError, TimeoutError):
+        return None
+
+
+def add_friend_url() -> str:
+    """官方帳號的加好友連結（env LINE_OA_ID，例如 @707oiuhg）。"""
+    oa = os.getenv("LINE_OA_ID", "").strip()
+    return f"https://line.me/R/ti/p/{urllib.parse.quote(oa)}" if oa else ""
 
 
 def push(to: str, text: str):

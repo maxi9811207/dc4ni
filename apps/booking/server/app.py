@@ -1161,6 +1161,14 @@ def line_idtoken(body: dict = Depends(json_body)):
         return {"token": issue_token(conn, u["id"]), "user": public_user(u)}
 
 
+@app.get("/api/me/line-friend")
+def line_friend(user=Depends(require_user)):
+    """會員中心用：沒加官方帳號好友的話，提醒加好友，否則收不到報名、候補、開課提醒的 LINE 通知。"""
+    url = line_push.add_friend_url()
+    friend = line_push.is_friend(user["line_user_id"]) if user["line_user_id"] and url else None
+    return {"friend": friend, "add_url": url}
+
+
 @app.delete("/api/me/line")
 def line_unlink(user=Depends(require_user)):
     if not user["password_hash"]:

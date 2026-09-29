@@ -30,7 +30,9 @@ def authorize_url(redirect_uri: str, state: str, nonce: str, email: bool = True)
     """email=False：channel 還沒申請到 email 權限時，LINE 會回 invalid_scope，改用不含 email 的 scope 重試。"""
     q = {"response_type": "code", "client_id": os.environ["LINE_CHANNEL_ID"], "redirect_uri": redirect_uri,
          "state": state, "scope": "profile openid email" if email else "profile openid", "nonce": nonce,
-         "bot_prompt": "normal"}
+         # 登入後提示加官方帳號好友（要先在 LINE Login channel 連結官方帳號才會出現）：
+         # aggressive＝同意畫面之後另開一頁加好友；normal＝同意畫面上一個勾選框
+         "bot_prompt": os.getenv("LINE_BOT_PROMPT", "aggressive")}
     return AUTH_URL + "?" + urllib.parse.urlencode(q)
 
 

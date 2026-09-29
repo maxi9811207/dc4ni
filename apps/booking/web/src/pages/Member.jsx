@@ -8,6 +8,22 @@ import { blockUntil, cardRemain, money, noshowRule, rating, showDate, showDateTi
 
 const TABS = [['reservations', '我的報名'], ['cards', '我的課卡'], ['attendance', '出席紀錄'], ['dupr', 'DUPR'], ['notifications', '通知'], ['account', '帳號']]
 
+// 用 LINE 登入但沒加官方帳號好友：報名成功、候補遞補、開課提醒都傳不到 LINE，提醒一下
+function LineFriendNote({ user }) {
+  const [info, setInfo] = useState(null)
+  useEffect(() => {
+    if (!user.line_linked) return
+    api('me/line-friend').then(setInfo).catch(() => {})
+  }, [user.id, user.line_linked])
+  if (!info || info.friend !== false || !info.add_url) return null
+  return (
+    <div className="alert info line-friend">
+      <span>加入 LINE 官方帳號好友，報名成功、候補遞補、開課前一天提醒才會傳到你的 LINE。</span>
+      <a className="btn btn-small btn-line" href={info.add_url} target="_blank" rel="noreferrer">加好友</a>
+    </div>
+  )
+}
+
 export default function Member() {
   const { user } = useApp()
   const [params, setParams] = useSearchParams()
@@ -27,6 +43,7 @@ export default function Member() {
           </div>
           {user.role === 'owner' && <Link className="btn btn-small" to="/admin">場主後台</Link>}
         </section>
+        <LineFriendNote user={user} />
         {user.noshow?.blocked && <div className="alert warn">您因{user.noshow.reason || '缺席次數過多'}，報名暫停{blockUntil(user.noshow)}。已報名的活動不受影響。<Link className="strong" to="/me?tab=attendance"> 看紀錄 ›</Link></div>}
         {user.suspended ? <div className="alert danger">您的帳號已被停權，請聯絡場館管理員。{user.suspend_reason && `原因：${user.suspend_reason}`}</div> : null}
         <Chips value={tab} onChange={(t) => setParams({ tab: t }, { replace: true })}

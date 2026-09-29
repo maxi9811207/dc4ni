@@ -875,3 +875,7 @@ button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px
 .slug-input { display: flex; align-items: center; gap: 6px; }
 .slug-input > span { flex: none; font-size: 14px; }
 .slug-input .input { flex: 1; min-width: 0; }
+
+/* 會員中心：提醒加 LINE 官方帳號好友 */
+.line-friend { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.line-friend .btn { flex: none; }
