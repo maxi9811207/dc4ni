@@ -1603,7 +1603,7 @@ def sweeper():
         except Exception:  # noqa: BLE001
             pass
         for t in tenancy.all_with_data():  # 逐館處理；停用的場館不再提醒、釋出名額
-            if t.status not in ("active", "past_due"):
+            if t.status not in ("trial", "active", "past_due"):
                 continue
             jobs = (release_overdue, send_reminders) + ((demo.top_up,) if demo.kind_of(t.slug) else ())
             for job in jobs:

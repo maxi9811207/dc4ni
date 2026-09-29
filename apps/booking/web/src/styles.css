@@ -325,6 +325,7 @@ textarea.input { resize: vertical; }
 .alert { border-radius: 12px; padding: 10px 14px; font-size: 14px; }
 .alert.danger { background: var(--danger-soft); color: var(--danger); }
 .alert.warn { background: var(--warn-soft); color: var(--warn); }
+.alert.info { background: var(--brand-soft); color: var(--brand-dark); }
 .history-foot { display: flex; justify-content: space-between; align-items: center; padding: 6px 6px 0; }
 .member-card { display: flex; flex-direction: column; gap: 4px; border-left: 3px solid var(--brand); }
 .member-card.expired { border-left-color: var(--line-2); opacity: 0.7; }

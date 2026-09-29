@@ -57,6 +57,8 @@ FEATURE_NAMES = {
     "app": "場館專屬 App",
 }
 GRACE_DAYS = 7          # 扣款失敗後的寬限期
+TRIAL_DAYS = 7          # 免費試用天數（不用綁卡）
+TRIAL_PLAN = "advanced"  # 試用期間可以用全部功能
 RETENTION_DAYS = 90     # 停止後保留資料的天數
 
 
@@ -113,10 +115,26 @@ def venue_info() -> dict:
         "period_end": row.get("period_end", ""), "cancel_at_period_end": bool(row.get("cancel_at_period_end")),
         "billing_cycle": row.get("billing_cycle", "month"),
         "grace_until": _grace_until(row), "account_url": _root_url("/account"),
+        **_trial_info(row),
         "url": t.public_url, "platform_root": os.getenv("BOOKING_PUBLIC_ROOT", "").rstrip("/"),
         "can_rename": t.slug != tenancy.DEFAULT_SLUG,
         "feature_plans": {f: feature_plan(f) for f in FEATURE_NAMES},
     }
+
+
+def _day(iso: str | None) -> str:
+    return (iso or "")[:10].replace("-", "/")
+
+
+def _trial_info(row: dict) -> dict:
+    """試用狀態給前端：還剩幾天、是否已經試用結束（還沒付過款）。"""
+    end = row.get("trial_end") or ""
+    left = 0
+    if end and row.get("status") == "trial":
+        secs = (datetime.fromisoformat(end) - core.now()).total_seconds()
+        left = max(0, int(-(-secs // 86400)))  # 無條件進位：剩 1.2 天顯示 2 天
+    return {"trial_end": end, "trial_days_left": left,
+            "trial_expired": bool(end) and row.get("status") == "suspended" and not row.get("polar_subscription_id")}
 
 
 def _grace_until(row: dict) -> str:
@@ -277,7 +295,10 @@ def signup(body: dict, request: Request):
     password = str(body.get("password") or "")
     name = str(body.get("name") or "").strip()[:40]
     venue_name = str(body.get("venue_name") or "").strip()[:60]
+    trial = bool(body.get("trial"))
     plan, cycle = str(body.get("plan") or ""), str(body.get("cycle") or "month")
+    if trial:
+        plan, cycle = TRIAL_PLAN, cycle if cycle in ("month", "year") else "month"
     if plan not in SELLABLE or cycle not in ("month", "year"):
         raise HTTPException(400, "請選擇方案")
     if not name or not venue_name:
@@ -298,9 +319,25 @@ def signup(body: dict, request: Request):
                 raise HTTPException(400, "驗證碼不正確")
             account_id = conn.execute("INSERT INTO accounts (email, name, phone, password_hash, email_verified, created_at) VALUES (?,?,?,?,1,?)",
                                       (email, name, str(body.get("phone") or "")[:20], core.hash_password(password), _stamp())).lastrowid
-        conn.execute("INSERT INTO tenants (slug, name, data_dir, plan, billing_cycle, status, account_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
-                     (slug, venue_name, str(tenancy.new_data_dir(slug)), plan, cycle, "pending", account_id, _stamp()))
+        if trial:
+            used = conn.execute("SELECT trial_used FROM accounts WHERE id=?", (account_id,)).fetchone()[0]
+            if used:
+                raise HTTPException(400, "這個帳號已經用過免費試用了，請直接選方案訂閱")
+            end = (core.now() + timedelta(days=TRIAL_DAYS)).isoformat(timespec="seconds")
+            conn.execute("INSERT INTO tenants (slug, name, data_dir, plan, billing_cycle, status, account_id, created_at, activated_at, trial_end)"
+                         " VALUES (?,?,?,?,?,?,?,?,?,?)",
+                         (slug, venue_name, str(tenancy.new_data_dir(slug)), plan, cycle, "trial", account_id, _stamp(), _stamp(), end))
+            conn.execute("UPDATE accounts SET trial_used=1 WHERE id=?", (account_id,))
+        else:
+            conn.execute("INSERT INTO tenants (slug, name, data_dir, plan, billing_cycle, status, account_id, created_at) VALUES (?,?,?,?,?,?,?,?)",
+                         (slug, venue_name, str(tenancy.new_data_dir(slug)), plan, cycle, "pending", account_id, _stamp()))
         token = _issue_account_token(conn, account_id)
+        account = dict(conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone())
+    if trial:
+        provision(slug, account)
+        _welcome(slug, account)
+        _alert("有人開始免費試用", f"{slug}（{venue_name}），{email}")
+        return {"token": token, "slug": slug, "trial": True, "trial_end": end}
     url = create_checkout(slug, plan, cycle, email)
     return {"token": token, "checkout_url": url, "slug": slug}
 
@@ -339,6 +376,7 @@ def tenant_view(r: dict) -> dict:
         "plan_name": PLANS.get(r["plan"], {}).get("name", r["plan"]), "url": url + "/" if url else "",
         "grace_until": _grace_until(r), "price": PLANS.get(r["plan"], {}).get(r["billing_cycle"], 0),
         "features": sorted(FEATURES.get(r["plan"], set())),
+        **_trial_info(r),
     }
 
 
@@ -576,8 +614,13 @@ def _welcome(slug: str, account: dict):
         return
     t = tenancy.get(slug)
     url = (t.public_url + "/") if t and t.public_url else ""
-    mailer.send(account["email"], "【Digital Court】你的場館開好了",
-                f"{account.get('name') or ''} 你好：\n\n你的場館已經開通，方案：{PLANS[t.plan]['name']}。\n\n"
+    r = tenant_row(slug) or {}
+    trial = r.get("status") == "trial"
+    head = (f"你的場館已經開通，可以免費試用 {TRIAL_DAYS} 天（到 {_day(r.get('trial_end'))}），試用期間全部功能都能用。"
+            f"想繼續用的話，到期前到 {_root_url('/account')} 選方案訂閱就好；沒訂閱也不會扣款。"
+            if trial else f"你的場館已經開通，方案：{PLANS[t.plan]['name']}。")
+    mailer.send(account["email"], "【Digital Court】你的場館開好了" + ("（免費試用 7 天）" if trial else ""),
+                f"{account.get('name') or ''} 你好：\n\n{head}\n\n"
                 f"・場館網址（分享給球友）：{url}\n　想換成好記的名字，到後台「場館設定」就能改\n・進入後台：{_root_url('/account')} 登入後按「進入後台」\n\n"
                 "第一次進後台，照著「開站步驟」設定場館名稱與介紹、建立第一個活動，再把報名連結貼到 LINE 群組就可以開始報名了。\n\n"
                 "有任何問題直接回覆這封信。\n\nDigital Court")
@@ -591,9 +634,33 @@ def sweep():
                               ((now - timedelta(days=GRACE_DAYS)).isoformat(timespec="seconds"),)).fetchall():
             conn.execute("UPDATE tenants SET status='suspended' WHERE slug=?", (r["slug"],))
             _alert("場館因扣款失敗暫停", f"{r['slug']}（{r['name']}）")
+        soon = (now + timedelta(days=2)).isoformat(timespec="seconds")
+        expired, remind = [], []
+        for r in conn.execute("SELECT t.*, a.email, a.name AS owner_name FROM tenants t LEFT JOIN accounts a ON a.id=t.account_id"
+                              " WHERE t.status='trial' AND t.trial_end!=''").fetchall():
+            r = dict(r)
+            if r["trial_end"] <= now.isoformat(timespec="seconds"):
+                conn.execute("UPDATE tenants SET status='suspended', trial_notice=2 WHERE slug=?", (r["slug"],))
+                expired.append(r)
+            elif r["trial_end"] <= soon and r["trial_notice"] < 1:
+                conn.execute("UPDATE tenants SET trial_notice=1 WHERE slug=?", (r["slug"],))
+                remind.append(r)
         for r in conn.execute("SELECT * FROM tenants WHERE status='pending' AND created_at<?",
                               ((now - timedelta(days=7)).isoformat(timespec="seconds"),)).fetchall():
             conn.execute("DELETE FROM tenants WHERE slug=?", (r["slug"],))  # 註冊一週都沒付款：釋出網址（沒有資料）
+    for r in remind:
+        if r.get("email"):
+            mailer.send(r["email"], "【Digital Court】免費試用再 2 天就結束了",
+                        f"{r.get('owner_name') or ''} 你好：\n\n你的場館「{r['name']}」的免費試用到 {_day(r['trial_end'])} 結束。\n\n"
+                        f"想繼續用的話，到 {_root_url('/account')} 登入後按「選方案訂閱」。活動、會員、報名資料都會保留，訂閱後照常使用。\n\n"
+                        "沒有訂閱也不會扣款，試用結束後場館會變成只能查看。\n\nDigital Court")
+    for r in expired:
+        _alert("免費試用結束", f"{r['slug']}（{r['name']}）{r.get('email') or ''}")
+        if r.get("email"):
+            mailer.send(r["email"], "【Digital Court】免費試用結束了",
+                        f"{r.get('owner_name') or ''} 你好：\n\n你的場館「{r['name']}」的 {TRIAL_DAYS} 天免費試用已經結束，"
+                        "目前後台只能查看、球友暫時不能報名。所有資料都還在。\n\n"
+                        f"到 {_root_url('/account')} 登入後按「選方案訂閱」，付款後馬上恢復。\n\nDigital Court")
 
 
 # ---------------------------------------------------------------- 開通申請、檢舉
@@ -694,6 +761,9 @@ def admin_update_tenant(slug: str, body: dict):
         upd["status"] = body["status"]
     if body.get("plan") in PLANS:
         upd["plan"] = body["plan"]
+    if body.get("trial_days"):  # 延長（或重新給）試用：從今天起算 N 天
+        days = max(1, min(90, int(body["trial_days"])))
+        upd.update(status="trial", trial_end=(core.now() + timedelta(days=days)).isoformat(timespec="seconds"), trial_notice=0)
     if "comp" in body:
         upd["comp"] = 1 if body["comp"] else 0
     if "domain_status" in body and body["domain_status"] in ("", "pending", "approved", "active", "failed"):

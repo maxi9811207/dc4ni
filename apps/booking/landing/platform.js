@@ -20,6 +20,6 @@ window.DC = (function () {
   function money(n) { return 'NT$ ' + Number(n || 0).toLocaleString() }
   function day(s) { return s ? String(s).slice(0, 10).replace(/-/g, '/') : '' }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] }) }
-  var STATUS = { pending: '待付款', active: '使用中', past_due: '扣款失敗', suspended: '已暫停', cancelled: '已停止' }
+  var STATUS = { pending: '待付款', trial: '試用中', active: '使用中', past_due: '扣款失敗', suspended: '已暫停', cancelled: '已停止' }
   return { api: api, token: token, setToken: setToken, msg: msg, $: $, money: money, day: day, esc: esc, STATUS: STATUS }
 })()

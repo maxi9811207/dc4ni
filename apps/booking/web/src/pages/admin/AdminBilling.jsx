@@ -3,7 +3,7 @@ import { Badge } from '../../components/ui'
 import { FEATURE_NAMES, PLAN_NAMES, planOf } from '../../util'
 
 const STATUS = {
-  active: ['使用中', 'success'], past_due: ['扣款失敗（寬限期）', 'warn'], suspended: ['已暫停', 'danger'], cancelled: ['已停止', 'gray'],
+  trial: ['免費試用中', 'success'], active: ['使用中', 'success'], past_due: ['扣款失敗（寬限期）', 'warn'], suspended: ['已暫停', 'danger'], cancelled: ['已停止', 'gray'],
 }
 const ORDER = ['lite', 'standard', 'pro', 'advanced', 'enterprise']
 const PRICE = { lite: [490, 5390], standard: [1490, 16390], pro: [4900, 53900], advanced: [12900, 141900] }
@@ -32,21 +32,25 @@ export default function AdminBilling() {
           <h3 className="card-title nomargin">目前方案：{p.plan_name}方案</h3>
           <Badge tone={tone}>{label}</Badge>
         </div>
-        {p.comp ? <p className="muted small mt">這個場館由 Digital Court 提供，不需付費。</p> : (
+        {p.status === 'trial' ? (
+          <p className="small mt">免費試用到 {day(p.trial_end)}（還剩 {p.trial_days_left} 天），試用期間全部功能都能用、不會收費。想繼續用，請選方案訂閱。</p>
+        ) : p.trial_expired ? (
+          <p className="alert danger small mt">免費試用已經結束：球友暫時不能報名，後台只能查看與匯出。選方案訂閱後馬上恢復，資料都還在。</p>
+        ) : p.comp ? <p className="muted small mt">這個場館由 Digital Court 提供，不需付費。</p> : (
           <p className="small mt">
             {PRICE[p.plan] ? `${p.billing_cycle === 'year' ? '年繳' : '月繳'} NT$ ${PRICE[p.plan][p.billing_cycle === 'year' ? 1 : 0].toLocaleString()}` : '企業方案（專人報價）'}
             {p.period_end && (p.cancel_at_period_end ? `・將於 ${day(p.period_end)} 停止` : `・下次扣款 ${day(p.period_end)}`)}
           </p>
         )}
         {p.status === 'past_due' && <p className="alert warn small mt">這期扣款沒有成功，請在 {day(p.grace_until)} 前更新付款方式，逾期場館會暫停服務。</p>}
-        {p.paused && <p className="alert danger small mt">場館目前暫停服務：球友不能報名，後台只能查看與匯出。續訂後馬上恢復，資料都還在。</p>}
-        {!p.comp && <a className="btn btn-block mt" href={p.account_url} target="_blank" rel="noreferrer">{p.paused ? '續訂' : '管理訂閱（升級、付款方式、收據）'}</a>}
+        {p.paused && !p.trial_expired && <p className="alert danger small mt">場館目前暫停服務：球友不能報名，後台只能查看與匯出。續訂後馬上恢復，資料都還在。</p>}
+        {!p.comp && <a className="btn btn-block mt" href={p.account_url} target="_blank" rel="noreferrer">{p.status === 'trial' || p.trial_expired ? '選方案訂閱' : p.paused ? '續訂' : '管理訂閱（升級、付款方式、收據）'}</a>}
       </section>
 
       <div className="plan-compare">
         {ORDER.map((k) => (
           <section key={k} className={`card plan-col ${k === p.plan ? 'on' : ''}`}>
-            <div className="row between"><b>{PLAN_NAMES[k]}</b>{k === p.plan && <Badge tone="success">目前方案</Badge>}</div>
+            <div className="row between"><b>{PLAN_NAMES[k]}</b>{k === p.plan && <Badge tone="success">{p.status === 'trial' ? '試用中' : '目前方案'}</Badge>}</div>
             {PRICE[k] ? (
               <>
                 <p className="plan-price">NT$ {PRICE[k][0].toLocaleString()}<span>／月</span></p>

@@ -94,18 +94,19 @@ PLATFORM_SCHEMA = """
 CREATE TABLE IF NOT EXISTS tenants (
   slug TEXT PRIMARY KEY, name TEXT NOT NULL, data_dir TEXT NOT NULL,
   plan TEXT NOT NULL DEFAULT 'lite', billing_cycle TEXT NOT NULL DEFAULT 'month',
-  status TEXT NOT NULL DEFAULT 'pending',        -- pending 等付款／active／past_due／suspended／cancelled
+  status TEXT NOT NULL DEFAULT 'pending',        -- pending 等付款／trial 免費試用／active／past_due／suspended／cancelled
   account_id INTEGER, custom_domain TEXT NOT NULL DEFAULT '', domain_status TEXT NOT NULL DEFAULT '', comp INTEGER NOT NULL DEFAULT 0,
   polar_customer_id TEXT NOT NULL DEFAULT '', polar_subscription_id TEXT NOT NULL DEFAULT '',
   period_end TEXT NOT NULL DEFAULT '', cancel_at_period_end INTEGER NOT NULL DEFAULT 0,
   past_due_since TEXT NOT NULL DEFAULT '', ended_at TEXT NOT NULL DEFAULT '',
-  created_at TEXT NOT NULL, activated_at TEXT NOT NULL DEFAULT '');
+  created_at TEXT NOT NULL, activated_at TEXT NOT NULL DEFAULT '',
+  trial_end TEXT NOT NULL DEFAULT '', trial_notice INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS idx_tenants_customer ON tenants(polar_customer_id);
 CREATE INDEX IF NOT EXISTS idx_tenants_domain ON tenants(custom_domain);
 CREATE TABLE IF NOT EXISTS accounts (
   id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, name TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '',
   password_hash TEXT NOT NULL, email_verified INTEGER NOT NULL DEFAULT 0, is_admin INTEGER NOT NULL DEFAULT 0,
-  created_at TEXT NOT NULL);
+  created_at TEXT NOT NULL, trial_used INTEGER NOT NULL DEFAULT 0);
 CREATE TABLE IF NOT EXISTS account_tokens (token TEXT PRIMARY KEY, account_id INTEGER NOT NULL, created_at TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS email_codes (
   email TEXT PRIMARY KEY, code_hash TEXT NOT NULL, tries INTEGER NOT NULL DEFAULT 0, sent_at TEXT NOT NULL, expires_at TEXT NOT NULL);
@@ -124,6 +125,12 @@ CREATE TABLE IF NOT EXISTS reports (
   id INTEGER PRIMARY KEY, tenant_slug TEXT NOT NULL, url TEXT NOT NULL, reason TEXT NOT NULL, contact TEXT NOT NULL DEFAULT '',
   ip TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'new', created_at TEXT NOT NULL);
 """
+
+# 2026-09-29 七天免費試用
+PLATFORM_MIGRATIONS = {
+    "tenants": {"trial_end": "TEXT NOT NULL DEFAULT ''", "trial_notice": "INTEGER NOT NULL DEFAULT 0"},
+    "accounts": {"trial_used": "INTEGER NOT NULL DEFAULT 0"},
+}
 
 
 @contextmanager
@@ -148,6 +155,12 @@ def init_platform(stamp: str):
     wal.close()
     with platform_db() as conn:
         conn.executescript(PLATFORM_SCHEMA)
+        # 已經建好的資料庫補上後來新增的欄位（附加式，可重複執行）
+        for table, cols in PLATFORM_MIGRATIONS.items():
+            have = {r[1] for r in conn.execute(f"PRAGMA table_info({table})")}
+            for col, ddl in cols.items():
+                if col not in have:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
         conn.execute("UPDATE tenants SET plan='lite' WHERE plan='basic'")  # 2026-09-28 方案改名
         # 升級前的單場館安裝：把原本的資料夾登記成預設場館（資料原地不動、免費進階方案）
         if not conn.execute("SELECT slug FROM tenants WHERE slug=?", (DEFAULT_SLUG,)).fetchone():
@@ -195,7 +208,7 @@ def all_with_data() -> list[Tenant]:
     conn = sqlite3.connect(PLATFORM_DB, timeout=15)
     conn.row_factory = sqlite3.Row
     try:
-        rs = conn.execute("SELECT * FROM tenants WHERE status IN ('active','past_due','suspended','cancelled') ORDER BY slug").fetchall()
+        rs = conn.execute("SELECT * FROM tenants WHERE status IN ('trial','active','past_due','suspended','cancelled') ORDER BY slug").fetchall()
     finally:
         conn.close()
     return [_row_to_tenant(r) for r in rs if (Path(r["data_dir"]) / "booking.db").exists()]

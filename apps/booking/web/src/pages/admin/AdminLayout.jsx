@@ -130,7 +130,10 @@ export default function AdminLayout() {
 
       <main className="page">
         {plan.status === 'past_due' && <a href="#/admin/billing" className="alert warn">這期訂閱扣款失敗，請在 {plan.grace_until?.slice(0, 10).replaceAll('-', '/')} 前更新付款方式 ›</a>}
-        {plan.paused && <a href="#/admin/billing" className="alert danger">場館暫停服務中：球友不能報名，後台只能查看與匯出。續訂後馬上恢復 ›</a>}
+        {plan.status === 'trial' && <a href="#/admin/billing" className={`alert ${plan.trial_days_left <= 2 ? 'warn' : 'info'}`}>免費試用中，還剩 {plan.trial_days_left} 天（到 {plan.trial_end?.slice(0, 10).replaceAll('-', '/')}），全部功能都能用。選方案訂閱 ›</a>}
+        {plan.paused && (plan.trial_expired
+          ? <a href="#/admin/billing" className="alert danger">免費試用已經結束：球友暫時不能報名，後台只能查看。選方案訂閱後馬上恢復，資料都還在 ›</a>
+          : <a href="#/admin/billing" className="alert danger">場館暫停服務中：球友不能報名，後台只能查看與匯出。續訂後馬上恢復 ›</a>)}
         {lockedFeature ? <UpgradeNote feature={FEATURE_NAMES[lockedFeature]} need={plan.needs(lockedFeature)} /> : <Outlet />}
       </main>
     </>
