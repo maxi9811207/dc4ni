@@ -1,0 +1,141 @@
+import { useEffect, useState } from 'react'
+import { Link, Navigate, NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useApp } from '../../App'
+import { UpgradeNote } from '../../components/ui'
+import { FEATURE_NAMES, planOf } from '../../util'
+
+const I = {
+  dashboard: 'M4 20V10M10 20V4M16 20v-7M22 20H2',
+  attendance: 'M9 11l2 2 4-4M5 4h14v16H5z',
+  calendar: 'M4 6h16v14H4zM4 10h16M8 3v4M16 3v4',
+  courses: 'M4 5h16v11H4zM8 20h8M12 16v4',
+  plans: 'M3 7h18v10H3zM3 11h18',
+  members: 'M16 20v-2a4 4 0 0 0-8 0v2M12 12a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z',
+  teachers: 'M9 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM3 20v-1a5 5 0 0 1 10 0v1M16 5a3 3 0 0 1 0 6M21 20v-1a5 5 0 0 0-3-4.6',
+  orders: 'M12 3v18M16 7H10a2.5 2.5 0 0 0 0 5h4a2.5 2.5 0 0 1 0 5H7',
+  reports: 'M3 3v18h18M7 15l4-4 3 3 5-6',
+  reviews: 'M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1-4.4-4.3 6.1-.9z',
+  billing: 'M3 6h18v12H3zM3 10h18M7 15h4',
+  settings: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-2.9 1.2V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-2.9-1.2l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.7 1.7 0 0 0 3 14H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.2-2.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1A1.7 1.7 0 0 0 10 3.1V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 2.9 1.2l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0 1.2 2.9h.1a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z',
+}
+
+// 教練帳號只能用點名、名單、自己的時數
+const COACH_PATHS = [/^\/admin\/attendance/, /^\/admin\/courses\/\d+$/, /^\/admin\/hours/]
+const COACH_MENU = [{ title: '', items: [['/admin/attendance', '出席管理', 'attendance'], ['/admin/hours', '我的時數', 'teachers']] }]
+
+export const MENU = [
+  { title: '', items: [
+    ['/admin', '營運總覽', 'dashboard'],
+    ['/admin/attendance', '出席管理', 'attendance'],
+    ['/admin/calendar', '課表行事曆', 'calendar'],
+    ['/admin/templates', '活動管理', 'courses'],
+    ['/admin/plans', '課卡方案', 'plans', 'cards'],
+    ['/admin/members', '會員管理', 'members'],
+    ['/admin/teachers', '師資團隊', 'teachers'],
+    ['/admin/orders', '付款審核', 'orders', 'fee'],
+    ['/admin/reports', '分析與報表', 'reports', 'reports'],
+    ['/admin/hours', '教練時數', 'teachers', 'staff'],
+    ['/admin/reviews', '評價管理', 'reviews'],
+  ] },
+  { title: '系統設定', items: [
+    ['/admin/settings', '場館設定', 'settings'],
+    ['/admin/billing', '方案與帳單', 'billing'],
+  ] },
+]
+
+function Icon({ name }) {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={I[name]} />
+    </svg>
+  )
+}
+
+function pageTitle(pathname) {
+  if (pathname === '/admin/notifications') return '通知'
+  if (pathname === '/admin/billing') return '方案與帳單'
+  if (pathname === '/admin/hours') return '教練時數'
+  if (/^\/admin\/courses\/new/.test(pathname)) return '建立活動'
+  if (/^\/admin\/courses\/\d+\/edit/.test(pathname)) return '編輯活動'
+  if (/^\/admin\/slots\/\d+\/edit/.test(pathname)) return '時段預約設定'
+  if (/^\/admin\/slots/.test(pathname)) return '時段預約'
+  if (/^\/admin\/courses\/\d+\/event/.test(pathname)) return 'DUPR 賽事'
+  if (/^\/admin\/courses\/\d+/.test(pathname)) return '名單點名'
+  if (pathname === '/admin/courses') return '活動管理'
+  if (pathname === '/admin/templates/new') return '新增課程範本'
+  if (/^\/admin\/templates\/\d+/.test(pathname)) return '編輯課程範本'
+  const item = MENU.flatMap((g) => g.items).filter(([to]) => pathname === to || pathname.startsWith(to + '/'))
+    .sort((a, b) => b[0].length - a[0].length)[0]
+  return item ? item[1] : '場主後台'
+}
+
+export default function AdminLayout() {
+  const { user, venue, refreshUser } = useApp()
+  const { pathname } = useLocation()
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => { setOpen(false); refreshUser() }, [pathname, refreshUser])
+  // 定期更新通知數量
+  useEffect(() => {
+    const t = setInterval(() => refreshUser(), 60000)
+    return () => clearInterval(t)
+  }, [refreshUser])
+
+  if (!user) return <Navigate to="/login" replace state={{ from: pathname }} />
+  if (user.role === 'coach' && !COACH_PATHS.some((rx) => rx.test(pathname))) return <Navigate to="/admin/attendance" replace />
+  if (user.role !== 'owner' && user.role !== 'coach') return <Navigate to="/" replace />
+  const unread = user.admin_unread || 0
+  const plan = planOf(venue)
+  const lockedFeature = MENU.flatMap((g) => g.items).find(([to, , , f]) => f && pathname.startsWith(to) && !plan.has(f))?.[3]
+
+  return (
+    <>
+      <header className="admin-bar">
+        <button className="icon-btn" aria-label="選單" onClick={() => setOpen(true)}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg>
+        </button>
+        <div className="admin-bar-title">
+          <span className="admin-kicker">{venue?.name}</span>
+          <b>{pageTitle(pathname)}</b>
+        </div>
+        <Link to="/admin/notifications" className="icon-btn bell" aria-label={`通知，${unread} 則未讀`}>
+          <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" /></svg>
+          {unread > 0 && <span className="bell-count">{unread > 9 ? '9+' : unread}</span>}
+        </Link>
+      </header>
+
+      {open && <div className="drawer-backdrop" onClick={() => setOpen(false)} />}
+      <aside className={`drawer ${open ? 'open' : ''}`} aria-hidden={!open}>
+        <div className="drawer-head">
+          <p className="drawer-venue">{venue?.name}</p>
+          <p className="drawer-user">{user.name}</p>
+        </div>
+        <nav>
+          {(user.role === 'coach' ? COACH_MENU : MENU).map((g) => (
+            <div key={g.title || 'main'}>
+              {g.title && <p className="drawer-group">{g.title}</p>}
+              {g.items.map(([to, label, icon, feature]) => (
+                <NavLink key={to} to={to} end={to === '/admin'} className={({ isActive }) => `drawer-link ${isActive ? 'active' : ''}`}>
+                  <Icon name={icon} />{label}{feature && !plan.has(feature) && <span className="lock-tag">{plan.needs(feature)}</span>}
+                </NavLink>
+              ))}
+            </div>
+          ))}
+          <Link to="/" className="drawer-link drawer-front">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M15 3h6v6M10 14L21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></svg>
+            查看前台
+          </Link>
+        </nav>
+      </aside>
+
+      <main className="page">
+        {plan.status === 'past_due' && <a href="#/admin/billing" className="alert warn">這期訂閱扣款失敗，請在 {plan.grace_until?.slice(0, 10).replaceAll('-', '/')} 前更新付款方式 ›</a>}
+        {plan.status === 'trial' && <a href="#/admin/billing" className={`alert ${plan.trial_days_left <= 2 ? 'warn' : 'info'}`}>免費試用中，還剩 {plan.trial_days_left} 天（到 {plan.trial_end?.slice(0, 10).replaceAll('-', '/')}），全部功能都能用。選方案訂閱 ›</a>}
+        {plan.paused && (plan.trial_expired
+          ? <a href="#/admin/billing" className="alert danger">免費試用已經結束：球友暫時不能報名，後台只能查看。選方案訂閱後馬上恢復，資料都還在 ›</a>
+          : <a href="#/admin/billing" className="alert danger">場館暫停服務中：球友不能報名，後台只能查看與匯出。續訂後馬上恢復 ›</a>)}
+        {lockedFeature ? <UpgradeNote feature={FEATURE_NAMES[lockedFeature]} need={plan.needs(lockedFeature)} /> : <Outlet />}
+      </main>
+    </>
+  )
+}

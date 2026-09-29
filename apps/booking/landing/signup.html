@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>開始使用 Digital Court｜免費試用 7 天、開你的場館</title>
+<meta name="description" content="三分鐘開好你的匹克球場館：免費試用 7 天、不用信用卡，驗證 Email 就能開活動、收報名。">
+<link rel="canonical" href="https://digital-court.cc/signup">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="/"><img src="/favicon.svg" alt="">Digital Court</a><a class="link" href="/account">登入</a></div></header>
+<main class="narrow">
+  <div>
+    <h1>開你的場館</h1>
+    <p class="lead">先免費試用 7 天，不用信用卡。驗證 Email 後馬上就能開活動。</p>
+  </div>
+
+  <form id="f" novalidate>
+    <section class="card">
+      <p class="step">1　怎麼開始</p>
+      <div class="modes" role="radiogroup" aria-label="開始方式">
+        <label class="mode on"><input type="radio" name="mode" value="trial" checked><b>免費試用 7 天</b><span>不用信用卡，全部功能都能用。到期前選方案訂閱就好，沒訂閱也不會扣款。</span></label>
+        <label class="mode"><input type="radio" name="mode" value="pay"><b>直接訂閱</b><span>選好方案馬上付款，場館立刻開通。</span></label>
+      </div>
+      <div id="pay-part" hidden>
+        <div class="row"><div class="seg" role="group" aria-label="繳費週期"><button type="button" data-cycle="month" class="on">月繳</button><button type="button" data-cycle="year">年繳（送一個月）</button></div></div>
+        <div class="plans" id="plans"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <p class="step">2　你的帳號</p>
+      <label>Email <input name="email" type="email" autocomplete="email" required placeholder="you@example.com"></label>
+      <div class="row">
+        <label class="grow">Email 驗證碼 <small>寄到上面的信箱，15 分鐘內有效</small><input name="code" inputmode="numeric" maxlength="6" placeholder="6 位數字" autocomplete="one-time-code"></label>
+        <button class="btn ghost small" type="button" id="send" style="align-self:flex-end">寄驗證碼</button>
+      </div>
+      <p class="hint">已經有 Digital Court 帳號？驗證碼可以不填，下面輸入原本的密碼即可。</p>
+      <label>密碼 <small>至少 8 碼</small><input name="password" type="password" autocomplete="new-password" minlength="8" required></label>
+      <div class="row">
+        <label class="grow">你的稱呼 <input name="name" autocomplete="name" maxlength="40" required placeholder="例：王教練"></label>
+        <label class="grow">手機 <small>選填</small><input name="phone" autocomplete="tel" inputmode="tel" maxlength="20"></label>
+      </div>
+    </section>
+
+    <section class="card">
+      <p class="step">3　你的場館</p>
+      <label>場館或球團名稱 <input name="venue_name" maxlength="60" required placeholder="例：中和週六球敘團"></label>
+      <p class="hint">場館網址會自動產生，開通後可以在後台「場館設定」改成你想要的名字。</p>
+      <label class="check"><input type="checkbox" name="agree"> <span>我已閱讀並同意 <a href="/terms" target="_blank">服務條款</a> 與 <a href="/privacy" target="_blank">隱私權政策</a></span></label>
+    </section>
+
+    <p class="msg" id="msg" hidden></p>
+    <button class="btn block" type="submit" id="go">開始免費試用</button>
+    <p class="hint" style="text-align:center" id="go-hint">試用期間不會收費；想繼續用再選方案，付款由 Polar 處理，訂閱可以隨時取消。</p>
+  </form>
+</main>
+<footer><a href="/terms">服務條款</a> · <a href="/privacy">隱私權政策</a> · © 2026 Digital Court</footer>
+<script src="/platform.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search)
+  var st = { mode: q.get('mode') === 'pay' ? 'pay' : 'trial', plan: ['lite', 'standard', 'pro', 'advanced'].indexOf(q.get('plan')) >= 0 ? q.get('plan') : 'standard', cycle: q.get('cycle') === 'year' ? 'year' : 'month', plans: [] }
+  var f = DC.$('#f'), msg = DC.$('#msg')
+  var DESC = {
+    lite: ['建立、查看單次活動', '球友線上報名、額滿候補'],
+    standard: ['輕量方案全部功能', '收費對帳（匯款回填後五碼）', '課卡方案、開課前一天提醒', '缺席管理'],
+    pro: ['標準方案全部功能', 'LINE 推播、DUPR 活動、時段預約', '報表、名單下載', '多位管理員與教練帳號'],
+    advanced: ['專業方案全部功能', '多館管理', '自訂網域', '優先客服與協助搬家'],
+  }
+  function draw() {
+    DC.$('#plans').innerHTML = st.plans.map(function (p) {
+      var price = st.cycle === 'year' ? p.year : p.month
+      return '<label class="plan' + (p.key === st.plan ? ' on' : '') + '"><input type="radio" name="plan" value="' + p.key + '"' + (p.key === st.plan ? ' checked' : '') + '>' +
+        '<b>' + DC.esc(p.name) + '</b><span class="price">' + DC.money(price) + '<small>／' + (st.cycle === 'year' ? '年' : '月') + '</small></span>' +
+        (st.cycle === 'year' ? '<span class="hint">每月約 ' + DC.money(Math.round(price / 12)) + '</span>' : '') +
+        '<ul>' + DESC[p.key].map(function (x) { return '<li>' + x + '</li>' }).join('') + '</ul></label>'
+    }).join('')
+    document.querySelectorAll('[data-cycle]').forEach(function (b) { b.classList.toggle('on', b.dataset.cycle === st.cycle) })
+    document.querySelectorAll('.mode').forEach(function (m) { var i = m.querySelector('input'); i.checked = i.value === st.mode; m.classList.toggle('on', i.checked) })
+    DC.$('#pay-part').hidden = st.mode !== 'pay'
+    var sel = st.plans.filter(function (p) { return p.key === st.plan })[0]
+    if (st.mode === 'trial') {
+      DC.$('#go').textContent = '開始免費試用（不用信用卡）'
+      DC.$('#go-hint').textContent = '試用期間不會收費；想繼續用再選方案，付款由 Polar 處理，訂閱可以隨時取消。'
+    } else if (sel) {
+      DC.$('#go').textContent = '前往付款（' + DC.money(st.cycle === 'year' ? sel.year : sel.month) + '／' + (st.cycle === 'year' ? '年' : '月') + '）'
+      DC.$('#go-hint').textContent = '付款由 Polar 處理（支援信用卡），訂閱可以隨時取消。'
+    }
+  }
+  document.querySelectorAll('.mode input').forEach(function (i) { i.addEventListener('change', function () { st.mode = i.value; draw() }) })
+  draw()
+  DC.api('plans').then(function (d) { st.plans = d.plans.filter(function (p) { return d.sellable.indexOf(p.key) >= 0 }); draw() })
+  DC.$('#plans').addEventListener('change', function (e) { if (e.target.name === 'plan') { st.plan = e.target.value; draw() } })
+  document.querySelectorAll('[data-cycle]').forEach(function (b) { b.addEventListener('click', function () { st.cycle = b.dataset.cycle; draw() }) })
+
+  var sendBtn = DC.$('#send'), wait = 0
+  sendBtn.addEventListener('click', function () {
+    DC.api('code', { method: 'POST', body: { email: f.email.value } }).then(function () {
+      DC.msg(msg, '驗證碼已寄出，請到信箱查看（找不到請看垃圾郵件）', 'ok')
+      wait = 60
+      var t = setInterval(function () { wait--; sendBtn.textContent = wait > 0 ? wait + ' 秒後可重寄' : '重寄驗證碼'; sendBtn.disabled = wait > 0; if (wait <= 0) clearInterval(t) }, 1000)
+    }).catch(function (e) { DC.msg(msg, e.message) })
+  })
+
+  f.addEventListener('submit', function (e) {
+    e.preventDefault()
+    var b = { email: f.email.value, code: f.code.value, password: f.password.value, name: f.name.value, phone: f.phone.value,
+      venue_name: f.venue_name.value, plan: st.plan, cycle: st.cycle, agree: f.agree.checked, trial: st.mode === 'trial' }
+    if (!b.email || !b.password || !b.name || !b.venue_name) return DC.msg(msg, '請填完 Email、密碼、稱呼與場館名稱')
+    if (!b.agree) return DC.msg(msg, '請先勾選同意服務條款與隱私權政策')
+    var go = DC.$('#go'); go.disabled = true; go.textContent = '建立中…'
+    DC.api('signup', { method: 'POST', body: b }).then(function (d) {
+      DC.setToken(d.token)
+      try { sessionStorage.setItem('dc-signup-slug', d.slug) } catch (x) { /* 無痕模式 */ }
+      if (!d.trial) { location.href = d.checkout_url; return }
+      // 試用：場館已經開好，直接帶進後台的開站步驟
+      go.textContent = '場館開好了，正在進入後台…'
+      DC.api('tenants/' + d.slug + '/enter', { method: 'POST' }).then(function (e) { location.href = e.url })
+        .catch(function () { location.href = '/account' })
+    }).catch(function (err) { DC.msg(msg, err.message); go.disabled = false; draw() })
+  })
+})()
+</script>
+</body>
+</html>
