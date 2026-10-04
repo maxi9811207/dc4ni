@@ -75,6 +75,8 @@
 <style>
 .rig { display: grid; gap: 10px; background: var(--card); border-radius: var(--r); padding: 16px; }
 .rig svg { width: 100%; height: auto; }
+.steps.two { grid-template-columns: 1fr 1fr; }
+@media (max-width: 480px) { .steps.two { grid-template-columns: 1fr; } }
 .rig figcaption { font-size: 13px; color: var(--muted); text-align: center; }
 </style>
 </head>
@@ -189,15 +191,18 @@
   </section>
 
   <section class="band" aria-labelledby="how-title">
-    <div class="wrap">
-      <p class="eyebrow">怎麼玩</p>
-      <h2 id="how-title">選好遊戲，站上去就開始</h2>
-      <ol class="steps">
+    <div class="wrap split">
+      <div>
+        <p class="eyebrow">怎麼玩</p>
+        <h2 id="how-title">選好遊戲，站上去就開始</h2>
+        <ol class="steps two">
         <li><b>選模式與難度</b><span>訓練或對戰，從入門到專業級。</span></li>
         <li><b>發球機餵球</b><span>依關卡節奏自動送球過來。</span></li>
         <li><b>打向投影目標</b><span>感應器即時判定有沒有打中。</span></li>
         <li><b>即時計分</b><span>分數、命中數馬上顯示在幕上。</span></li>
       </ol>
+      </div>
+      <div class="shot soft"><img src="/img/trainer-scene.webp" alt="球友使用 DC Pickleball 匹克球互動訓練機擊球" width="1536" height="1024" loading="lazy" onerror="this.remove()"><div class="ph" aria-hidden="true"><span class="dc">DC</span><span class="ring"></span><span class="pn"><b>DC Pickleball</b><span>匹克球互動訓練機</span></span></div></div>
     </div>
   </section>
 
