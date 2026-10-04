@@ -69,7 +69,7 @@
     var picker = '<form class="picker" data-pick="' + t.slug + '" hidden><p class="step">選方案</p>' +
       '<div class="row"><select name="plan">' + PLANS.map(function (p) { return '<option value="' + p.key + '"' + (p.key === (t.status === 'trial' || t.trial_expired ? 'standard' : t.plan) ? ' selected' : '') + '>' + DC.esc(p.name) + '方案・' + DC.money(p.month) + '／月</option>' }).join('') + '</select>' +
       '<select name="cycle"><option value="month">月繳</option><option value="year"' + (t.billing_cycle === 'year' ? ' selected' : '') + '>年繳（付 11 個月、送 1 個月）</option></select></div>' +
-      '<button class="btn small">前往付款</button><p class="hint">付款由 Polar 處理（支援信用卡），訂閱可以隨時取消。各方案功能請看 <a href="/#pricing" target="_blank">方案比較</a>。</p></form>'
+      '<button class="btn small">前往付款</button><p class="hint">付款由 Polar 處理（支援信用卡），訂閱可以隨時取消。各方案功能請看 <a href="/booking#pricing" target="_blank">方案比較</a>。</p></form>'
     var domain = ''
     if (t.features.indexOf('domain') >= 0) {
       domain = '<details><summary class="hint" style="cursor:pointer">自訂網域' + (t.custom_domain ? '：' + DC.esc(t.custom_domain) + '（' + ({ pending: '開通中', approved: '等 DNS 生效，自動開通中', active: '已啟用', failed: '開通失敗，請檢查 DNS 後重新儲存' }[t.domain_status] || '') + '）' : '') + '</summary>' +

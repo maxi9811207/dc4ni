@@ -675,19 +675,25 @@ def lead(body: dict, request: Request):
     if not name or not contact:
         raise HTTPException(400, "請填寫稱呼與聯絡方式")
     needs = body.get("needs") if isinstance(body.get("needs"), list) else []
-    needs = "、".join(str(x)[:20] for x in needs[:8])
+    needs = "、".join(str(x)[:20] for x in needs[:16])
     org, size, message = clean("org", 80), clean("size", 30), clean("message", 1000)
+    # 產品頁的洽詢會帶 topic（例如「DC Climb 互動攀岩牆」）與來源網址，存在 needs 前面，後台一眼看得出來
+    topic, page = clean("topic", 40), clean("page", 60)
+    if topic:
+        needs = f"【{topic}】" + needs
     with tenancy.platform_db() as conn:
         lead_id = conn.execute("INSERT INTO leads (name, contact, org, size, needs, message, ip, created_at) VALUES (?,?,?,?,?,?,?,?)",
                                (name, contact, org, size, needs, message, ip, _stamp())).lastrowid
     to = [x.strip() for x in os.getenv("LEAD_EMAIL_TO", "").split(",") if x.strip()]
     if to:
         email = re.search(r"[\w.+-]+@[\w-]+\.[\w.-]+", contact)
-        text = "\n".join([f"有人在 Digital Court 首頁留言詢問（#{lead_id}，{_stamp().replace('T', ' ')}）", "",
-                          f"稱呼：{name}", f"聯絡方式：{contact}", f"場館或球團：{org or '（未填）'}", f"規模：{size or '（未填）'}",
-                          f"想用的功能：{needs or '（未填）'}", "", "想說的話：", message or "（未填）", "",
+        where = f"「{page}」頁" if page and page != "/" else "首頁"
+        text = "\n".join([f"有人在 Digital Court {where}留言詢問（#{lead_id}，{_stamp().replace('T', ' ')}）", "",
+                          f"詢問項目：{topic or '預約系統'}",
+                          f"稱呼：{name}", f"聯絡方式：{contact}", f"場館或單位：{org or '（未填）'}", f"規模／場地類型：{size or '（未填）'}",
+                          f"想了解：{needs or '（未填）'}", "", "想說的話：", message or "（未填）", "",
                           "—", "這封信由 digital-court.cc 自動寄出。" + ("直接回覆就會寄給對方。" if email else "")])
-        mailer.send(to, f"【Digital Court】新的詢問：{name}" + (f"（{org}）" if org else ""), text,
+        mailer.send(to, f"【Digital Court】{topic + '詢價' if topic else '新的詢問'}：{name}" + (f"（{org}）" if org else ""), text,
                     reply_to=email.group(0) if email else None)
     return {"ok": True}
 

@@ -1,8 +1,27 @@
 # Digital Court
 
-> Digital Court（https://digital-court.cc）是給台灣匹克球團主、教練與場館使用的線上報名與營運系統。場主開活動、把連結分享到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額與候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組與記分都由系統自動處理。球友不需要下載 App。
+> Digital Court（https://digital-court.cc）提供互動運動設備與場館預約系統。設備以 Digital Court 品牌在台灣銷售，由 Digital Court 負責安裝、繁體中文內容、保固與維修；另有自行開發的匹克球預約報名系統，給台灣匹克球團主、教練與場館使用。
 
-## 重點事實
+## 產品
+
+- 匹克球預約報名系統（DC Booking）：https://digital-court.cc/booking
+- 匹克球互動訓練機（DC Pickleball）：互動投影＋智能發球機＋擊球感應＋寬約 3 公尺的擊球幕與收球網架，一個人也能練；訓練與對戰模式。https://digital-court.cc/trainer
+- 砸球互動牆（DC BallWall）：丟球打中牆上的投影目標得分，適合親子館、幼兒園、運動中心。https://digital-court.cc/ballwall
+- 互動攀岩牆（DC Climb）：攀岩牆投影遊戲，摸到目標得分、計時比賽。https://digital-court.cc/climb
+- 互動高爾夫模擬器（DC Golf）：室內擊球幕布與投影，練習場與球場模式。https://digital-court.cc/golf
+- 移動互動投影車（DC Mobile）：投影、感應、主機整合在推車上，插電即用的地面互動遊戲。https://digital-court.cc/mobile
+- 地面互動投影（DC Floor）：商場、餐廳、展場的互動地面，室內與戶外防水機型。https://digital-court.cc/floor
+- AR 互動沙桌（DC Sand）：堆沙即時投影出地形、等高線與水流。https://digital-court.cc/sandbox
+- 魔法塗鴉牆（DC Draw）：畫作掃描後在牆上的動畫世界裡動起來。https://digital-court.cc/draw
+- 感統互動教室（DC Sense）：牆面＋地面 L 型互動投影，特教、早療、感統課程使用（非醫療器材）。https://digital-court.cc/sense
+- 沉浸式投影空間（DC Immersive）：牆面、地面、天花板 360 度投影，瑜伽、美容、宴會、展廳。https://digital-court.cc/immersive
+- 設備價格：依數量與配置專人報價；單台也可購買。洽詢：https://digital-court.cc/#contact 或 dc@dc-studio.cc
+
+## 預約報名系統
+
+場主開活動、把連結分享到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額與候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組與記分都由系統自動處理。球友不需要下載 App。
+
+### 重點事實
 
 - 對象：匹克球團主、教練、球館、學校與公司社團（台灣，繁體中文介面）
 - 球友報名：點活動連結 → LINE 一鍵登入（第一次自動建立帳號，也可用手機或 Email）→ 按「報名」
@@ -20,7 +39,8 @@
 
 ## 連結
 
-- 首頁：https://digital-court.cc/
+- 首頁（全部產品）：https://digital-court.cc/
+- 預約報名系統介紹與價格：https://digital-court.cc/booking
 - 註冊開通：https://digital-court.cc/signup
 - 服務條款：https://digital-court.cc/terms
 - 隱私權政策：https://digital-court.cc/privacy

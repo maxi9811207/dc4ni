@@ -32,6 +32,9 @@ RESERVED = {
     "account", "billing", "pricing", "console", "help", "support", "docs", "blog", "about", "terms", "privacy",
     "legal", "status", "mail", "email", "dc", "digitalcourt", "digital-court", "dc-studio", "test", "demo",
     "robots", "sitemap", "favicon", "llms", "og", "e", "s", "t", "null", "undefined", "root", "system",
+    # 品牌站的產品頁（landing/<代碼>.html）與圖片
+    "booking", "trainer", "ballwall", "climb", "golf", "mobile", "floor", "sandbox", "draw", "sense", "immersive",
+    "img", "products", "solutions", "brand",
 }
 
 
