@@ -77,6 +77,12 @@
 .rig svg { width: 100%; height: auto; }
 .steps.two { grid-template-columns: 1fr 1fr; }
 @media (max-width: 480px) { .steps.two { grid-template-columns: 1fr; } }
+.gal-title { font-size: 20px; margin-top: 48px; }
+.gallery { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 16px; }
+.gallery figure { display: grid; gap: 8px; }
+.gallery .shot { border-radius: 12px; }
+.gallery figcaption { font-size: 14px; color: var(--text-2); }
+@media (max-width: 860px) { .gallery { grid-template-columns: 1fr 1fr; } }
 .rig figcaption { font-size: 13px; color: var(--muted); text-align: center; }
 </style>
 </head>
@@ -203,6 +209,11 @@
       </ol>
       </div>
       <div class="shot soft"><img src="/img/trainer-scene.webp" alt="球友使用 DC Pickleball 匹克球互動訓練機擊球" width="1536" height="1024" loading="lazy" onerror="this.remove()"><div class="ph" aria-hidden="true"><span class="dc">DC</span><span class="ring"></span><span class="pn"><b>DC Pickleball</b><span>匹克球互動訓練機</span></span></div></div>
+    </div>
+    <div class="wrap">
+      <h3 class="gal-title">外觀設計</h3>
+      <div class="gallery"><figure><div class="shot"><img src="/img/trainer-side.webp" alt="DC Pickleball 匹克球互動訓練機側面：擊球區與收球槽" loading="lazy"></div><figcaption>側面：擊球區與收球槽</figcaption></figure><figure><div class="shot"><img src="/img/trainer-panel.webp" alt="DC Pickleball 匹克球互動訓練機品牌面板與出球口" loading="lazy"></div><figcaption>品牌面板與出球口</figcaption></figure><figure><div class="shot"><img src="/img/trainer-back.webp" alt="DC Pickleball 匹克球互動訓練機背面：一體成型機櫃" loading="lazy"></div><figcaption>背面：一體成型機櫃</figcaption></figure><figure><div class="shot"><img src="/img/trainer-projector.webp" alt="DC Pickleball 匹克球互動訓練機頂部投影機" loading="lazy"></div><figcaption>頂部投影機</figcaption></figure></div>
+      <p class="note">外觀為設計示意，實際出貨外觀與規格以報價時提供的資料為準。</p>
     </div>
   </section>
 
