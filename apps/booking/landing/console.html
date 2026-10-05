@@ -32,6 +32,11 @@
   </section>
 
   <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>DUPR 分數自動更新</h2><button class="btn small" id="hookBtn" type="button">註冊並訂閱</button></div>
+    <p class="hint">向 DUPR 註冊接收網址，並把所有已用 DUPR 登入綁定的球友訂閱起來，之後分數變動 DUPR 會主動通知我們。重跑一次會重新訂閱全部的人（每人會立刻收到一次現況）。</p>
+    <p class="hint" id="hookMsg"></p>
+  </section>
+  <section class="card">
     <div class="row" style="justify-content:space-between"><h2>DUPR 推廣同意名單</h2><span><button class="btn ghost small" id="optLoad" type="button">載入</button> <button class="btn small" id="optCsv" type="button" disabled>下載 CSV</button></span></div>
     <p class="hint">合約規定每季把同意接收 DUPR 推廣資訊的球友 Email 寄給 DUPR。跨場館彙整，同一個 Email 只列一次，不含示範場館。</p>
     <div class="scroll"><table><thead><tr><th>同意時間</th><th>姓名</th><th>Email</th><th>DUPR ID</th><th>場館</th></tr></thead><tbody id="optins"><tr><td colspan="5" class="hint">按「載入」</td></tr></tbody></table></div>
@@ -82,6 +87,13 @@
     var s = ev.target.closest('select[data-act=plan]'); if (s) upd(s.dataset.slug, { plan: s.value }, '已改成' + PLAN[s.value] + '方案')
   })
   DC.$('#q').addEventListener('input', draw)
+  DC.$('#hookBtn').addEventListener('click', function () {
+    var el = DC.$('#hookMsg'); el.textContent = '處理中…'
+    DC.api('admin/dupr/webhook', { method: 'POST', body: {} }).then(function (d) {
+      el.textContent = (d.registered ? '已註冊 ' + d.url + '，訂閱 ' + d.subscribed + ' 位球友' : '未註冊')
+        + (d.errors && d.errors.length ? '；' + d.errors.join('；') : '')
+    }).catch(function (x) { el.textContent = x.message })
+  })
   var optins = []
   DC.$('#optLoad').addEventListener('click', function () {
     DC.api('admin/dupr-optins').then(function (d) {

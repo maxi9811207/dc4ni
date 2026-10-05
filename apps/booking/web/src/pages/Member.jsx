@@ -3,6 +3,7 @@ import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom'
 import { useApp } from '../App'
 import { api } from '../api'
 import CourseCard from '../components/CourseCard'
+import SupportContact from '../components/SupportContact'
 import { Avatar, Badge, Chips, Empty, Field, Loading, Modal, Stars, TopBar } from '../components/ui'
 import { blockUntil, cardRemain, money, noshowRule, rating, showDate, showDateTime } from '../util'
 
@@ -390,6 +391,7 @@ function DuprSso({ config, user, status, ents, busy, run }) {
         </section>
       )}
       {user.dupr_id && !legacy && <DuprOptin />}
+      <SupportContact topic="dupr" />
       {open && (
         <Modal onClose={() => setOpen(false)}>
           <div className="dupr-sso">

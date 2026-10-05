@@ -287,3 +287,52 @@ def entitlements(user_token: str) -> list[str]:
         for e in ((s.get("entitlements") or {}).get("tournaments") or []):
             out.add(e if isinstance(e, str) else str(e.get("name") or e.get("value") or e))
     return sorted(out)
+
+
+# ---------------------------------------------------------------- 評分 webhook（DUPR 主動通知分數變動）
+# 規定：分數要靠 webhook 保持最新（https://dupr.gitbook.io/dupr-raas/integration-checklist/ratings-and-webhooks）
+
+RATING_TOPIC = "RATING"
+RATING_EVENTS = ("RATING", "RATING_SEED")  # SEED 是訂閱當下 DUPR 立刻回送的現況
+SUBSCRIBE_PATH = "/user/v1.0/subscribe/webhook-event"
+SUBSCRIBE_LIMIT = 100
+
+
+def client_id() -> str:
+    return os.getenv("DUPR_CLIENT_ID", "").strip()
+
+
+def webhook_secret() -> str:
+    return os.getenv("DUPR_WEBHOOK_SECRET", "").strip()
+
+
+def register_webhook(url: str) -> dict:
+    """告訴 DUPR 把分數通知送到這個網址（必須是 HTTPS、且能立刻回 200）。"""
+    return _partner_call("POST", "/v1.0/webhook", {"webhookUrl": url, "topics": [RATING_TOPIC]})
+
+
+def subscribe_ratings(dupr_ids: list[str]) -> None:
+    """訂閱這些球員的分數變動；每筆成功的訂閱 DUPR 會立刻回送一次現況（RATING_SEED）。"""
+    ids = [i for i in dict.fromkeys(dupr_ids) if i]
+    for i in range(0, len(ids), SUBSCRIBE_LIMIT):
+        _partner_call("POST", SUBSCRIBE_PATH, {"duprIds": ids[i:i + SUBSCRIBE_LIMIT], "topic": RATING_TOPIC})
+
+
+def unsubscribe_ratings(dupr_ids: list[str]) -> None:
+    ids = [i for i in dict.fromkeys(dupr_ids) if i]
+    for i in range(0, len(ids), SUBSCRIBE_LIMIT):
+        _partner_call("DELETE", SUBSCRIBE_PATH, {"duprIds": ids[i:i + SUBSCRIBE_LIMIT], "topic": RATING_TOPIC})
+
+
+def parse_rating_event(body: dict) -> dict | None:
+    """把 DUPR 的通知轉成 {dupr_id, doubles, singles, name}；不是分數通知就回 None。
+    分數可能是 "NR"（尚無分數）或 null，_num 會轉成 None。"""
+    if not isinstance(body, dict) or str(body.get("event") or "") not in RATING_EVENTS:
+        return None
+    msg = body.get("message") or {}
+    raw = str(msg.get("duprId") or "").strip().upper()
+    if not DUPR_ID_RE.match(raw):
+        return None
+    rating = msg.get("rating") or {}
+    return {"dupr_id": raw, "doubles": _num(rating.get("doubles")), "singles": _num(rating.get("singles")),
+            "name": str(msg.get("name") or "")[:60]}

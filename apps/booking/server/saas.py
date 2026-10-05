@@ -30,7 +30,9 @@ from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 
 import app as core
+import dupr
 import mailer
+import sqlite3
 import tenancy
 
 log = logging.getLogger("saas")
@@ -732,6 +734,94 @@ def admin_overview():
     return {"tenants": out, "mrr": mrr, "leads": leads, "reports": reports, "events": events}
 
 
+def _tenant_dbs():
+    """所有已建立資料庫的場館（示範場館的球友是假資料，分數不用更新）。"""
+    import demo
+    for t in tenancy.all_with_data():
+        if not demo.kind_of(t.slug):
+            yield t
+
+
+def dupr_webhook_url() -> str:
+    """DUPR 要註冊的接收網址；路徑帶一段只有我們知道的字串，避免被猜到亂送假分數。"""
+    root = (os.getenv("BOOKING_PUBLIC_ROOT") or "").rstrip("/")
+    secret = dupr.webhook_secret()
+    if not root or not secret:
+        return ""
+    return f"{root}/platform/api/webhooks/dupr/{secret}"
+
+
+def dupr_rating_update(body: dict) -> int:
+    """收到 DUPR 的分數通知：更新每個場館裡這位球員的分數。回傳更新了幾筆。
+    只更新本來就存在的會員，所以沒綁定的 DUPR ID 不會產生任何資料。"""
+    ev = dupr.parse_rating_event(body)
+    if not ev:
+        return 0
+    cid = dupr.client_id()
+    if cid and str(body.get("clientId") or "") != cid:
+        log.warning("DUPR webhook 的 clientId 不符，忽略")
+        return 0
+    n = 0
+    for t in _tenant_dbs():
+        conn = sqlite3.connect(t.db_path, timeout=15)
+        try:
+            cur = conn.execute("UPDATE users SET dupr_doubles=?, dupr_singles=?, dupr_synced_at=? WHERE dupr_id=? AND deleted=0",
+                               (ev["doubles"], ev["singles"], _stamp(), ev["dupr_id"]))
+            conn.commit()
+            n += cur.rowcount
+        except sqlite3.Error:
+            log.warning("更新 %s 的 DUPR 分數失敗", t.slug, exc_info=True)
+        finally:
+            conn.close()
+    return n
+
+
+def dupr_bound_ids() -> list[str]:
+    """所有場館裡已用 SSO 綁定的 DUPR ID（去重）。"""
+    out = set()
+    for t in _tenant_dbs():
+        conn = sqlite3.connect(f"file:{t.db_path}?mode=ro", uri=True, timeout=15)
+        try:
+            out.update(r[0] for r in conn.execute(
+                "SELECT dupr_id FROM users WHERE dupr_id!='' AND dupr_source='sso' AND deleted=0"))
+        except sqlite3.Error:
+            log.warning("讀不到 %s 的 DUPR 綁定", t.slug, exc_info=True)
+        finally:
+            conn.close()
+    return sorted(out)
+
+
+def dupr_id_in_use(dupr_id: str) -> bool:
+    """這個 DUPR ID 是否還有其他場館在用（訂閱是整個平台共用，最後一個解除綁定才取消訂閱）。"""
+    return dupr_id in set(dupr_bound_ids())
+
+
+def admin_dupr_webhook(body: dict):
+    """向 DUPR 註冊接收網址，並把目前所有已綁定的球員訂閱起來（訂閱後會立刻收到現況）。"""
+    if not dupr.enabled():
+        raise HTTPException(400, "尚未設定 DUPR 金鑰")
+    url = dupr_webhook_url()
+    if not url:
+        raise HTTPException(400, "缺少 BOOKING_PUBLIC_ROOT 或 DUPR_WEBHOOK_SECRET")
+    if not url.startswith("https://"):
+        raise HTTPException(400, "DUPR 規定接收網址必須是 HTTPS")
+    out = {"url": url, "registered": False, "subscribed": 0, "errors": []}
+    try:
+        dupr.register_webhook(url)
+        out["registered"] = True
+    except dupr.DuprError as e:
+        out["errors"].append(f"註冊失敗：{e}")
+        return out
+    ids = dupr_bound_ids()
+    if body.get("subscribe", True) and ids:
+        try:
+            dupr.subscribe_ratings(ids)
+            out["subscribed"] = len(ids)
+        except dupr.DuprError as e:
+            out["errors"].append(f"訂閱失敗：{e}")
+    return out
+
+
 def admin_dupr_optins():
     """同意 DUPR 寄送推廣資訊的球友名單（合約要求每季提供 Email 給 DUPR）。
     跨所有場館彙整、同一個 Email 只列一次；示範場館是假資料，不列入。"""
@@ -951,6 +1041,26 @@ def register(app):
     @app.get("/platform/api/tenants/{slug}/status", include_in_schema=False)
     def _status(slug: str, a=Depends(require_account)):
         return tenant_view(_own_tenant(a, slug))
+
+    @app.post("/platform/api/webhooks/dupr/{secret}", include_in_schema=False)
+    async def _dupr_hook(secret: str, body: dict = Depends(core.json_body)):
+        """DUPR 的分數通知。一律回 200——DUPR 收不到 200 會把我們的 webhook 停掉，
+        所以路徑不符或資料看不懂時只記錄、不回錯誤。"""
+        want = dupr.webhook_secret()
+        if not want or not hmac.compare_digest(secret, want):
+            log.warning("DUPR webhook 路徑不符")
+            return {"ok": True}
+        try:
+            n = await run_in_threadpool(dupr_rating_update, body)
+            if n:
+                log.info("DUPR 分數通知：更新 %s 筆", n)
+        except Exception:
+            log.exception("處理 DUPR 分數通知失敗")
+        return {"ok": True}
+
+    @app.post("/platform/api/admin/dupr/webhook", include_in_schema=False)
+    def _dupr_register(a=Depends(require_admin), body: dict = Depends(core.json_body)):
+        return admin_dupr_webhook(body)
 
     @app.post("/platform/api/webhooks/polar", include_in_schema=False)
     async def _webhook(request: Request):

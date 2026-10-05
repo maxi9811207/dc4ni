@@ -5,6 +5,7 @@
 """
 import csv
 import hashlib
+import logging
 import io
 import html
 import json
@@ -35,6 +36,7 @@ import tenancy
 
 # 每個場館一個資料庫與上傳資料夾（見 tenancy.py）；這裡一律透過 tenancy.current() 取得目前場館
 STATIC_DIR = Path(os.getenv("BOOKING_STATIC_DIR", Path(__file__).parent / "static"))
+log = logging.getLogger("booking")
 TZ = ZoneInfo(os.getenv("BOOKING_TZ", "Asia/Taipei"))
 WEEKDAYS = "一二三四五六日"
 
@@ -1591,6 +1593,27 @@ def ensure_dupr_entitlements(user_id: int, force: bool = False) -> list[str]:
     return ents
 
 
+def dupr_subscribe(dupr_id: str):
+    """訂閱這位球員的分數變動（DUPR 會立刻回送一次現況）。失敗不影響綁定，只記錄。"""
+    if not dupr_id or not dupr.sso_enabled():
+        return
+    try:
+        dupr.subscribe_ratings([dupr_id])
+    except dupr.DuprError:
+        log.warning("訂閱 DUPR 分數失敗：%s", dupr_id, exc_info=True)
+
+
+def dupr_unsubscribe(dupr_id: str):
+    """最後一個場館也解除綁定時才取消訂閱（訂閱是整個平台共用的）。"""
+    if not dupr_id or not dupr.sso_enabled():
+        return
+    try:
+        if not saas.dupr_id_in_use(dupr_id):
+            dupr.unsubscribe_ratings([dupr_id])
+    except dupr.DuprError:
+        log.warning("取消訂閱 DUPR 分數失敗：%s", dupr_id, exc_info=True)
+
+
 @app.post("/api/me/dupr/sso")
 def link_dupr_sso(body: dict = Depends(json_body), user=Depends(require_user)):
     """DUPR 官方登入完成後，前端把 iframe 傳來的 token 送上來；DUPR ID 一律以 DUPR 回覆的為準。"""
@@ -1621,17 +1644,22 @@ def link_dupr_sso(body: dict = Depends(json_body), user=Depends(require_user)):
         save_dupr_tokens(conn, user["id"], access, refresh, ents)
         if "optin" in body:
             set_dupr_optin(conn, user["id"], body["optin"])
-        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+        out = public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+    dupr_subscribe(who["dupr_id"])  # 連線 DUPR，不放在資料庫交易內
+    return out
 
 
 @app.put("/api/me/dupr")
 def link_dupr(body: dict = Depends(json_body), user=Depends(require_user)):
     b = body
+    old = user["dupr_id"] if not b.get("dupr_id") else ""
     with db() as conn:
         set_dupr(conn, user["id"], b, source="self")
         if "optin" in b:
             set_dupr_optin(conn, user["id"], b["optin"])
-        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+        out = public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+    dupr_unsubscribe(old)
+    return out
 
 
 @app.put("/api/me/dupr/optin")
@@ -3302,7 +3330,7 @@ def update_member(user_id: int, body: dict = Depends(json_body), owner=Depends(r
 
 
 @app.delete("/api/admin/members/{user_id}")
-def delete_member(user_id: int, owner=Depends(require_owner)):
+def delete_member(user_id: int, owner=Depends(require_owner)):  # noqa: C901
     """刪除會員與其所有資料；他佔用的名額會釋出並遞補候補。"""
     if user_id == owner["id"]:
         fail(400, "不能刪除自己的帳號")
@@ -3319,12 +3347,14 @@ def delete_member(user_id: int, owner=Depends(require_owner)):
         conn.execute("UPDATE orders SET status='cancelled', updated_at=? WHERE user_id=? AND status='pending'", (stamp(), user_id))
         for table in ("tokens", "cards", "reviews", "notifications"):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
+        gone_dupr = u["dupr_id"]
         conn.execute("UPDATE users SET name='（已刪除的會員）', phone=NULL, email=NULL, line_user_id=NULL, password_hash='',"
                      " role='student', suspended=1, note='', avatar_url='', avatar_source='', dupr_id='', dupr_name='',"
                      " dupr_doubles=NULL, dupr_singles=NULL, dupr_optin=0, dupr_access_token='', dupr_refresh_token='', deleted=1 WHERE id=?", (user_id,))
         for course_id in freed:
             promote_waitlist(conn, get_course(conn, course_id))
-        return {"ok": True}
+    dupr_unsubscribe(gone_dupr)
+    return {"ok": True}
 
 
 @app.post("/api/admin/members/{user_id}/cards")

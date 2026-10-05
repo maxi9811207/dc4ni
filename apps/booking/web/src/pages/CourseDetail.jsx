@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'reac
 import { useApp } from '../App'
 import { api, asset } from '../api'
 import EventBoard, { ScoreModal } from '../components/EventBoard'
+import SupportContact from '../components/SupportContact'
 import { ShareButton, openedInApp, useShareAddress } from '../components/Share'
 import { VenueAvatar } from '../components/VenueHeader'
 import SlotPage from './SlotPage'
@@ -371,6 +372,7 @@ function EventSection({ c }) {
         {!event && c.match_format === 'fixed' && booked && user && <PartnerBox courseId={c.id} />}
       </section>
       {event && <EventBoard event={event} me={user?.id} onScore={setScoring} onConfirm={confirm} />}
+      {event?.is_player && <SupportContact topic="match" />}
       {scoring && <ScoreModal game={scoring} gamesTo={event.games_to} onClose={() => setScoring(null)} onSave={report} />}
     </>
   )

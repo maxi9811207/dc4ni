@@ -887,3 +887,4 @@ button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px
 .dupr-players code { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }
 .dupr-sso { margin: -4px -4px 10px; }
 .dupr-sso iframe { display: block; width: 100%; height: min(640px, 72vh); border: 0; border-radius: 10px; background: #fff; }
+.support-contact { display: grid; gap: 6px; }
