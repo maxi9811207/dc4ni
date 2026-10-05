@@ -208,3 +208,82 @@ def delete_match(match_code: str, identifier: str) -> None:
     data = _partner_call("DELETE", "/match/v1.0/delete", {"matchCode": match_code, "identifier": identifier})
     if data.get("status") not in ("SUCCESS", None):
         raise DuprError(_error_text(data))
+
+
+# ---------------------------------------------------------------- 球員 SSO（DUPR 官方登入，取得唯讀 user token）
+# 規定：球員只能透過 SSO 連結 DUPR，不能手動填 DUPR ID（https://dupr.gitbook.io/dupr-raas/integration-checklist/sso-login）
+
+SSO_BASES = {"production": "https://dashboard.dupr.com", "uat": "https://uat.dupr.gg"}
+PUBLIC_BASES = {"production": "https://api.dupr.gg", "uat": "https://api.uat.dupr.gg"}
+ENTITLEMENT_TTL = 24 * 3600  # 資格最多快取 24 小時
+
+
+def _env() -> str:
+    return os.getenv("DUPR_ENV", "production") if os.getenv("DUPR_ENV") in SSO_BASES else "production"
+
+
+def sso_enabled() -> bool:
+    return enabled() and os.getenv("DUPR_SSO", "1") != "0"
+
+
+def sso_url() -> str:
+    """嵌進 iframe 的登入網址；網址裡是 base64 的 clientKey（不是 secret）。"""
+    base = os.getenv("DUPR_SSO_BASE") or SSO_BASES[_env()]
+    key = base64.b64encode(os.environ["DUPR_CLIENT_KEY"].encode()).decode()
+    return f"{base.rstrip('/')}/login-external-app/{key}"
+
+
+def sso_origin() -> str:
+    return (os.getenv("DUPR_SSO_BASE") or SSO_BASES[_env()]).rstrip("/")
+
+
+def _public_call(method: str, path: str, token: str | None = None, headers: dict | None = None) -> dict:
+    base = (os.getenv("DUPR_PUBLIC_BASE") or PUBLIC_BASES[_env()]).rstrip("/")
+    h = {"Accept": "application/json", **(headers or {})}
+    if token:
+        h["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(base + path, data=b"" if method == "POST" else None, method=method, headers=h)
+    try:
+        with urllib.request.urlopen(req, timeout=12) as res:
+            return json.loads(res.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            raise DuprAuthError("DUPR 登入已失效，請重新用 DUPR 帳號登入")
+        raise DuprError(f"DUPR 服務回應錯誤（{e.code}），請稍後再試")
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise DuprError("暫時無法連線到 DUPR，請稍後再試")
+
+
+class DuprAuthError(DuprError):
+    """使用者的 token 失效（過期或在 DUPR 取消授權），要重新 SSO。"""
+
+
+def sso_identity(user_token: str) -> dict:
+    """用 SSO 拿到的 user token 向 DUPR 確認身分（DUPR ID 以這裡為準，不信任前端傳來的）。"""
+    data = _public_call("GET", "/public/user/info", user_token)
+    results = data.get("results") or []
+    if data.get("status") == "FAILURE" or not results or not results[0].get("duprId"):
+        raise DuprError("無法向 DUPR 確認您的身分，請再登入一次")
+    r = results[0]
+    return {"dupr_id": normalize_id(str(r["duprId"])), "name": r.get("fullName") or ""}
+
+
+def refresh_tokens(refresh_token: str) -> tuple[str, str]:
+    """access token 過期時換新；refresh token 每次都會換，兩個都要存。"""
+    data = _public_call("GET", "/auth/v2.0/refresh", headers={"x-refresh-token": refresh_token})
+    r = data.get("result") or {}
+    if not r.get("accessToken"):
+        raise DuprAuthError("DUPR 登入已失效，請重新用 DUPR 帳號登入")
+    return r["accessToken"], r.get("refreshToken") or refresh_token
+
+
+def entitlements(user_token: str) -> list[str]:
+    """球員在 tournaments（有計分的比賽）資源上的資格，例如 ['BASIC_L1', 'PREMIUM_L1']。
+    沒有 BASIC_L1＝被限制或停權，不能參加 DUPR 比賽。"""
+    data = _public_call("POST", "/subscription/active", user_token)
+    out = set()
+    body = data.get("result") if isinstance(data.get("result"), dict) else data
+    for s in (body.get("subscriptions") or []) + [body]:  # 文件範例兩種形狀都出現過
+        for e in ((s.get("entitlements") or {}).get("tournaments") or []):
+            out.add(e if isinstance(e, str) else str(e.get("name") or e.get("value") or e))
+    return sorted(out)

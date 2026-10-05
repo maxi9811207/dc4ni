@@ -10,7 +10,7 @@ const EMPTY = {
   name: '', category: '', teacher_id: '', substitute: false, date: today(), start_time: '19:00', end_time: '21:00',
   capacity: 10, cost: 0, beginner: false, location: '', description: '', booking_deadline_min: 120,
   cancel_deadline_min: 720, plan_ids: [], repeat_weeks: 1,
-  dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false,
+  dupr_required: false, dupr_format: 'doubles', dupr_min: '', dupr_max: '', dupr_verified_only: false, dupr_premium_only: false,
   match_format: 'rotating', games_to: 11, listed: true, fee: 0, pay_hours: 48, cover_url: '', show_attendees: true, share_code: '', branch_id: '',
 }
 // 時段預約的產生設定
@@ -340,6 +340,7 @@ export default function CourseForm({ template = false, slotId }) {
             </select>
           </Field>
           <label className="check"><input type="checkbox" checked={form.dupr_verified_only} onChange={set('dupr_verified_only')} /> 只限場館驗證過的 DUPR 帳號</label>
+          <label className="check"><input type="checkbox" checked={!!form.dupr_premium_only} onChange={set('dupr_premium_only')} /> DUPR+ 會員限定（沒有 DUPR+ 訂閱的球友不能報名）</label>
         </Step>
       )}
 

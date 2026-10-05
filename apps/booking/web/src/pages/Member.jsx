@@ -275,7 +275,9 @@ function Dupr() {
     e.preventDefault()
     run(() => api('me/dupr', { method: 'PUT', body: form }), '已綁定 DUPR 帳號')
   }
-  const status = user.dupr_verified ? ['已驗證', 'success'] : user.dupr_source === 'api' ? ['DUPR 官方資料', 'brand'] : ['待場館核對', 'warn']
+  const status = user.dupr_source === 'sso' ? ['DUPR 帳號登入', 'success'] : user.dupr_verified ? ['已驗證', 'success'] : user.dupr_source === 'api' ? ['DUPR 官方資料', 'brand'] : ['待場館核對', 'warn']
+  const ents = user.dupr_entitlements || []
+  if (config.sso) return <DuprSso config={config} user={user} status={status} ents={ents} busy={busy} run={run} />
 
   return (
     <>
@@ -323,6 +325,78 @@ function Dupr() {
             <button className="btn flex1" disabled={busy}>{busy ? '處理中…' : '綁定'}</button>
           </div>
         </form>
+      )}
+    </>
+  )
+}
+
+// DUPR 官方登入（SSO）：DUPR 規定球員只能這樣連結帳號，不能手動輸入 ID
+function DuprSso({ config, user, status, ents, busy, run }) {
+  const { refreshUser, handleError, showToast } = useApp()
+  const [open, setOpen] = useState(false)
+  const [optin, setOptin] = useState(!!user.dupr_optin)
+  const [saving, setSaving] = useState(false)
+  const legacy = user.dupr_id && user.dupr_source !== 'sso'
+
+  useEffect(() => {
+    if (!open) return
+    const onMessage = async (e) => {
+      if (e.origin !== config.sso_origin) return
+      let d = e.data
+      if (typeof d === 'string') { try { d = JSON.parse(d) } catch { return } }
+      if (d?.error === 'consent_denied') { setOpen(false); showToast('您沒有同意授權，尚未綁定 DUPR'); return }
+      const token = d?.userToken || d?.accessToken
+      if (!token) return  // DUPR 頁面也會送其他訊息（例如操作紀錄），只處理登入結果
+      setOpen(false)
+      setSaving(true)
+      try {
+        await api('me/dupr/sso', { method: 'POST', body: { userToken: token, refreshToken: d.refreshToken || '', optin } })
+        await refreshUser()
+        showToast('已用 DUPR 帳號綁定')
+      } catch (err) { handleError(err) } finally { setSaving(false) }
+    }
+    window.addEventListener('message', onMessage)
+    return () => window.removeEventListener('message', onMessage)
+  }, [open, optin, config.sso_origin, refreshUser, handleError, showToast])
+
+  return (
+    <>
+      {user.dupr_id && !legacy ? (
+        <section className="card dupr-card">
+          <div className="row between">
+            <b className="big">DUPR 帳號</b>
+            <span className="row gap-sm">{ents.includes('PREMIUM_L1') && <Badge tone="dupr">DUPR+</Badge>}<Badge tone={status[1]}>{status[0]}</Badge></span>
+          </div>
+          <p className="muted small">DUPR ID：<b className="text-brand">{user.dupr_id}</b>{user.dupr_name && ` · ${user.dupr_name}`}</p>
+          <div className="stats stats-2">
+            <div className="stat"><span>雙打分數</span><b>{rating(user.dupr_doubles)}</b></div>
+            <div className="stat"><span>單打分數</span><b>{rating(user.dupr_singles)}</b></div>
+          </div>
+          {!ents.includes('BASIC_L1') && <p className="alert warn small">DUPR 顯示您的帳號目前不能參加計分比賽，或授權已失效。請按「重新登入 DUPR」，若仍無法使用請到 DUPR App 確認帳號狀態。</p>}
+          <p className="muted small">更新時間 {showDateTime(user.dupr_synced_at)}</p>
+          <div className="admin-actions">
+            <button className="btn btn-small" disabled={busy} onClick={() => run(() => api('me/dupr/refresh', { method: 'POST' }), '已從 DUPR 更新')}>從 DUPR 更新</button>
+            <button className="btn btn-small btn-light" onClick={() => setOpen(true)}>重新登入 DUPR</button>
+            <button className="btn btn-small btn-light text-danger" disabled={busy} onClick={() => run(() => api('me/dupr', { method: 'PUT', body: { dupr_id: '' } }), '已解除綁定')}>解除綁定</button>
+          </div>
+        </section>
+      ) : (
+        <section className="card form">
+          <h3 className="card-title nomargin">綁定 DUPR 帳號</h3>
+          {legacy && <p className="alert warn small">您之前手動填的 DUPR ID（{user.dupr_id}）已停用。DUPR 規定要用 DUPR 帳號登入綁定，綁好才能報名 DUPR 場。</p>}
+          <p className="muted small">用您的 DUPR 帳號登入並同意授權，系統會自動取得 DUPR ID 與最新分數。還沒有 DUPR 帳號可以在登入畫面直接註冊。</p>
+          <label className="check small"><input type="checkbox" checked={optin} onChange={(e) => setOptin(e.target.checked)} /> {DUPR_OPTIN_TEXT}</label>
+          <button className="btn btn-block" disabled={saving} onClick={() => setOpen(true)}>{saving ? '綁定中…' : '用 DUPR 帳號登入'}</button>
+        </section>
+      )}
+      {user.dupr_id && !legacy && <DuprOptin />}
+      {open && (
+        <Modal onClose={() => setOpen(false)}>
+          <div className="dupr-sso">
+            <iframe src={config.sso_url} title="DUPR 登入" allow="payment" />
+          </div>
+          <button className="btn btn-block btn-light" onClick={() => setOpen(false)}>取消</button>
+        </Modal>
       )}
     </>
   )

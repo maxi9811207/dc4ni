@@ -139,7 +139,9 @@ function DuprAdmin({ m, run }) {
   const [edit, setEdit] = useState(false)
   const [form, setForm] = useState({ dupr_id: m.dupr_id, doubles: m.dupr_doubles ?? '', singles: m.dupr_singles ?? '' })
   const update = (body, msg) => run(() => api(`admin/members/${m.id}`, { method: 'PUT', body }), msg)
-  const source = { api: 'DUPR 官方資料', manual: '學員自填', owner: '場主設定' }[m.dupr_source] || ''
+  const source = { api: 'DUPR 官方資料', manual: '學員自填', owner: '場主設定', sso: 'DUPR 帳號登入' }[m.dupr_source] || ''
+  const [sso, setSso] = useState(false)
+  useEffect(() => { api('dupr/config').then((c) => setSso(c.sso)).catch(() => {}) }, [])
   return (
     <div className="dupr-box on">
       {m.dupr_id ? (
@@ -149,13 +151,17 @@ function DuprAdmin({ m, run }) {
           <p className="small">{m.dupr_verified ? <span className="text-success">✓ 場館已驗證</span> : <span className="text-warn">尚未驗證</span>}</p>
         </>
       ) : <p className="muted small">尚未綁定 DUPR</p>}
+      {sso ? (
+        m.dupr_id && m.dupr_source !== 'sso' && <p className="alert warn small">這是舊的手動綁定。DUPR 規定只能由會員本人用「DUPR 帳號登入」綁定，請會員到會員中心重新綁定，否則不能報名 DUPR 場。</p>
+      ) : (
       <div className="admin-actions">
         {m.dupr_id && (m.dupr_verified
           ? <button className="btn btn-small btn-light" onClick={() => update({ dupr_verified: false }, '已取消驗證')}>取消驗證</button>
           : <button className="btn btn-small" onClick={() => update({ dupr_verified: true }, '已驗證 DUPR')}>核對無誤，驗證</button>)}
         <button className="btn btn-small btn-light" onClick={() => setEdit(!edit)}>{m.dupr_id ? '修改' : '代為綁定'}</button>
       </div>
-      {edit && (
+      )}
+      {edit && !sso && (
         <div className="form">
           <input className="input" placeholder="DUPR ID" value={form.dupr_id} onChange={(e) => setForm({ ...form, dupr_id: e.target.value.toUpperCase() })} />
           <div className="grid2">

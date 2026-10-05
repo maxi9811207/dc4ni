@@ -217,12 +217,13 @@ function DuprReview({ courseId, review, onDone }) {
               <span>{p.name}{p.dupr_name && p.dupr_name !== p.name && <span className="muted small">（DUPR：{p.dupr_name}）</span>}</span>
               <span className="row gap-sm">
                 {p.dupr_id ? <code className="small">{p.dupr_id}</code> : <Badge tone="danger">未綁定</Badge>}
-                {p.dupr_id && !p.checked && <Badge tone="warn">未核對</Badge>}
+                {p.dupr_id && review.sso && !p.sso && <Badge tone="danger">需用 DUPR 登入綁定</Badge>}
+                {p.dupr_id && !review.sso && !p.checked && <Badge tone="warn">未核對</Badge>}
               </span>
             </li>
           ))}
         </ul>
-        {unchecked.length > 0 && <p className="muted small">「未核對」是球友自己填的 DUPR ID，上傳前請確認是本人，填錯會記到別人的 DUPR 上。</p>}
+        {!review.sso && unchecked.length > 0 && <p className="muted small">「未核對」是球友自己填的 DUPR ID，上傳前請確認是本人，填錯會記到別人的 DUPR 上。</p>}
       </div>
 
       <div className="grid2">

@@ -161,6 +161,10 @@ MIGRATIONS = {
         "dupr_source": "TEXT NOT NULL DEFAULT ''",
         "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
+        "dupr_access_token": "TEXT NOT NULL DEFAULT ''",   # DUPR SSO 給的唯讀 user token（只存伺服器，不回給前端）
+        "dupr_refresh_token": "TEXT NOT NULL DEFAULT ''",
+        "dupr_entitlements": "TEXT NOT NULL DEFAULT '[]'", # tournaments 資格，例如 ["BASIC_L1","PREMIUM_L1"]
+        "dupr_entitled_at": "TEXT NOT NULL DEFAULT ''",    # 最後一次向 DUPR 取資格的時間（最多快取 24 小時）
         "dupr_optin": "INTEGER NOT NULL DEFAULT 0",       # 同意把 Email 提供給 DUPR 寄送推廣資訊（合約要求每季提供名單）
         "dupr_optin_at": "TEXT NOT NULL DEFAULT ''",      # 最近一次勾選或取消的時間（同意紀錄）
         "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
@@ -177,6 +181,7 @@ MIGRATIONS = {
         "dupr_min": "REAL",
         "dupr_max": "REAL",
         "dupr_verified_only": "INTEGER NOT NULL DEFAULT 0",
+        "dupr_premium_only": "INTEGER NOT NULL DEFAULT 0",  # DUPR+ 限定（需要 PREMIUM_L1）
         "template_id": "INTEGER",
         "match_format": "TEXT NOT NULL DEFAULT 'rotating'",
         "games_to": "INTEGER NOT NULL DEFAULT 11",
@@ -190,6 +195,7 @@ MIGRATIONS = {
         "show_attendees": "INTEGER NOT NULL DEFAULT 1",
     },
     "course_templates": {
+        "dupr_premium_only": "INTEGER NOT NULL DEFAULT 0",
         "branch_id": "INTEGER",
         "listed": "INTEGER NOT NULL DEFAULT 1",
         "show_attendees": "INTEGER NOT NULL DEFAULT 1",
@@ -352,6 +358,7 @@ USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "cr
 
 def public_user(u: dict) -> dict:
     return {**{k: u[k] for k in USER_FIELDS}, "email": u["email"], "avatar_source": u["avatar_source"], "line_linked": bool(u["line_user_id"]),
+            "dupr_entitlements": json.loads(u["dupr_entitlements"] or "[]"),
             "has_password": bool(u["password_hash"])}
 
 
@@ -660,6 +667,14 @@ def dupr_problem(c: dict, u: dict) -> str | None:
         return None
     if not u.get("dupr_id"):
         return "這是 DUPR 場，請先到會員中心綁定 DUPR 帳號"
+    if dupr.sso_enabled():
+        if u.get("dupr_source") != "sso":
+            return "這是 DUPR 場，請先到會員中心用「DUPR 帳號登入」重新綁定"
+        ents = json.loads(u.get("dupr_entitlements") or "[]")
+        if "BASIC_L1" not in ents:
+            return "您的 DUPR 帳號目前沒有參加計分比賽的資格，請到 DUPR App 確認帳號狀態"
+        if c.get("dupr_premium_only") and "PREMIUM_L1" not in ents:
+            return "這場限 DUPR+ 會員報名"
     if c["dupr_verified_only"] and not u.get("dupr_verified"):
         return "這場只收主辦驗證過的 DUPR 帳號，請聯絡主辦核對"
     rating = u.get(f"dupr_{c['dupr_format']}")
@@ -728,7 +743,7 @@ def course_view(conn, c: dict, user: dict | None, settings: dict) -> dict:
         "dupr_format": c["dupr_format"],
         "dupr_min": c["dupr_min"],
         "dupr_max": c["dupr_max"],
-        "dupr_verified_only": bool(c["dupr_verified_only"]),
+        "dupr_verified_only": bool(c["dupr_verified_only"]), "dupr_premium_only": bool(c.get("dupr_premium_only")),
         "dupr_problem": dupr_problem(c, user) if user and not mine else None,
         "match_format": event_format(c),
         "games_to": c["games_to"],
@@ -1368,6 +1383,10 @@ def reserve(course_id: int, body: dict = Depends(json_body), user=Depends(requir
     if tenancy.current().status in ("suspended", "cancelled"):
         fail(403, "這個場館暫停服務中，暫時不能報名，請聯絡主辦")
     b = body
+    if dupr.sso_enabled() and user["dupr_source"] == "sso":
+        ensure_dupr_entitlements(user["id"])  # 連線 DUPR 不能在資料庫鎖裡
+        with db() as conn:
+            user = one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)))
     with db() as conn:
         c = get_course(conn, course_id)
         if not can_see(conn, c, user, str(b.get("code") or "")):
@@ -1470,8 +1489,12 @@ def set_dupr(conn, user_id: int, b: dict, source: str):
     """綁定或更新 DUPR。有 DUPR 金鑰時分數一律向 DUPR 取得；沒有時使用填寫的分數（待場主核對）。"""
     if not b.get("dupr_id"):
         conn.execute("UPDATE users SET dupr_id='', dupr_name='', dupr_doubles=NULL, dupr_singles=NULL,"
-                     " dupr_source='', dupr_verified=0, dupr_synced_at='' WHERE id=?", (user_id,))
+                     " dupr_source='', dupr_verified=0, dupr_synced_at='', dupr_access_token='', dupr_refresh_token='',"
+                     " dupr_entitlements='[]', dupr_entitled_at='' WHERE id=?", (user_id,))
         return
+    if dupr.sso_enabled():
+        fail(400, "DUPR 規定只能由球員本人用「DUPR 帳號登入」綁定" if source == "owner"
+             else "請按「用 DUPR 帳號登入」綁定（DUPR 規定不能手動輸入 ID）")
     try:
         dupr_id = dupr.normalize_id(str(b["dupr_id"]))
         taken = one(conn.execute("SELECT id FROM users WHERE dupr_id=? AND id!=?", (dupr_id, user_id)))
@@ -1512,7 +1535,93 @@ def set_dupr_optin(conn, user_id: int, on) -> None:
 
 @app.get("/api/dupr/config")
 def dupr_config():
-    return {"api_enabled": dupr.enabled()}
+    sso = dupr.sso_enabled()
+    return {"api_enabled": dupr.enabled(), "sso": sso, "sso_url": dupr.sso_url() if sso else "",
+            "sso_origin": dupr.sso_origin() if sso else ""}
+
+
+def save_dupr_tokens(conn, user_id: int, access: str, refresh: str, ents: list[str] | None = None):
+    sets, vals = ["dupr_access_token=?", "dupr_refresh_token=?"], [access, refresh]
+    if ents is not None:
+        sets += ["dupr_entitlements=?", "dupr_entitled_at=?"]
+        vals += [json.dumps(ents), stamp()]
+    conn.execute(f"UPDATE users SET {', '.join(sets)} WHERE id=?", (*vals, user_id))
+
+
+def dupr_with_token(user_id: int, fn):
+    """用球員存著的 user token 呼叫 DUPR；過期就用 refresh token 換新再試一次。不可在資料庫鎖裡呼叫。
+    回傳 fn 的結果；token 全失效時回傳 None（球員要重新登入 DUPR）。"""
+    with db() as conn:
+        u = one(conn.execute("SELECT dupr_access_token, dupr_refresh_token FROM users WHERE id=?", (user_id,)))
+    if not u or not u["dupr_access_token"]:
+        return None
+    try:
+        return fn(u["dupr_access_token"])
+    except dupr.DuprAuthError:
+        pass
+    try:
+        access, refresh = dupr.refresh_tokens(u["dupr_refresh_token"])
+    except dupr.DuprAuthError:
+        with db() as conn:  # 授權已被取消或過期太久：清掉 token 與資格，請球員重新登入
+            conn.execute("UPDATE users SET dupr_access_token='', dupr_refresh_token='', dupr_entitlements='[]',"
+                         " dupr_entitled_at=? WHERE id=?", (stamp(), user_id))
+        return None
+    with db() as conn:
+        save_dupr_tokens(conn, user_id, access, refresh)
+    return fn(access)
+
+
+def ensure_dupr_entitlements(user_id: int, force: bool = False) -> list[str]:
+    """球員的 DUPR 比賽資格；超過 24 小時才重新向 DUPR 取（DUPR 規定的快取上限）。連線失敗時沿用舊資料。"""
+    with db() as conn:
+        u = one(conn.execute("SELECT dupr_entitlements, dupr_entitled_at FROM users WHERE id=?", (user_id,)))
+    cached = json.loads(u["dupr_entitlements"] or "[]") if u else []
+    fresh = u and u["dupr_entitled_at"] and \
+        (now() - datetime.fromisoformat(u["dupr_entitled_at"])).total_seconds() < dupr.ENTITLEMENT_TTL
+    if fresh and not force:
+        return cached
+    try:
+        ents = dupr_with_token(user_id, dupr.entitlements)
+    except dupr.DuprError:
+        return cached
+    if ents is None:
+        return []
+    with db() as conn:
+        conn.execute("UPDATE users SET dupr_entitlements=?, dupr_entitled_at=? WHERE id=?", (json.dumps(ents), stamp(), user_id))
+    return ents
+
+
+@app.post("/api/me/dupr/sso")
+def link_dupr_sso(body: dict = Depends(json_body), user=Depends(require_user)):
+    """DUPR 官方登入完成後，前端把 iframe 傳來的 token 送上來；DUPR ID 一律以 DUPR 回覆的為準。"""
+    if not dupr.sso_enabled():
+        fail(400, "平台尚未開通 DUPR 登入")
+    access = str(body.get("userToken") or body.get("accessToken") or "").strip()
+    refresh = str(body.get("refreshToken") or "").strip()
+    if not access:
+        fail(400, "沒有收到 DUPR 登入資料，請再試一次")
+    try:
+        who = dupr.sso_identity(access)
+        ents = dupr.entitlements(access)
+        try:
+            info = dupr.fetch_player(who["dupr_id"])
+        except dupr.DuprError:
+            info = {"name": "", "doubles": None, "singles": None}
+    except dupr.DuprError as e:
+        fail(400, str(e))
+    with db() as conn:
+        taken = one(conn.execute("SELECT id FROM users WHERE dupr_id=? AND id!=?", (who["dupr_id"], user["id"])))
+        if taken:
+            fail(400, "這個 DUPR 帳號已綁定在本場館的另一個會員，如有疑問請聯絡場館")
+        conn.execute("UPDATE users SET dupr_id=?, dupr_name=?, dupr_doubles=?, dupr_singles=?, dupr_source='sso',"
+                     " dupr_verified=1, dupr_synced_at=? WHERE id=?",
+                     (who["dupr_id"], (who["name"] or info["name"])[:60], info["doubles"], info["singles"], stamp(), user["id"]))
+        if not refresh:  # DUPR+ 付款後的回傳不帶 refresh token：沿用舊的
+            refresh = one(conn.execute("SELECT dupr_refresh_token FROM users WHERE id=?", (user["id"],)))["dupr_refresh_token"]
+        save_dupr_tokens(conn, user["id"], access, refresh, ents)
+        if "optin" in body:
+            set_dupr_optin(conn, user["id"], body["optin"])
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
 @app.put("/api/me/dupr")
@@ -1538,6 +1647,16 @@ def refresh_dupr(user=Depends(require_user)):
         fail(400, "尚未綁定 DUPR")
     if not dupr.enabled():
         fail(400, "場館尚未開通 DUPR 自動同步，請直接修改分數")
+    if user["dupr_source"] == "sso":
+        ensure_dupr_entitlements(user["id"], force=True)
+        try:
+            info = dupr.fetch_player(user["dupr_id"])
+        except dupr.DuprError as e:
+            fail(400, str(e))
+        with db() as conn:
+            conn.execute("UPDATE users SET dupr_doubles=?, dupr_singles=?, dupr_synced_at=? WHERE id=?",
+                         (info["doubles"], info["singles"], stamp(), user["id"]))
+            return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
     with db() as conn:
         set_dupr(conn, user["id"], {"dupr_id": user["dupr_id"]}, source="self")
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
@@ -2112,6 +2231,8 @@ def dupr_review(conn, c: dict) -> dict | None:
             problem = "比分還沒確認"
         elif any(not (users.get(p) or {}).get("dupr_id") for p in g["a"] + g["b"]):
             problem = "有球員沒綁 DUPR"
+        elif dupr.sso_enabled() and any((users.get(p) or {}).get("dupr_source") != "sso" for p in g["a"] + g["b"]):
+            problem = "有球員還沒用 DUPR 帳號登入綁定"
         else:
             problem = None
         if state == "uploaded":
@@ -2123,9 +2244,10 @@ def dupr_review(conn, c: dict) -> dict | None:
         items[g["id"]] = {"state": state, "problem": problem, "error": g["dupr_error"], "code": g["dupr_code"],
                           "uploaded_at": g["dupr_uploaded_at"]}
     players = [{"id": u["id"], "name": u["name"], "dupr_id": u["dupr_id"], "dupr_name": u["dupr_name"],
-                "checked": bool(u["dupr_verified"] or u["dupr_source"] == "api")} for u in users.values()]
+                "sso": u["dupr_source"] == "sso",
+                "checked": bool(u["dupr_verified"] or u["dupr_source"] in ("api", "sso"))} for u in users.values()]
     players.sort(key=lambda u: (bool(u["dupr_id"]), u["checked"]))  # 沒綁的、沒核對過的排前面
-    return {"enabled": dupr.enabled(), "play_type": ev["dupr_play_type"], "match_type": ev["dupr_match_type"],
+    return {"enabled": dupr.enabled(), "sso": dupr.sso_enabled(), "play_type": ev["dupr_play_type"], "match_type": ev["dupr_match_type"],
             "play_types": DUPR_PLAY_TYPES, "match_types": DUPR_MATCH_TYPES, "counts": counts, "games": items,
             "players": players}
 
@@ -2187,13 +2309,21 @@ def upload_event_dupr(course_id: int, body: dict = Depends(json_body), owner=Dep
             payloads = {g["id"]: dupr_match_payload(c, ev, groups.get(g["group_id"], ""), g, dupr_ids, location) for g in todo}
 
         # 連線 DUPR（不持有資料庫鎖）
-        new = [g for g in todo if not g["dupr_code"]]
-        ok, bad = dupr.create_matches([payloads[g["id"]] for g in new]) if new else ({}, {})
         results = {}
+        if dupr.sso_enabled():  # DUPR 規定：每位球員都要有 BASIC_L1 才能上傳比賽
+            banned = {p for p in ids if "BASIC_L1" not in ensure_dupr_entitlements(p)}
+            for g in todo:
+                if banned & set(g["a"] + g["b"]):
+                    results[g["id"]] = ("error", "有球員沒有 DUPR 比賽資格（BASIC_L1），或 DUPR 授權已失效需重新登入")
+            todo_ok = [g for g in todo if g["id"] not in results]
+        else:
+            todo_ok = todo
+        new = [g for g in todo_ok if not g["dupr_code"]]
+        ok, bad = dupr.create_matches([payloads[g["id"]] for g in new]) if new else ({}, {})
         for g in new:
             ident = g["dupr_identifier"]
             results[g["id"]] = ("created", ok[ident]) if ok.get(ident) else ("error", bad.get(ident) or "上傳失敗")
-        for g in todo:
+        for g in todo_ok:
             if g["dupr_code"]:
                 try:
                     dupr.update_match(g["dupr_code"], payloads[g["id"]])
@@ -2289,7 +2419,7 @@ def admin_courses(request: Request, owner=Depends(require_owner)):
 
 COURSE_FIELDS = ("name", "category", "teacher_id", "substitute", "date", "start_time", "end_time", "capacity",
                  "cost", "beginner", "description", "location", "booking_deadline_min", "cancel_deadline_min",
-                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "template_id",
+                 "plan_ids", "dupr_required", "dupr_format", "dupr_min", "dupr_max", "dupr_verified_only", "dupr_premium_only", "template_id",
                  "match_format", "games_to", "listed", "fee", "pay_hours", "cover_url", "show_attendees", "branch_id")
 # 範本只存課程內容與預設時間，不含日期
 TEMPLATE_FIELDS = tuple(k for k in COURSE_FIELDS if k not in ("date", "template_id")) + ("active", "sort")
@@ -2324,7 +2454,7 @@ def clean_course(b: dict) -> dict:
         out["match_format"] = "rotating"
     if "games_to" in out:
         out["games_to"] = min(max(int(out["games_to"] or 11), 5), 25)
-    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "listed", "show_attendees"):
+    for k in ("substitute", "beginner", "dupr_required", "dupr_verified_only", "dupr_premium_only", "listed", "show_attendees"):
         if k in out:
             out[k] = 1 if out[k] else 0
     for k in ("capacity", "cost", "booking_deadline_min", "cancel_deadline_min", "fee", "pay_hours"):
@@ -2392,7 +2522,7 @@ def template_view(conn, t: dict) -> dict:
     teacher = one(conn.execute("SELECT id, name, photo_url FROM teachers WHERE id=?", (t["teacher_id"],)))
     return {**t, "plan_ids": json.loads(t["plan_ids"]), "beginner": bool(t["beginner"]),
             "substitute": bool(t["substitute"]), "dupr_required": bool(t["dupr_required"]),
-            "dupr_verified_only": bool(t["dupr_verified_only"]), "active": bool(t["active"]),
+            "dupr_verified_only": bool(t["dupr_verified_only"]), "dupr_premium_only": bool(t["dupr_premium_only"]), "active": bool(t["active"]),
             "teacher": teacher, "upcoming": upcoming[0], "next_date": upcoming[1]}
 
 
@@ -3191,7 +3321,7 @@ def delete_member(user_id: int, owner=Depends(require_owner)):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
         conn.execute("UPDATE users SET name='（已刪除的會員）', phone=NULL, email=NULL, line_user_id=NULL, password_hash='',"
                      " role='student', suspended=1, note='', avatar_url='', avatar_source='', dupr_id='', dupr_name='',"
-                     " dupr_doubles=NULL, dupr_singles=NULL, dupr_optin=0, deleted=1 WHERE id=?", (user_id,))
+                     " dupr_doubles=NULL, dupr_singles=NULL, dupr_optin=0, dupr_access_token='', dupr_refresh_token='', deleted=1 WHERE id=?", (user_id,))
         for course_id in freed:
             promote_waitlist(conn, get_course(conn, course_id))
         return {"ok": True}
