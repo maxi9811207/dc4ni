@@ -262,7 +262,7 @@ function Dupr() {
   const { user, refreshUser, handleError, showToast } = useApp()
   const [config, setConfig] = useState(null)
   const [editing, setEditing] = useState(!user.dupr_id)
-  const [form, setForm] = useState({ dupr_id: user.dupr_id, doubles: user.dupr_doubles ?? '', singles: user.dupr_singles ?? '' })
+  const [form, setForm] = useState({ dupr_id: user.dupr_id, doubles: user.dupr_doubles ?? '', singles: user.dupr_singles ?? '', optin: !!user.dupr_optin })
   const [busy, setBusy] = useState(false)
   useEffect(() => { api('dupr/config').then(setConfig).catch(handleError) }, [handleError])
   if (!config) return <Loading />
@@ -298,6 +298,7 @@ function Dupr() {
           </div>
         </section>
       )}
+      {!editing && <DuprOptin />}
       {editing && (
         <form className="card form" onSubmit={save}>
           <h3 className="card-title nomargin">綁定 DUPR 帳號</h3>
@@ -316,6 +317,7 @@ function Dupr() {
               <p className="alert warn small">請填寫 DUPR App 上顯示的分數，場館會核對您的 DUPR 帳號與分數。</p>
             </>
           )}
+          <label className="check small"><input type="checkbox" checked={form.optin} onChange={(e) => setForm({ ...form, optin: e.target.checked })} /> {DUPR_OPTIN_TEXT}</label>
           <div className="row gap">
             {user.dupr_id && <button type="button" className="btn btn-light flex1" onClick={() => setEditing(false)}>取消</button>}
             <button className="btn flex1" disabled={busy}>{busy ? '處理中…' : '綁定'}</button>
@@ -323,6 +325,32 @@ function Dupr() {
         </form>
       )}
     </>
+  )
+}
+
+const DUPR_OPTIN_TEXT = '我同意 Digital Court 將我的 Email 提供給 DUPR，用來寄送 DUPR 的賽事與推廣資訊（可隨時取消）'
+
+// 是否同意 DUPR 寄推廣資訊：預設不勾，球友自己決定；取消後不再列入提供給 DUPR 的名單
+function DuprOptin() {
+  const { user, refreshUser, handleError, showToast } = useApp()
+  const [busy, setBusy] = useState(false)
+  const toggle = async (e) => {
+    const optin = e.target.checked
+    setBusy(true)
+    try {
+      await api('me/dupr/optin', { method: 'PUT', body: { optin } })
+      await refreshUser()
+      showToast(optin ? '已同意接收 DUPR 資訊' : '已取消，之後不會再提供您的 Email 給 DUPR')
+    } catch (err) { handleError(err) } finally { setBusy(false) }
+  }
+  return (
+    <section className="card form">
+      <h3 className="card-title nomargin">DUPR 最新消息</h3>
+      <label className="check small"><input type="checkbox" checked={!!user.dupr_optin} disabled={busy} onChange={toggle} /> {DUPR_OPTIN_TEXT}</label>
+      {!!user.dupr_optin && !user.email && <p className="alert warn small">您的帳號還沒有 Email，DUPR 無法寄信給您。請到「帳號」分頁填寫信箱。</p>}
+      {!!user.dupr_optin && user.dupr_optin_at && <p className="muted small">同意時間 {showDateTime(user.dupr_optin_at)}</p>}
+      <p className="muted small">我們每季會把同意者的 Email 提供給 DUPR；已提供出去的名單由 DUPR 依其隱私權政策處理，退訂也可以直接點 DUPR 信件裡的取消訂閱。</p>
+    </section>
   )
 }
 

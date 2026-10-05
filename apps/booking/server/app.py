@@ -161,6 +161,8 @@ MIGRATIONS = {
         "dupr_source": "TEXT NOT NULL DEFAULT ''",
         "dupr_verified": "INTEGER NOT NULL DEFAULT 0",
         "dupr_synced_at": "TEXT NOT NULL DEFAULT ''",
+        "dupr_optin": "INTEGER NOT NULL DEFAULT 0",       # 同意把 Email 提供給 DUPR 寄送推廣資訊（合約要求每季提供名單）
+        "dupr_optin_at": "TEXT NOT NULL DEFAULT ''",      # 最近一次勾選或取消的時間（同意紀錄）
         "admin_seen_id": "INTEGER NOT NULL DEFAULT 0",
         "deleted": "INTEGER NOT NULL DEFAULT 0",
         "avatar_url": "TEXT NOT NULL DEFAULT ''",
@@ -333,7 +335,7 @@ def course_start(c: dict) -> datetime:
 
 
 USER_FIELDS = ("id", "name", "phone", "role", "suspended", "suspend_reason", "created_at", "dupr_id", "dupr_name",
-               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at", "avatar_url", "teacher_id")
+               "dupr_doubles", "dupr_singles", "dupr_source", "dupr_verified", "dupr_synced_at", "dupr_optin", "dupr_optin_at", "avatar_url", "teacher_id")
 
 
 def public_user(u: dict) -> dict:
@@ -1488,6 +1490,14 @@ def set_dupr(conn, user_id: int, b: dict, source: str):
                  " dupr_verified=?, dupr_synced_at=? WHERE id=?", (*data, verified, stamp(), user_id))
 
 
+def set_dupr_optin(conn, user_id: int, on) -> None:
+    """球友勾選／取消「同意 DUPR 寄送推廣資訊」。只有狀態改變才更新時間，留下最近一次表態的紀錄。"""
+    on = 1 if on else 0
+    old = one(conn.execute("SELECT dupr_optin FROM users WHERE id=?", (user_id,)))
+    if old and old["dupr_optin"] != on:
+        conn.execute("UPDATE users SET dupr_optin=?, dupr_optin_at=? WHERE id=?", (on, stamp(), user_id))
+
+
 @app.get("/api/dupr/config")
 def dupr_config():
     return {"api_enabled": dupr.enabled()}
@@ -1498,6 +1508,15 @@ def link_dupr(body: dict = Depends(json_body), user=Depends(require_user)):
     b = body
     with db() as conn:
         set_dupr(conn, user["id"], b, source="self")
+        if "optin" in b:
+            set_dupr_optin(conn, user["id"], b["optin"])
+        return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
+
+
+@app.put("/api/me/dupr/optin")
+def dupr_optin(body: dict = Depends(json_body), user=Depends(require_user)):
+    with db() as conn:
+        set_dupr_optin(conn, user["id"], body.get("optin"))
         return public_user(one(conn.execute("SELECT * FROM users WHERE id=?", (user["id"],))))
 
 
@@ -2995,7 +3014,7 @@ def delete_member(user_id: int, owner=Depends(require_owner)):
             conn.execute(f"DELETE FROM {table} WHERE user_id=?", (user_id,))
         conn.execute("UPDATE users SET name='（已刪除的會員）', phone=NULL, email=NULL, line_user_id=NULL, password_hash='',"
                      " role='student', suspended=1, note='', avatar_url='', avatar_source='', dupr_id='', dupr_name='',"
-                     " dupr_doubles=NULL, dupr_singles=NULL, deleted=1 WHERE id=?", (user_id,))
+                     " dupr_doubles=NULL, dupr_singles=NULL, dupr_optin=0, deleted=1 WHERE id=?", (user_id,))
         for course_id in freed:
             promote_waitlist(conn, get_course(conn, course_id))
         return {"ok": True}

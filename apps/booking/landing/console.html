@@ -31,6 +31,11 @@
     <p class="hint">場主用這個 Email 到 digital-court.cc/account「忘記密碼」設定密碼後，就能登入進後台。</p>
   </section>
 
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>DUPR 推廣同意名單</h2><span><button class="btn ghost small" id="optLoad" type="button">載入</button> <button class="btn small" id="optCsv" type="button" disabled>下載 CSV</button></span></div>
+    <p class="hint">合約規定每季把同意接收 DUPR 推廣資訊的球友 Email 寄給 DUPR。跨場館彙整，同一個 Email 只列一次，不含示範場館。</p>
+    <div class="scroll"><table><thead><tr><th>同意時間</th><th>姓名</th><th>Email</th><th>DUPR ID</th><th>場館</th></tr></thead><tbody id="optins"><tr><td colspan="5" class="hint">按「載入」</td></tr></tbody></table></div>
+  </section>
   <section class="card"><h2>詢問</h2><div class="scroll"><table><thead><tr><th>時間</th><th>稱呼</th><th>聯絡方式</th><th>場館</th><th>規模／功能</th><th>內容</th></tr></thead><tbody id="leads"></tbody></table></div></section>
   <section class="card"><h2>檢舉</h2><div class="scroll"><table><thead><tr><th>時間</th><th>網址</th><th>原因</th><th>聯絡</th></tr></thead><tbody id="reports"></tbody></table></div></section>
   <section class="card"><h2>最近的付款事件</h2><div class="scroll"><table><thead><tr><th>時間</th><th>事件</th><th>場館</th><th>內容</th></tr></thead><tbody id="events"></tbody></table></div></section>
@@ -77,6 +82,22 @@
     var s = ev.target.closest('select[data-act=plan]'); if (s) upd(s.dataset.slug, { plan: s.value }, '已改成' + PLAN[s.value] + '方案')
   })
   DC.$('#q').addEventListener('input', draw)
+  var optins = []
+  DC.$('#optLoad').addEventListener('click', function () {
+    DC.api('admin/dupr-optins').then(function (d) {
+      optins = d.people
+      DC.$('#optins').innerHTML = optins.map(function (p) { return '<tr><td>' + e(p.consented_at.replace('T', ' ').slice(0, 16)) + '</td><td>' + e(p.name) + '</td><td>' + e(p.email) + '</td><td>' + e(p.dupr_id) + '</td><td>' + e(p.venues.join('、')) + '</td></tr>' }).join('') || '<tr><td colspan="5" class="hint">目前沒有人同意</td></tr>'
+      DC.$('#optCsv').disabled = !optins.length
+    }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  DC.$('#optCsv').addEventListener('click', function () {
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"' }
+    var lines = [['email', 'name', 'dupr_id', 'consented_at', 'venues'].join(',')].concat(optins.map(function (p) { return [p.email, p.name, p.dupr_id, p.consented_at, p.venues.join(' ')].map(q).join(',') }))
+    var a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }))
+    a.download = 'digital-court-dupr-optin-' + new Date().toISOString().slice(0, 10) + '.csv'
+    a.click(); setTimeout(function () { URL.revokeObjectURL(a.href) }, 1000)
+  })
   DC.$('#create').addEventListener('submit', function (ev) {
     ev.preventDefault()
     var f = ev.target

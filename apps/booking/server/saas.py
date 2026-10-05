@@ -732,6 +732,35 @@ def admin_overview():
     return {"tenants": out, "mrr": mrr, "leads": leads, "reports": reports, "events": events}
 
 
+def admin_dupr_optins():
+    """同意 DUPR 寄送推廣資訊的球友名單（合約要求每季提供 Email 給 DUPR）。
+    跨所有場館彙整、同一個 Email 只列一次；示範場館是假資料，不列入。"""
+    import sqlite3
+    import demo
+    people: dict[str, dict] = {}
+    for t in tenancy.all_with_data():
+        if demo.kind_of(t.slug):
+            continue
+        try:
+            conn = sqlite3.connect(f"file:{t.db_path}?mode=ro", uri=True, timeout=15)
+            conn.row_factory = sqlite3.Row
+            try:
+                rows = conn.execute("SELECT name, email, dupr_id, dupr_optin_at FROM users"
+                                    " WHERE dupr_optin=1 AND deleted=0 AND email IS NOT NULL AND email!=''").fetchall()
+            finally:
+                conn.close()
+        except sqlite3.Error:
+            log.warning("讀不到 %s 的 DUPR 同意名單", t.slug, exc_info=True)
+            continue
+        for r in rows:
+            p = people.setdefault(r["email"].lower(), {"email": r["email"].lower(), "name": r["name"], "dupr_id": "",
+                                                       "consented_at": r["dupr_optin_at"], "venues": []})
+            p["dupr_id"] = p["dupr_id"] or r["dupr_id"]
+            p["consented_at"] = min(p["consented_at"] or r["dupr_optin_at"], r["dupr_optin_at"] or p["consented_at"])
+            p["venues"].append(t.slug)
+    return {"people": sorted(people.values(), key=lambda p: p["consented_at"])}
+
+
 def admin_create_tenant(body: dict):
     """手動開一個場館（合作、贈送、測試），不經過付款。"""
     slug = str(body.get("slug") or "").strip().lower()
@@ -938,6 +967,10 @@ def register(app):
     @app.get("/platform/api/admin/overview", include_in_schema=False)
     def _overview(a=Depends(require_admin)):
         return admin_overview()
+
+    @app.get("/platform/api/admin/dupr-optins", include_in_schema=False)
+    def _dupr_optins(a=Depends(require_admin)):
+        return admin_dupr_optins()
 
     @app.post("/platform/api/admin/tenants", include_in_schema=False)
     def _create(a=Depends(require_admin), body: dict = Depends(core.json_body)):
