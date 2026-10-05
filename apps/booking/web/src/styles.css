@@ -879,3 +879,9 @@ button.standalone-user .dot { position: absolute; top: 0; left: 22px; width: 9px
 /* 會員中心：提醒加 LINE 官方帳號好友 */
 .line-friend { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .line-friend .btn { flex: none; }
+
+/* 場主審核上傳 DUPR */
+.dupr-players { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 6px; }
+.dupr-players li { padding: 6px 0; border-bottom: 1px solid var(--line); gap: 8px; }
+.dupr-players li:last-child { border-bottom: 0; }
+.dupr-players code { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; }

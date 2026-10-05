@@ -219,6 +219,18 @@ MIGRATIONS = {
     "oauth_states": {
         "no_email": "INTEGER NOT NULL DEFAULT 0",
     },
+    "events": {
+        "dupr_play_type": "TEXT NOT NULL DEFAULT 'RECREATIONAL'",  # 上傳 DUPR 時的比賽類型（場主審核時選）
+        "dupr_match_type": "TEXT NOT NULL DEFAULT 'SIDEOUT'",      # 發球得分／每球得分
+    },
+    "event_games": {
+        "dupr_code": "TEXT NOT NULL DEFAULT ''",         # DUPR matchCode；有值＝已上傳
+        "dupr_identifier": "TEXT NOT NULL DEFAULT ''",   # 送給 DUPR 的唯一識別碼（撤回後重傳會換新的）
+        "dupr_seq": "INTEGER NOT NULL DEFAULT 0",
+        "dupr_score": "TEXT NOT NULL DEFAULT ''",        # 上傳當時的比分 a:b；和現在不同＝場主改過、要同步
+        "dupr_uploaded_at": "TEXT NOT NULL DEFAULT ''",
+        "dupr_error": "TEXT NOT NULL DEFAULT ''",        # 最近一次上傳失敗的原因
+    },
 }
 
 app = FastAPI(title="約課系統 API", docs_url="/api/docs", openapi_url="/api/openapi.json")
@@ -1828,7 +1840,7 @@ def event_view(conn, c: dict, viewer: dict | None) -> dict | None:
             view_games.append({
                 "id": g["id"], "round": g["round"], "status": g["status"], "score_a": g["score_a"], "score_b": g["score_b"],
                 "a": [person(p) for p in g["a"]], "b": [person(p) for p in g["b"]], "bye": [person(p) for p in g["bye"]],
-                "mine": mine,
+                "mine": mine, "dupr_state": game_dupr_state(g),
                 "reported_by": person(g["reported_by"])["name"] if g["reported_by"] else None,
                 "can_report": bool(mine) and g["status"] != "confirmed",
                 "can_confirm": bool(mine) and g["status"] == "reported" and reporter_side not in (None, mine),
@@ -1956,7 +1968,7 @@ def event_admin_view(conn, c: dict, owner: dict) -> dict:
     return {"course": {k: c[k] for k in ("id", "name", "date", "start_time", "end_time", "dupr_format", "games_to")},
             "format": fmt, "format_name": matches.FORMATS[fmt],
             "players": [{k: p[k] for k in ("id", "name", "avatar_url", "rating", "dupr_verified", "partner_id")} for p in players],
-            "event": event_view(conn, c, owner)}
+            "event": event_view(conn, c, owner), "dupr": dupr_review(conn, c)}
 
 
 @app.get("/api/admin/courses/{course_id}/event")
@@ -2040,6 +2052,9 @@ def delete_event(course_id: int, owner=Depends(require_owner)):
         ev = one(conn.execute("SELECT id FROM events WHERE course_id=?", (course_id,)))
         if not ev:
             fail(404, "這場還沒有賽事")
+        uploaded = conn.execute("SELECT COUNT(*) FROM event_games WHERE event_id=? AND dupr_code!=''", (ev["id"],)).fetchone()[0]
+        if uploaded:
+            fail(400, f"有 {uploaded} 局已上傳 DUPR，請先全部撤回再刪除賽事")
         conn.execute("DELETE FROM event_games WHERE event_id=?", (ev["id"],))
         conn.execute("DELETE FROM event_groups WHERE event_id=?", (ev["id"],))
         conn.execute("DELETE FROM events WHERE id=?", (ev["id"],))
@@ -2052,6 +2067,8 @@ def admin_score(game_id: int, body: dict = Depends(json_body), owner=Depends(req
     b = body
     with db() as conn:
         g, ev, c = get_game(conn, game_id)
+        if b.get("clear") and g["dupr_code"]:
+            fail(400, "這局已上傳 DUPR，請先從 DUPR 撤回再清除比分")
         if b.get("clear"):
             conn.execute("UPDATE event_games SET score_a=NULL, score_b=NULL, status='pending', reported_by=NULL,"
                          " confirmed_by=NULL, updated_at=? WHERE id=?", (stamp(), game_id))
@@ -2062,6 +2079,166 @@ def admin_score(game_id: int, body: dict = Depends(json_body), owner=Depends(req
         conn.execute("UPDATE event_games SET score_a=?, score_b=?, status='confirmed', confirmed_by=?, updated_at=?"
                      " WHERE id=?", (int(b["score_a"]), int(b["score_b"]), owner["id"], stamp(), game_id))
         return {"ok": True}
+
+
+# ---------------------------------------------------------------- 場主審核後上傳 DUPR
+
+DUPR_PLAY_TYPES = {"RECREATIONAL": "休閒／球敘", "LEAGUE": "聯賽", "TOURNAMENT": "錦標賽"}
+DUPR_MATCH_TYPES = {"SIDEOUT": "發球得分制", "RALLY": "每球得分制"}
+DUPR_UPLOAD_LOCK = threading.Lock()  # 同一時間只跑一個上傳，避免連按兩次重複送出
+
+
+def game_dupr_state(g: dict) -> str:
+    """''＝未上傳、uploaded＝已上傳、stale＝上傳後場主改過比分（要同步）、error＝上次上傳失敗。"""
+    if g.get("dupr_code"):
+        return "uploaded" if g["dupr_score"] == f"{g['score_a']}:{g['score_b']}" else "stale"
+    return "error" if g.get("dupr_error") else ""
+
+
+def dupr_review(conn, c: dict) -> dict | None:
+    """場主審核頁：每局能不能上傳、為什麼不能，以及參賽者的 DUPR ID 讓場主核對。"""
+    ev = one(conn.execute("SELECT * FROM events WHERE course_id=?", (c["id"],)))
+    if not ev:
+        return None
+    games = [game_row(g) for g in rows(conn.execute("SELECT * FROM event_games WHERE event_id=?", (ev["id"],)))]
+    ids = sorted({p for g in games for p in g["a"] + g["b"]})
+    users = {u["id"]: u for u in rows(conn.execute(
+        f"SELECT id, name, dupr_id, dupr_name, dupr_source, dupr_verified FROM users WHERE id IN ({','.join('?' * len(ids))})",
+        tuple(ids)))} if ids else {}
+    items, counts = {}, {"uploaded": 0, "stale": 0, "ready": 0, "waiting": 0, "blocked": 0}
+    for g in games:
+        state = game_dupr_state(g)
+        if g["status"] != "confirmed":
+            problem = "比分還沒確認"
+        elif any(not (users.get(p) or {}).get("dupr_id") for p in g["a"] + g["b"]):
+            problem = "有球員沒綁 DUPR"
+        else:
+            problem = None
+        if state == "uploaded":
+            counts["uploaded"] += 1
+        elif problem:
+            counts["waiting" if g["status"] != "confirmed" else "blocked"] += 1
+        else:
+            counts["stale" if state == "stale" else "ready"] += 1
+        items[g["id"]] = {"state": state, "problem": problem, "error": g["dupr_error"], "code": g["dupr_code"],
+                          "uploaded_at": g["dupr_uploaded_at"]}
+    players = [{"id": u["id"], "name": u["name"], "dupr_id": u["dupr_id"], "dupr_name": u["dupr_name"],
+                "checked": bool(u["dupr_verified"] or u["dupr_source"] == "api")} for u in users.values()]
+    players.sort(key=lambda u: (bool(u["dupr_id"]), u["checked"]))  # 沒綁的、沒核對過的排前面
+    return {"enabled": dupr.enabled(), "play_type": ev["dupr_play_type"], "match_type": ev["dupr_match_type"],
+            "play_types": DUPR_PLAY_TYPES, "match_types": DUPR_MATCH_TYPES, "counts": counts, "games": items,
+            "players": players}
+
+
+def dupr_match_payload(c: dict, ev: dict, group_name: str, g: dict, dupr_ids: dict, location: str) -> dict:
+    def team(side: list, score: int) -> dict:
+        t = {"player1": dupr_ids[side[0]], "game1": score}
+        if len(side) > 1:
+            t["player2"] = dupr_ids[side[1]]
+        return t
+    return {"identifier": g["dupr_identifier"], "matchDate": c["date"], "event": c["name"][:100],
+            "bracket": f"{group_name} 第 {g['round']} 局", "location": location[:100],
+            "format": "SINGLES" if ev["format"] == "singles" else "DOUBLES", "matchType": ev["dupr_match_type"],
+            "matchSource": "PARTNER", "matchPlayType": ev["dupr_play_type"],
+            "teamA": team(g["a"], g["score_a"]), "teamB": team(g["b"], g["score_b"])}
+
+
+@app.post("/api/admin/courses/{course_id}/event/dupr")
+def upload_event_dupr(course_id: int, body: dict = Depends(json_body), owner=Depends(require_owner)):
+    """場主審核後上傳：新的比賽批次建立、改過比分的同步修改。game_ids 不帶＝全部可上傳的。
+    分兩段交易：先準備資料並寫入識別碼，連線 DUPR 時不鎖資料庫，最後寫回結果。"""
+    if not dupr.enabled():
+        fail(400, "平台尚未開通 DUPR 上傳，目前請先下載 CSV")
+    b = body
+    if not DUPR_UPLOAD_LOCK.acquire(blocking=False):
+        fail(409, "正在上傳中，請稍候再試")
+    try:
+        with db() as conn:
+            c = get_course(conn, course_id)
+            ev = one(conn.execute("SELECT * FROM events WHERE course_id=?", (course_id,)))
+            if not ev:
+                fail(404, "這場還沒有賽事")
+            play = b.get("play_type") or ev["dupr_play_type"]
+            kind = b.get("match_type") or ev["dupr_match_type"]
+            if play not in DUPR_PLAY_TYPES or kind not in DUPR_MATCH_TYPES:
+                fail(400, "比賽類型或計分制錯誤")
+            conn.execute("UPDATE events SET dupr_play_type=?, dupr_match_type=? WHERE id=?", (play, kind, ev["id"]))
+            ev = {**ev, "dupr_play_type": play, "dupr_match_type": kind}
+            review = dupr_review(conn, c)
+            wanted = {int(i) for i in b.get("game_ids") or []}
+            groups = {r["id"]: r["name"] for r in rows(conn.execute("SELECT id, name FROM event_groups WHERE event_id=?", (ev["id"],)))}
+            games = [game_row(g) for g in rows(conn.execute("SELECT * FROM event_games WHERE event_id=? ORDER BY group_id, round", (ev["id"],)))]
+            todo = [g for g in games if not review["games"][g["id"]]["problem"]
+                    and review["games"][g["id"]]["state"] != "uploaded" and (not wanted or g["id"] in wanted)]
+            if not todo:
+                fail(400, "沒有可以上傳的比賽（比分都要先確認、所有球員都要綁 DUPR）")
+            slug = tenancy.current().slug
+            for g in todo:
+                if not g["dupr_identifier"]:  # 識別碼只在第一次上傳時產生；失敗重傳沿用，DUPR 會擋重複建立
+                    g["dupr_seq"] += 1
+                    g["dupr_identifier"] = f"dc-{slug}-{g['id']}-{g['dupr_seq']}"
+                    conn.execute("UPDATE event_games SET dupr_seq=?, dupr_identifier=? WHERE id=?",
+                                 (g["dupr_seq"], g["dupr_identifier"], g["id"]))
+            ids = {p for g in todo for p in g["a"] + g["b"]}
+            dupr_ids = {u["id"]: u["dupr_id"] for u in rows(conn.execute(
+                f"SELECT id, dupr_id FROM users WHERE id IN ({','.join('?' * len(ids))})", tuple(ids)))}
+            s = get_settings(conn)
+            location = c["location"] or s.get("address") or s["name"]
+            payloads = {g["id"]: dupr_match_payload(c, ev, groups.get(g["group_id"], ""), g, dupr_ids, location) for g in todo}
+
+        # 連線 DUPR（不持有資料庫鎖）
+        new = [g for g in todo if not g["dupr_code"]]
+        ok, bad = dupr.create_matches([payloads[g["id"]] for g in new]) if new else ({}, {})
+        results = {}
+        for g in new:
+            ident = g["dupr_identifier"]
+            results[g["id"]] = ("created", ok[ident]) if ok.get(ident) else ("error", bad.get(ident) or "上傳失敗")
+        for g in todo:
+            if g["dupr_code"]:
+                try:
+                    dupr.update_match(g["dupr_code"], payloads[g["id"]])
+                    results[g["id"]] = ("updated", g["dupr_code"])
+                except dupr.DuprError as e:
+                    results[g["id"]] = ("error", str(e))
+
+        with db() as conn:
+            told = {}
+            for g in todo:
+                kind_, val = results[g["id"]]
+                if kind_ == "error":
+                    conn.execute("UPDATE event_games SET dupr_error=? WHERE id=?", (val[:300], g["id"]))
+                    continue
+                conn.execute("UPDATE event_games SET dupr_code=?, dupr_score=?, dupr_uploaded_at=?, dupr_error='' WHERE id=?",
+                             (val, f"{g['score_a']}:{g['score_b']}", stamp(), g["id"]))
+                for p in g["a"] + g["b"]:
+                    told[p] = told.get(p, 0) + 1
+            for p, n in told.items():
+                notify(conn, p, f"{course_label(c)}有 {n} 局比分已上傳到 DUPR，分數更新可能需要一點時間。", course=c)
+            out = event_admin_view(conn, c, owner)
+            out["result"] = {k: sum(1 for v in results.values() if v[0] == k) for k in ("created", "updated", "error")}
+            return out
+    finally:
+        DUPR_UPLOAD_LOCK.release()
+
+
+@app.delete("/api/admin/event-games/{game_id}/dupr")
+def withdraw_game_dupr(game_id: int, owner=Depends(require_owner)):
+    """從 DUPR 撤回一局（例如比分登錄錯人）；DUPR 會還原這局對分數的影響。之後可以修改再重新上傳。"""
+    if not dupr.enabled():
+        fail(400, "平台尚未開通 DUPR 上傳")
+    with db() as conn:
+        g, ev, c = get_game(conn, game_id)
+        if not g["dupr_code"]:
+            fail(400, "這局還沒有上傳 DUPR")
+        code, ident = g["dupr_code"], g["dupr_identifier"]
+    try:
+        dupr.delete_match(code, ident)
+    except dupr.DuprError as e:
+        fail(400, f"DUPR 撤回失敗：{e}")
+    with db() as conn:
+        conn.execute("UPDATE event_games SET dupr_code='', dupr_identifier='', dupr_score='', dupr_uploaded_at='',"
+                     " dupr_error='' WHERE id=?", (game_id,))
+        return event_admin_view(conn, c, owner)
 
 
 # ---------------------------------------------------------------- owner API

@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { useApp } from '../../App'
 import { api, downloadFile } from '../../api'
 import EventBoard, { ScoreModal } from '../../components/EventBoard'
-import { AvatarImg, Confirm, Empty, Loading } from '../../components/ui'
+import { AvatarImg, Badge, Confirm, Empty, Field, Loading } from '../../components/ui'
 import { rating, showDate } from '../../util'
 
 const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
@@ -18,6 +18,7 @@ export default function EventAdmin() {
   const [busy, setBusy] = useState(false)
   const [scoring, setScoring] = useState(null)
   const [deleting, setDeleting] = useState(false)
+  const [withdrawing, setWithdrawing] = useState(null)
 
   const load = useCallback(() => api(`admin/courses/${id}/event`).then((r) => {
     setD(r)
@@ -82,11 +83,17 @@ export default function EventAdmin() {
         <h2 className="detail-title">{c.name}</h2>
         <p className="course-meta"><b className="course-time">{showDate(c.date)} {c.start_time}~{c.end_time}</b> · {d.format_name} · 每局打到 {c.games_to} 分</p>
         <p className="muted small">報名 {d.players.length} 人{d.event && ` · 已確認 ${d.event.progress.confirmed} / ${d.event.progress.total} 局`}</p>
+        {d.dupr?.enabled && d.dupr.counts.ready + d.dupr.counts.stale > 0 && (
+          <button className="btn btn-small" onClick={() => document.getElementById('dupr-review')?.scrollIntoView({ behavior: 'smooth' })}>
+            {d.dupr.counts.ready + d.dupr.counts.stale} 局可以上傳 DUPR，前往審核
+          </button>
+        )}
       </section>
 
       {d.event ? (
         <>
-          <EventBoard event={d.event} mode="owner" onScore={setScoring} />
+          <EventBoard event={d.event} mode="owner" onScore={setScoring} dupr={d.dupr} onWithdraw={setWithdrawing} />
+          {d.dupr?.enabled && <DuprReview courseId={id} review={d.dupr} onDone={(r) => setD({ ...r, plan: null })} />}
           <button className="btn btn-block btn-light" onClick={() => downloadFile(`admin/courses/${id}/event/export`, `比分_${c.date}_${c.name}.csv`).catch(handleError)}>下載比分（CSV，可整理後上傳 DUPR）</button>
           <button className="btn btn-block btn-light text-danger" onClick={() => setDeleting(true)}>刪除賽事，重新分組</button>
         </>
@@ -141,8 +148,18 @@ export default function EventAdmin() {
       )}
 
       {scoring && (
-        <ScoreModal game={scoring} gamesTo={d.event.games_to} owner onClose={() => setScoring(null)} onSave={saveScore}
+        <ScoreModal game={scoring} gamesTo={d.event.games_to} owner uploaded={!!d.dupr?.games?.[scoring.id]?.code} onClose={() => setScoring(null)} onSave={saveScore}
           onClear={scoring.score_a != null ? clearScore : null} />
+      )}
+      {withdrawing && (
+        <Confirm title={`從 DUPR 撤回第 ${withdrawing.round} 局？`} danger okText="撤回" onClose={() => setWithdrawing(null)}
+          text="DUPR 會刪除這局並還原它對球員分數的影響。這裡的比分會保留，修改後可以再重新上傳。"
+          onOk={async () => {
+            try {
+              const r = await api(`admin/event-games/${withdrawing.id}/dupr`, { method: 'DELETE' })
+              setD({ ...r, plan: null }); setWithdrawing(null); showToast('已從 DUPR 撤回')
+            } catch (e) { handleError(e) }
+          }} />
       )}
       {deleting && (
         <Confirm title="刪除賽事？" danger okText="刪除" onClose={() => setDeleting(false)}
@@ -152,5 +169,84 @@ export default function EventAdmin() {
           }} />
       )}
     </>
+  )
+}
+
+// 場主審核：核對比分與每位球員的 DUPR ID，選比賽類型後上傳；改過比分的一併同步
+function DuprReview({ courseId, review, onDone }) {
+  const { handleError, showToast } = useApp()
+  const [form, setForm] = useState({ play_type: review.play_type, match_type: review.match_type })
+  const [checked, setChecked] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const n = review.counts
+  const todo = n.ready + n.stale
+  const missing = review.players.filter((p) => !p.dupr_id)
+  const unchecked = review.players.filter((p) => p.dupr_id && !p.checked)
+
+  const upload = async () => {
+    setBusy(true)
+    try {
+      const r = await api(`admin/courses/${courseId}/event/dupr`, { method: 'POST', body: form })
+      const x = r.result
+      const parts = [x.created && `新上傳 ${x.created} 局`, x.updated && `同步 ${x.updated} 局`].filter(Boolean)
+      showToast(x.error ? `${parts.join('、') || '沒有成功的'}，${x.error} 局失敗（原因標在該局）` : `已${parts.join('、')}`)
+      setChecked(false)
+      onDone(r)
+    } catch (e) { handleError(e) } finally { setBusy(false) }
+  }
+
+  return (
+    <section className="card form dupr-review" id="dupr-review">
+      <div className="row between">
+        <h3 className="card-title nomargin">審核並上傳 DUPR</h3>
+        <span className="badge badge-dupr">DUPR</span>
+      </div>
+      <div className="stats stats-3">
+        <div className="stat"><span>已上傳</span><b>{n.uploaded}</b></div>
+        <div className="stat"><span>可上傳{n.stale ? `／待同步` : ''}</span><b>{n.ready}{n.stale ? ` / ${n.stale}` : ''}</b></div>
+        <div className="stat"><span>比分未確認</span><b>{n.waiting}</b></div>
+      </div>
+      {n.waiting > 0 && <p className="muted small">還有 {n.waiting} 局比分沒確認，確認後才能上傳（可以先上傳已確認的）。</p>}
+
+      <div>
+        <p className="field-label">核對球員的 DUPR ID</p>
+        {missing.length > 0 && <p className="alert danger small">{missing.map((p) => p.name).join('、')} 還沒綁 DUPR，他們的比賽無法上傳。請對方到會員中心綁定。</p>}
+        <ul className="dupr-players">
+          {review.players.map((p) => (
+            <li key={p.id} className="row between">
+              <span>{p.name}{p.dupr_name && p.dupr_name !== p.name && <span className="muted small">（DUPR：{p.dupr_name}）</span>}</span>
+              <span className="row gap-sm">
+                {p.dupr_id ? <code className="small">{p.dupr_id}</code> : <Badge tone="danger">未綁定</Badge>}
+                {p.dupr_id && !p.checked && <Badge tone="warn">未核對</Badge>}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {unchecked.length > 0 && <p className="muted small">「未核對」是球友自己填的 DUPR ID，上傳前請確認是本人，填錯會記到別人的 DUPR 上。</p>}
+      </div>
+
+      <div className="grid2">
+        <Field label="比賽類型">
+          <select className="input" value={form.play_type} onChange={(e) => setForm({ ...form, play_type: e.target.value })}>
+            {Object.entries(review.play_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+        <Field label="計分制">
+          <select className="input" value={form.match_type} onChange={(e) => setForm({ ...form, match_type: e.target.value })}>
+            {Object.entries(review.match_types).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+          </select>
+        </Field>
+      </div>
+      {todo > 0 ? (
+        <>
+          <label className="check small"><input type="checkbox" checked={checked} onChange={(e) => setChecked(e.target.checked)} /> 我已核對比分與每位球員的 DUPR ID，資料正確</label>
+          <button className="btn btn-block" disabled={!checked || busy} onClick={upload}>
+            {busy ? '上傳中…' : `上傳 ${todo} 局到 DUPR${n.stale ? `（含同步 ${n.stale} 局修改）` : ''}`}
+          </button>
+        </>
+      ) : n.uploaded > 0 && n.waiting === 0 && n.blocked === 0 ? (
+        <p className="alert info small">全部比賽都已上傳 DUPR。之後如果修改比分，記得回來同步。</p>
+      ) : null}
+    </section>
   )
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { AvatarImg, Badge, Chips, Modal } from './ui'
 
 const STATUS = { pending: ['未打', 'gray'], reported: ['待確認', 'warn'], confirmed: ['已確認', 'success'] }
+const DUPR_STATE = { uploaded: ['已上傳 DUPR', 'dupr'], stale: ['改過，待同步 DUPR', 'warn'], error: ['DUPR 上傳失敗', 'danger'] }
 
 export function Names({ people, me }) {
   return people.map((p, i) => (
@@ -14,7 +15,8 @@ export function Names({ people, me }) {
 }
 
 // 賽事看板：各組排名＋對戰；mode = player（球員回報／確認）或 owner（團主登錄比分）
-export default function EventBoard({ event, me, mode = 'player', onScore, onConfirm }) {
+// dupr：場主審核資料（每局能否上傳、失敗原因）；onWithdraw：從 DUPR 撤回
+export default function EventBoard({ event, me, mode = 'player', onScore, onConfirm, dupr, onWithdraw }) {
   const mineGroup = event.groups.findIndex((g) => g.entries.some((e) => e.some((p) => p.id === me)))
   const [tab, setTab] = useState(mineGroup >= 0 ? mineGroup : 0)
   const [onlyMine, setOnlyMine] = useState(mode === 'player' && mineGroup >= 0)
@@ -74,11 +76,16 @@ export default function EventBoard({ event, me, mode = 'player', onScore, onConf
       {games.map((g) => {
         const [label, tone] = STATUS[g.status]
         const won = g.score_a != null ? (g.score_a > g.score_b ? 'a' : 'b') : null
+        const ds = DUPR_STATE[g.dupr_state]
+        const review = dupr?.games?.[g.id]
         return (
           <section key={g.id} className={`card game-card ${g.mine ? 'mine' : ''}`}>
             <div className="row between">
               <b className="small">第 {g.round} 局</b>
-              <Badge tone={tone}>{label}</Badge>
+              <span className="row gap-sm wrap">
+                {ds && (mode === 'owner' || g.dupr_state !== 'error') && <Badge tone={ds[1]}>{mode === 'owner' ? ds[0] : '已上傳 DUPR'}</Badge>}
+                <Badge tone={tone}>{label}</Badge>
+              </span>
             </div>
             <div className="game-sides">
               <div className={`game-side ${won === 'a' ? 'won' : ''}`}>
@@ -92,8 +99,11 @@ export default function EventBoard({ event, me, mode = 'player', onScore, onConf
             </div>
             {g.bye.length > 0 && <p className="muted small">輪空：{g.bye.map((p) => p.name).join('、')}</p>}
             {g.status === 'reported' && g.reported_by && <p className="muted small">{g.reported_by} 回報，等待對手確認</p>}
+            {mode === 'owner' && review?.error && g.dupr_state !== 'uploaded' && <p className="alert danger small">DUPR：{review.error}</p>}
+            {mode === 'owner' && review?.problem && g.status === 'confirmed' && !review.code && <p className="muted small">還不能上傳 DUPR：{review.problem}</p>}
             <div className="admin-actions">
               {mode === 'owner' && <button className="btn btn-small" onClick={() => onScore(g)}>{g.score_a == null ? '登錄比分' : '修改比分'}</button>}
+              {mode === 'owner' && review?.code && onWithdraw && <button className="btn btn-small btn-light text-danger" onClick={() => onWithdraw(g)}>從 DUPR 撤回</button>}
               {mode === 'player' && g.can_confirm && <button className="btn btn-small" onClick={() => onConfirm(g)}>確認比分</button>}
               {mode === 'player' && g.can_report && (
                 <button className="btn btn-small btn-light" onClick={() => onScore(g)}>{g.status === 'pending' ? '回報比分' : g.can_confirm ? '比分有誤，改報' : '修改回報'}</button>
@@ -107,7 +117,7 @@ export default function EventBoard({ event, me, mode = 'player', onScore, onConf
   )
 }
 
-export function ScoreModal({ game, gamesTo, owner, onClose, onSave, onClear }) {
+export function ScoreModal({ game, gamesTo, owner, onClose, onSave, onClear, uploaded }) {
   const [a, setA] = useState(game.score_a ?? '')
   const [b, setB] = useState(game.score_b ?? '')
   const [busy, setBusy] = useState(false)
@@ -140,6 +150,7 @@ export function ScoreModal({ game, gamesTo, owner, onClose, onSave, onClear }) {
             <input className="input score-input" type="number" inputMode="numeric" min="0" max="99" required value={v} onChange={(e) => { setErr(''); set(e.target.value) }} aria-label="分數" />
           </label>
         ))}
+        {uploaded && <p className="alert warn small">這局已上傳 DUPR。修改後要在「審核並上傳 DUPR」按同步，DUPR 才會更新。</p>}
         {err && <p className="alert danger small" role="alert">{err}</p>}
         <div className="row gap">
           <button type="button" className="btn btn-light flex1" onClick={onClose}>取消</button>

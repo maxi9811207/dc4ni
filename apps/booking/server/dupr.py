@@ -128,3 +128,83 @@ def fetch_player(dupr_id: str) -> dict:
     if data.get("status") == "FAILURE":
         raise DuprError(data.get("message") or "找不到這個 DUPR ID")
     return parse_player(data)
+
+
+# ---------------------------------------------------------------- 比賽上傳（Partner API：create／batch／update／delete）
+
+BATCH_LIMIT = 100  # DUPR 一次最多 100 場
+
+
+def _error_text(data) -> str:
+    """把 DUPR 的錯誤回應整理成一行（errors 可能是 {欄位: [訊息]}、[訊息] 或字串）。"""
+    if not isinstance(data, dict):
+        return str(data or "")[:300]
+    errs = data.get("errors") or data.get("error")
+    parts = []
+    if isinstance(errs, dict):
+        for v in errs.values():
+            parts += v if isinstance(v, list) else [v]
+    elif isinstance(errs, list):
+        parts = errs
+    elif errs:
+        parts = [errs]
+    text = "；".join(str(p) for p in parts if p) or data.get("message") or "DUPR 拒絕了這筆資料"
+    return text[:300]
+
+
+def _partner_call(method: str, path: str, body) -> dict:
+    """Partner token 呼叫；HTTP 4xx 時把 DUPR 的錯誤說明帶出來（比賽資料的錯誤要讓場主看得懂哪裡不對）。"""
+    data = json.dumps(body).encode()
+    req = urllib.request.Request(_base() + path, data=data, method=method,
+                                 headers={"Accept": "application/json", "Content-Type": "application/json",
+                                          "Authorization": f"Bearer {_access_token()}"})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as res:
+            return json.loads(res.read() or b"{}")
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            _token["value"] = None  # 下次重新取 token
+        try:
+            detail = json.loads(e.read() or b"{}")
+        except ValueError:
+            detail = {}
+        if 400 <= e.code < 500:
+            raise DuprError(_error_text(detail) if detail else f"DUPR 拒絕了這筆資料（{e.code}）")
+        raise DuprError(f"DUPR 服務回應錯誤（{e.code}），請稍後再試")
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        raise DuprError("暫時無法連線到 DUPR，請稍後再試")
+
+
+def create_matches(matches: list[dict]) -> tuple[dict, dict]:
+    """批次上傳。回傳 ({identifier: matchCode}, {identifier: 錯誤說明})；單筆失敗不影響其他筆。"""
+    ok, bad = {}, {}
+    for i in range(0, len(matches), BATCH_LIMIT):
+        chunk = matches[i:i + BATCH_LIMIT]
+        try:
+            data = _partner_call("POST", "/match/v1.0/batch", chunk)
+        except DuprError as e:
+            bad.update({m["identifier"]: str(e) for m in chunk})
+            continue
+        result = data.get("result") or {}
+        for r in result.get("matchCodes") or []:
+            ok[r.get("identifier")] = str(r.get("matchCode") or "")
+        for r in result.get("errors") or []:
+            bad[r.get("identifier")] = str(r.get("error") or r.get("message") or "DUPR 拒絕了這場")[:300]
+        for m in chunk:  # 回應沒提到的也當失敗，避免誤以為已上傳
+            if m["identifier"] not in ok and m["identifier"] not in bad:
+                bad[m["identifier"]] = "DUPR 沒有回應這場的結果，請再上傳一次"
+    return ok, bad
+
+
+def update_match(match_code: str, match: dict) -> None:
+    """修改已上傳的比賽（DUPR 會重算分數）。matchId 就是建立時回傳的 matchCode。"""
+    data = _partner_call("POST", "/match/v1.0/update", {**match, "matchId": int(match_code)})
+    if data.get("status") not in ("SUCCESS", None):
+        raise DuprError(_error_text(data))
+
+
+def delete_match(match_code: str, identifier: str) -> None:
+    """撤回已上傳的比賽（DUPR 會把對分數的影響還原）。"""
+    data = _partner_call("DELETE", "/match/v1.0/delete", {"matchCode": match_code, "identifier": identifier})
+    if data.get("status") not in ("SUCCESS", None):
+        raise DuprError(_error_text(data))
