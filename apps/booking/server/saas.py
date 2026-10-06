@@ -757,8 +757,7 @@ def dupr_rating_update(body: dict) -> int:
     ev = dupr.parse_rating_event(body)
     if not ev:
         return 0
-    cid = dupr.client_id()
-    if cid and str(body.get("clientId") or "") != cid:
+    if not dupr.webhook_client_ok(body.get("clientId")):
         log.warning("DUPR webhook 的 clientId 不符，忽略")
         return 0
     n = 0

@@ -306,6 +306,14 @@ def webhook_secret() -> str:
     return os.getenv("DUPR_WEBHOOK_SECRET", "").strip()
 
 
+def webhook_client_ok(value) -> bool:
+    """通知是不是我們的。DUPR 在 envelope 的 clientId 放的是 clientKey（UAT 實測 2026-10-06），
+    不是 onboarding 信上的數字 Client ID，所以兩者都接受。沒有任何可比對的值就一律不收。"""
+    got = str(value or "").strip()
+    known = {os.getenv("DUPR_CLIENT_KEY", "").strip(), client_id()} - {""}
+    return bool(got) and got in known
+
+
 def register_webhook(url: str) -> dict:
     """告訴 DUPR 把分數通知送到這個網址（必須是 HTTPS、且能立刻回 200）。"""
     return _partner_call("POST", "/v1.0/webhook", {"webhookUrl": url, "topics": [RATING_TOPIC]})
