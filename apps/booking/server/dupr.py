@@ -152,8 +152,17 @@ def _error_text(data) -> str:
     return text[:300]
 
 
-def _partner_call(method: str, path: str, body) -> dict:
-    """Partner token 呼叫；HTTP 4xx 時把 DUPR 的錯誤說明帶出來（比賽資料的錯誤要讓場主看得懂哪裡不對）。"""
+def _partner_call(method: str, path: str, body, retry_5xx: bool = False) -> dict:
+    """Partner token 呼叫；HTTP 4xx 時把 DUPR 的錯誤說明帶出來（比賽資料的錯誤要讓場主看得懂哪裡不對）。
+    retry_5xx：DUPR 偶爾會回 500（2026-10-07 實測），對冪等的呼叫（修改、刪除）重試一次。
+    建立不重試——萬一第一次其實成功了，重試會被識別碼擋下，反而拿不到 matchCode。"""
+    if retry_5xx:
+        try:
+            return _partner_call(method, path, body)
+        except DuprError as e:
+            if "服務回應錯誤" not in str(e) and "無法連線" not in str(e):
+                raise
+            time.sleep(2)
     data = json.dumps(body).encode()
     req = urllib.request.Request(_base() + path, data=data, method=method,
                                  headers={"Accept": "application/json", "Content-Type": "application/json",
@@ -198,14 +207,14 @@ def create_matches(matches: list[dict]) -> tuple[dict, dict]:
 
 def update_match(match_code: str, match: dict) -> None:
     """修改已上傳的比賽（DUPR 會重算分數）。matchId 就是建立時回傳的 matchCode。"""
-    data = _partner_call("POST", "/match/v1.0/update", {**match, "matchId": int(match_code)})
+    data = _partner_call("POST", "/match/v1.0/update", {**match, "matchId": int(match_code)}, retry_5xx=True)
     if data.get("status") not in ("SUCCESS", None):
         raise DuprError(_error_text(data))
 
 
 def delete_match(match_code: str, identifier: str) -> None:
     """撤回已上傳的比賽（DUPR 會把對分數的影響還原）。"""
-    data = _partner_call("DELETE", "/match/v1.0/delete", {"matchCode": match_code, "identifier": identifier})
+    data = _partner_call("DELETE", "/match/v1.0/delete", {"matchCode": match_code, "identifier": identifier}, retry_5xx=True)
     if data.get("status") not in ("SUCCESS", None):
         raise DuprError(_error_text(data))
 
