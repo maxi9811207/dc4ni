@@ -2324,9 +2324,12 @@ def upload_event_dupr(course_id: int, body: dict = Depends(json_body), owner=Dep
                 fail(400, "沒有可以上傳的比賽（比分都要先確認、所有球員都要綁 DUPR）")
             slug = tenancy.current().slug
             for g in todo:
-                if not g["dupr_identifier"]:  # 識別碼只在第一次上傳時產生；失敗重傳沿用，DUPR 會擋重複建立
+                if not g["dupr_identifier"]:
+                    # 識別碼只在第一次上傳時產生；失敗重傳沿用（DUPR 會擋重複建立）。
+                    # 必須全域唯一：DUPR 即使刪掉比賽也永久保留識別碼，而賽事刪掉重生成時
+                    # SQLite 會重用 event_games 的編號，光靠局編號會撞號（2026-10-07 實測）。
                     g["dupr_seq"] += 1
-                    g["dupr_identifier"] = f"dc-{slug}-{g['id']}-{g['dupr_seq']}"
+                    g["dupr_identifier"] = f"dc-{slug}-{g['id']}-{g['dupr_seq']}-{secrets.token_hex(4)}"
                     conn.execute("UPDATE event_games SET dupr_seq=?, dupr_identifier=? WHERE id=?",
                                  (g["dupr_seq"], g["dupr_identifier"], g["id"]))
             ids = {p for g in todo for p in g["a"] + g["b"]}
