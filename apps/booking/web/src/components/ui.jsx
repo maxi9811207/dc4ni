@@ -1,0 +1,166 @@
+import { useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { asset } from '../api'
+
+export function Modal({ onClose, children }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose?.()
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" aria-label="關閉" onClick={onClose}>×</button>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+export function Confirm({ title, text, okText = '確定', danger, onOk, onClose, children }) {
+  return (
+    <Modal onClose={onClose}>
+      {title && <h3 className="dialog-title">{title}</h3>}
+      {text && <p className="dialog-text">{text}</p>}
+      {children}
+      <div className="row gap">
+        <button className="btn btn-light flex1" onClick={onClose}>取消</button>
+        <button className={`btn flex1 ${danger ? 'btn-danger' : ''}`} onClick={onOk}>{okText}</button>
+      </div>
+    </Modal>
+  )
+}
+
+export function TopBar({ title, back = -1, right }) {
+  const navigate = useNavigate()
+  return (
+    <header className="topbar">
+      <button className="icon-btn" aria-label="返回" onClick={() => navigate(back)}>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+      </button>
+      <h1 className="topbar-title">{title}</h1>
+      <div className="topbar-right">{right}</div>
+    </header>
+  )
+}
+
+// 頭像圖片載入失敗（例如 LINE 換了大頭貼、舊網址失效）時改顯示姓名首字
+export function AvatarImg({ src, name, alt = '' }) {
+  const [broken, setBroken] = useState(false)
+  useEffect(() => setBroken(false), [src])
+  if (!src || broken) return <span>{(name || '?').slice(0, 1)}</span>
+  return <img src={asset(src)} alt={alt} onError={() => setBroken(true)} />
+}
+
+export function Avatar({ src, name, size = 44 }) {
+  return (
+    <div className="avatar" style={{ width: size, height: size, fontSize: size * 0.42 }}>
+      <AvatarImg src={src} name={name} alt={name} />
+    </div>
+  )
+}
+
+export function Stars({ value = 0, size = 14, onChange }) {
+  return (
+    <span className="stars" style={{ fontSize: size }}>
+      {[1, 2, 3, 4, 5].map((n) => (
+        <span
+          key={n}
+          className={n <= Math.round(value) ? 'on' : ''}
+          onClick={onChange ? () => onChange(n) : undefined}
+          role={onChange ? 'button' : undefined}
+          aria-label={onChange ? `${n} 顆星` : undefined}
+        >★</span>
+      ))}
+    </span>
+  )
+}
+
+export function RatingPill({ rating, count }) {
+  return (
+    <div className="rating-line">
+      <span className="rating-pill">{rating ?? '—'}</span>
+      <span className="muted small">{count || 0} 則評價</span>
+    </div>
+  )
+}
+
+export function Loading({ text = '載入中' }) {
+  return (
+    <div className="empty">
+      <div className="spinner" />
+      <p>{text}</p>
+    </div>
+  )
+}
+
+export function Empty({ text, children }) {
+  return (
+    <div className="empty">
+      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--line-2)" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+        <rect x="3.5" y="5" width="17" height="15" rx="2.5" /><path d="M3.5 9.5h17M8 3v4M16 3v4" />
+      </svg>
+      <p>{text}</p>
+      {children}
+    </div>
+  )
+}
+
+export function Chips({ options, value, onChange }) {
+  return (
+    <div className="chips">
+      {options.map(([v, label]) => (
+        <button key={v} className={`chip ${value === v ? 'active' : ''}`} onClick={() => onChange(v)}>{label}</button>
+      ))}
+    </div>
+  )
+}
+
+export function Field({ label, hint, children }) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </label>
+  )
+}
+
+export function Badge({ tone = 'brand', children }) {
+  return <span className={`badge badge-${tone}`}>{children}</span>
+}
+
+// 已報名者頭像疊放（課程卡片用）
+export function AvatarStack({ people, total, size = 26 }) {
+  if (!people?.length) return null
+  const more = (total ?? people.length) - people.length
+  return (
+    <span className="avatar-stack" aria-label={`${total ?? people.length} 人已報名`}>
+      {people.map((p, i) => (
+        <span key={i} className="avatar-stack-item" style={{ width: size, height: size }}>
+          <AvatarImg src={p.avatar_url} name={p.name} />
+        </span>
+      ))}
+      {more > 0 && <span className="avatar-stack-more">+{more}</span>}
+    </span>
+  )
+}
+
+// 方案沒有的功能：說明要哪個方案、帶到「方案與帳單」
+export function UpgradeNote({ feature, need, compact }) {
+  const text = `「${feature}」是${need}方案以上的功能`
+  if (compact) return <span className="lock-tag" title={text}>{need}方案</span>
+  return (
+    <section className="card upgrade-note">
+      <span className="lock-ico" aria-hidden="true">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V8a4 4 0 0 1 8 0v3" /></svg>
+      </span>
+      <div className="flex1">
+        <b>{text}</b>
+        <p className="muted small">升級後馬上就能用，已經建立的資料都會保留。</p>
+      </div>
+      <a className="btn btn-small" href="#/admin/billing">看方案</a>
+    </section>
+  )
+}

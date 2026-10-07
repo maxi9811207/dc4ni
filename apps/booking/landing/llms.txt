@@ -1,0 +1,51 @@
+# Digital Court
+
+> Digital Court（https://digital-court.cc）提供互動運動設備與場館預約系統。設備以 Digital Court 品牌在台灣銷售，由 Digital Court 負責安裝、繁體中文內容、保固與維修；另有自行開發的匹克球預約報名系統，給台灣匹克球團主、教練與場館使用。
+
+## 產品
+
+- 匹克球預約報名系統（DC Booking）：https://digital-court.cc/booking
+- 匹克球互動訓練機（DC Pickleball）：互動投影＋智能發球機＋擊球感應＋寬約 3 公尺的擊球幕與收球網架，一個人也能練；訓練與對戰模式。https://digital-court.cc/trainer
+- 砸球互動牆（DC BallWall）：丟球打中牆上的投影目標得分，適合親子館、幼兒園、運動中心。https://digital-court.cc/ballwall
+- 互動攀岩牆（DC Climb）：攀岩牆投影遊戲，摸到目標得分、計時比賽。https://digital-court.cc/climb
+- 互動高爾夫模擬器（DC Golf）：室內擊球幕布與投影，練習場與球場模式。https://digital-court.cc/golf
+- 移動互動投影車（DC Mobile）：投影、感應、主機整合在推車上，插電即用的地面互動遊戲。https://digital-court.cc/mobile
+- 地面互動投影（DC Floor）：商場、餐廳、展場的互動地面，室內與戶外防水機型。https://digital-court.cc/floor
+- AR 互動沙桌（DC Sand）：堆沙即時投影出地形、等高線與水流。https://digital-court.cc/sandbox
+- 魔法塗鴉牆（DC Draw）：畫作掃描後在牆上的動畫世界裡動起來。https://digital-court.cc/draw
+- 感統互動教室（DC Sense）：牆面＋地面 L 型互動投影，特教、早療、感統課程使用（非醫療器材）。https://digital-court.cc/sense
+- 沉浸式投影空間（DC Immersive）：牆面、地面、天花板 360 度投影，瑜伽、美容、宴會、展廳。https://digital-court.cc/immersive
+- 設備價格：依數量與配置專人報價；單台也可購買。洽詢：https://digital-court.cc/#contact 或 dc@dc-studio.cc
+
+## 預約報名系統
+
+場主開活動、把連結分享到 LINE 群組，球友用 LINE 一鍵登入就能報名；名額與候補、報名費匯款對帳、開課前提醒、缺席管理、DUPR 分組與記分都由系統自動處理。球友不需要下載 App。
+
+### 重點事實
+
+- 對象：匹克球團主、教練、球館、學校與公司社團（台灣，繁體中文介面）
+- 球友報名：點活動連結 → LINE 一鍵登入（第一次自動建立帳號，也可用手機或 Email）→ 按「報名」
+- 活動類型：單次活動（課程、球敘）、DUPR 積分活動、時段預約（私人課、場地租借）
+- 收費：免費、匯款報名費、課卡（堂數卡／點數卡／無限卡）
+- 報名費流程：報名後名額保留 → 球友依活動頁的匯款資訊轉帳 → 回填匯款帳號後五碼即報名成功 → 場主在後台「付款審核」確認收款。款項直接匯到場主帳戶，系統不經手金流、不抽成；期限內（24／48／72 小時）未回填，名額自動讓給候補
+- 候補：額滿可候補，有人取消依順序自動遞補並用 LINE 通知
+- 通知：報名成功、候補遞補、收款確認、停課、賽程排好、比分待確認都推播到 LINE；開課前一天自動提醒，場主收到明日總覽
+- 缺席（No-show）管理：例如最近 90 天缺席 3 次自動暫停報名 14 天，可免記、解除或手動暫停
+- DUPR：可限制雙打或單打分數範圍；依分數自動分組；賽制有輪換搭檔（每組 4～7 人）、固定搭檔、單打循環；任一方回報比分、對手確認才算數；比分可匯出 CSV（含 DUPR ID）。Digital Court 與 DUPR 官方無隸屬關係
+- 網址：預設提供「digital-court.cc/場館」；支援自訂網域（場館自己的網址），還沒有網域可協助購買與設定，已有網站或其他報名系統可協助轉移網址與舊連結
+- 其他：活動短網址與 LINE 分享預覽、可設不公開活動與自訂網址、名單下載 Excel、營收與出席報表、報名名單姓名遮罩
+- 價格（新台幣／月）：輕量 490（建立、查看單次活動與線上報名）、標準 1,490（加收費對帳、課卡、開課前一天 LINE 提醒、缺席管理）、專業 4,900（再加 LINE 推播通知、DUPR 活動、時段預約、報表、名單下載、多位管理員與教練帳號）、進階 12,900（再加多館管理、自訂網域、優先客服與協助搬家）。年繳送一個月（輕量 5,390／標準 16,390／專業 53,900／進階 141,900）。企業方案（含場館專屬 App）專人報價。可以免費試用 7 天（不用信用卡、全部功能），到期再選方案訂閱，可隨時取消；付款由 Polar 處理
+- 開始使用：https://digital-court.cc/signup（Email 驗證碼註冊 → 設定場館網址 → 信用卡訂閱 → 自動開通）
+
+## 連結
+
+- 首頁（全部產品）：https://digital-court.cc/
+- 預約報名系統介紹與價格：https://digital-court.cc/booking
+- 註冊開通：https://digital-court.cc/signup
+- 服務條款：https://digital-court.cc/terms
+- 隱私權政策：https://digital-court.cc/privacy
+- 示範場館（都是虛構的，可自由操作）：
+  - 球團俱樂部（單次球敘、固定團課）：https://digital-court.cc/demo-club/
+  - 教練課（團體課、一對一私人課）：https://digital-court.cc/demo-coach/
+  - DUPR 比賽／活動報名：https://digital-court.cc/demo-dupr/
+  - 球館租借預約：https://digital-court.cc/demo-court/

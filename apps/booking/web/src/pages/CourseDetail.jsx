@@ -1,0 +1,482 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useApp } from '../App'
+import { api, asset } from '../api'
+import EventBoard, { ScoreModal } from '../components/EventBoard'
+import SupportContact from '../components/SupportContact'
+import { ShareButton, openedInApp, useShareAddress } from '../components/Share'
+import { VenueAvatar } from '../components/VenueHeader'
+import SlotPage from './SlotPage'
+import { Avatar, AvatarImg, Badge, Confirm, Field, Loading, Modal, TopBar } from '../components/ui'
+import { blockUntil, cardRemain, duprRange, hours, noshowRule, rating, showDate } from '../util'
+
+// /course/:id 是課表裡的課程頁；/e/:code 是分享出去的一頁式活動頁（沒有場館導覽，只有報名）
+export default function CourseDetail() {
+  const { id, code } = useParams()
+  // 一頁式活動頁（分享連結）；從前台點進來後重新整理的，仍用前台版面（有返回箭頭）
+  const standalone = Boolean(code) && !openedInApp(code)
+  const { user, venue, refreshUser, handleError, showToast } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const [params, setParams] = useSearchParams()
+  const [c, setC] = useState(null)
+  const [cardId, setCardId] = useState(null)
+  const [dialog, setDialog] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const [missing, setMissing] = useState(false)
+  const load = useCallback(() => api(code ? `e/${code}` : `courses/${id}`).then((d) => {
+    setC(d)
+    setCardId(d.cards[0]?.id ?? null)
+  }).catch((e) => (e.status === 404 ? setMissing(true) : handleError(e))), [id, code, handleError])
+
+  useEffect(() => { setC(null); setMissing(false); load() }, [load])
+  useShareAddress(c?.share_code, !standalone)
+  useEffect(() => {
+    if (standalone && c) document.title = `${c.name}｜${venue?.name || '報名'}`
+  }, [standalone, c, venue])
+
+  const header = standalone
+    ? <StandaloneBar />
+    : <TopBar title="活動資訊" back={-1} right={c?.share_code && <ShareButton c={c} className="icon-btn share-btn" />} />
+  // 從登入頁回來（?book=1）：自動接著報名，不用再按一次
+  const autoBook = params.get('book') === '1'
+  useEffect(() => {
+    if (!autoBook || !c || !user) return
+    setParams((p) => { p.delete('book'); return p }, { replace: true })
+    if (['book', 'waitlist'].includes(c.state)) onPrimaryRef.current?.()
+  }, [autoBook, c, user, setParams])
+  const onPrimaryRef = useRef(null)
+
+  if (missing) return <>{header}<main className="page"><section className="card center"><h3 className="card-title">找不到這個活動</h3><p className="muted small">連結可能已失效，請向主辦單位確認。</p></section></main></>
+  if (!c) return <>{header}<Loading /></>
+  if (c.kind === 'slots') return <SlotPage key={code} code={code} header={header} />
+
+  const requireLogin = () => {
+    if (user) return false
+    navigate('/login', { state: { from: `${location.pathname}?book=1`, forEvent: c.name } })
+    return true
+  }
+
+  const act = async (fn) => {
+    setBusy(true)
+    try { await fn() } catch (e) { handleError(e) } finally { setBusy(false) }
+  }
+
+  const reserve = () => act(async () => {
+    const r = await api(`courses/${c.id}/reserve`, { method: 'POST', body: { card_id: cardId, code: c.share_code } })
+    setDialog(r.result === 'booked' ? 'booked' : 'waitlisted')
+    await Promise.all([load(), refreshUser()])
+  })
+
+  const cancel = () => act(async () => {
+    await api(`courses/${c.id}/cancel`, { method: 'POST' })
+    setDialog(null)
+    showToast(c.state === 'waiting' ? '已取消候補'
+      : c.fee > 0 ? (c.my_reservation?.paid ? '已取消報名，已付的費用主辦會另外退還' : '已取消報名')
+        : c.cost > 0 ? '已取消報名，課卡已退還' : '已取消報名')
+    await Promise.all([load(), refreshUser()])
+  })
+
+  const onPrimary = () => {
+    if (requireLogin()) return
+    if (user.suspended) return handleError({ message: 'SUSPENDED' })
+    if (['book', 'waitlist'].includes(c.state) && c.dupr_problem) return setDialog('dupr')
+    if (c.state === 'book') {
+      if (c.cost > 0 && c.cards.length === 0) return setDialog('nocard')
+      return reserve()
+    }
+    if (c.state === 'waitlist') {
+      if (c.cost > 0 && c.cards.length === 0) return setDialog('nocard')
+      return reserve()  // 按鈕已寫「額滿，加入候補」，不再多問一次
+    }
+    if (needsPay) return document.querySelector('.pay-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
+  onPrimaryRef.current = onPrimary
+  const askCancel = () => {
+    if (!c.can_cancel) return showToast(c.has_event && c.state === 'booked' ? '主辦已排好賽程，無法自行取消，請聯絡主辦' : '已超過可自行取消的時間，請聯絡主辦')
+    setDialog('cancel')
+  }
+
+  const mine = c.my_reservation
+  const needsPay = c.fee > 0 && c.state === 'booked' && mine && !mine.paid
+  const bestCard = c.cards.find((x) => x.id === cardId) || c.cards[0]
+  const ns = user?.noshow
+  const blocked = ns?.blocked && ['book', 'waitlist'].includes(c.state)
+  const primaryLabel = {
+    book: c.fee > 0 ? `立即報名（NT$ ${c.fee.toLocaleString()}）` : c.cost === 0 ? '立即報名（免費）' : '立即報名',
+    waitlist: '額滿，加入候補',
+  }[c.state] || (needsPay ? '匯款後回填後五碼，完成報名' : c.button)
+  // 已報名／候補：主按鈕換成狀態，取消退到下面的文字連結
+  const statusLine = c.state === 'booked' ? (c.has_event ? '✓ 已排入賽事' : !c.fee ? '✓ 已報名' : mine?.paid ? '✓ 已報名（已付款）' : mine?.pay_note ? '✓ 報名成功，等主辦對帳' : null)
+    : c.state === 'waiting' ? `候補第 ${c.waitlist_position} 位，有名額會自動遞補並通知您` : null
+
+  const costText = c.fee > 0 ? `NT$ ${c.fee.toLocaleString()}（報名後付款，不需課卡）`
+    : c.cost === 0 ? '免費'
+      : bestCard?.value > 0 ? `用課卡，這堂約 NT$ ${bestCard.value.toLocaleString()}（${bestCard.type === 'points' ? `扣 ${c.cost} 點` : bestCard.type === 'unlimited' ? '無限卡' : '扣 1 堂'}）`
+        : `用課卡（堂數卡扣 1 堂／點數卡扣 ${c.cost} 點）`
+
+  return (
+    <>
+      {header}
+      <main className="page">
+        {blocked && <p className="alert warn">您因{ns.reason || '缺席次數過多'}，報名暫停{blockUntil(ns)}。已報名的活動不受影響；有疑問請聯絡主辦。</p>}
+        {c.cover_url && <img className="event-cover" src={asset(c.cover_url)} alt={c.name} onError={(e) => { e.currentTarget.style.display = 'none' }} />}
+        {c.slot_set && (
+          <Link className="back-link" to={c.slot_set.listed && !standalone ? `/slots/${c.slot_set.id}?date=${c.date}` : `/e/${c.slot_set.share_code}`}>‹ 「{c.slot_set.name}」其他時段</Link>
+        )}
+        <section className="card ev-head">
+          <p className="ev-host"><VenueAvatar venue={venue} /><span><b>{venue?.name}</b> 主辦</span></p>
+          <div className="ev-title-row">
+            <h2 className="detail-title">{c.name}</h2>
+            {standalone && <ShareButton c={c} />}
+          </div>
+          {(c.category || c.dupr_required || c.beginner || c.status === 'cancelled') && (
+            <div className="row gap-sm wrap">
+              {c.dupr_required && <Badge tone="dupr">{duprRange(c, true)}</Badge>}
+              {c.category && c.category !== 'DUPR 場' && <Badge>{c.category}</Badge>}
+              {c.beginner && <Badge tone="warn">新手友善</Badge>}
+              {c.status === 'cancelled' && <Badge tone="gray">已停課</Badge>}
+            </div>
+          )}
+          <div className="kpis">
+            <div className="kpi"><span>日期</span><b>{Number(c.date.slice(5, 7))}/{Number(c.date.slice(8))}（{c.weekday}）</b><small>{c.start_time}–{c.end_time}</small></div>
+            <div className="kpi"><span>名額</span><b>{c.booked_count}/{c.capacity}</b>
+              <small className={c.remain <= 3 ? 'warn' : ''}>{c.waitlist_count > 0 ? `候補 ${c.waitlist_count} 人` : c.remain > 0 ? `剩 ${c.remain} 位` : '已額滿'}</small></div>
+            <div className="kpi"><span>費用</span><b>{c.fee > 0 ? `NT$ ${c.fee.toLocaleString()}` : c.cost === 0 ? '免費' : '課卡'}</b>
+              <small>{c.fee > 0 ? '報名後付款' : c.cost === 0 ? '不用課卡' : bestCard?.value > 0 ? `約 NT$ ${bestCard.value.toLocaleString()}` : bestCard?.type === 'points' ? `扣 ${c.cost} 點` : '扣 1 堂'}</small></div>
+          </div>
+          {(c.location || c.cost > 0 || c.branch) && (
+            <dl className="ev-meta">
+              {c.branch && <div><dt>分館</dt><dd>{c.branch.name}{c.branch.address && `（${c.branch.address}）`}</dd></div>}
+              {c.location && <div><dt>地點</dt><dd>{c.location}</dd></div>}
+              {c.cost > 0 && <div><dt>費用</dt><dd>{costText}</dd></div>}
+            </dl>
+          )}
+        </section>
+
+        {c.fee > 0 && ['booked', 'attended', 'absent'].includes(c.my_reservation?.status) && <PaymentBox c={c} onSaved={load} />}
+
+        {c.attendees.length > 0 && (
+          <section className="card">
+            <div className="sec-head">
+              <h3>要去的球友（{c.attendees.length}）</h3>
+              {c.dupr_required && c.attendees.some((x) => x.dupr != null) && (
+                <span>平均 DUPR {(c.attendees.filter((x) => x.dupr != null).reduce((t, x) => t + x.dupr, 0) / c.attendees.filter((x) => x.dupr != null).length).toFixed(3)}</span>
+              )}
+            </div>
+            {c.dupr_required ? (
+              <div className="players">
+                {c.attendees.map((a, i) => (
+                  <div key={i} className="prow">
+                    <Avatar src={a.avatar_url} name={a.name} size={30} />
+                    <span className="flex1">{a.name}</span>
+                    <span className={`dupr-chip ${a.dupr_verified ? 'verified' : ''} ${a.dupr == null ? 'none' : ''}`} title={a.dupr_verified ? '主辦已驗證' : '未驗證'}>
+                      {a.dupr == null ? '尚無分數' : Number(a.dupr).toFixed(3)}{a.dupr_verified && ' ✓'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="attendee-grid">
+                {c.attendees.map((a, i) => (
+                  <div key={i} className="attendee-cell">
+                    <Avatar src={a.avatar_url} name={a.name} size={44} />
+                    <span className="attendee-name">{a.name}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
+        {c.dupr_required && (
+          <section className="card dupr-card">
+            <h3 className="card-title">DUPR 報名條件</h3>
+            <p className="dupr-range">{duprRange(c)}</p>
+            <ul className="notes">
+              <li>需先在會員中心綁定 DUPR 帳號{c.dupr_verified_only && '，且須經主辦驗證'}。</li>
+              <li>以綁定時取得的 DUPR {c.dupr_format === 'singles' ? '單打' : '雙打'}分數判斷資格。</li>
+            </ul>
+            {user && (
+              user.dupr_id
+                ? <p className={`small ${c.dupr_problem ? 'text-danger' : 'text-success'}`}>
+                    您的 DUPR：{c.dupr_format === 'singles' ? '單打' : '雙打'} {rating(user[`dupr_${c.dupr_format}`])}
+                    {c.dupr_problem ? `（${c.dupr_problem}）` : '，符合資格 ✓'}
+                  </p>
+                : <Link className="btn btn-small btn-outline" to="/me?tab=dupr">綁定 DUPR 帳號</Link>
+            )}
+          </section>
+        )}
+
+        {c.dupr_required && <EventSection c={c} />}
+
+        {c.teacher && (
+          <Link to={`/teachers/${c.teacher.id}`} className="card row gap teacher-row">
+            <Avatar src={c.teacher.photo_url} name={c.teacher.name} />
+            <div className="flex1">
+              <b>{c.teacher.name}{c.substitute && '（代課）'}</b>
+              <p className="muted small">{c.teacher.title}</p>
+            </div>
+            <span className="muted">›</span>
+          </Link>
+        )}
+
+        {standalone && venue && (venue.address || venue.phone || venue.line_url) && (
+          <section className="card">
+            <h3 className="card-title">主辦單位</h3>
+            <p><b>{venue.name}</b></p>
+            {venue.address && <p className="small"><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(venue.address)}`} target="_blank" rel="noreferrer">{venue.address}</a></p>}
+            {venue.phone && <p className="small"><a href={`tel:${venue.phone}`}>{venue.phone}</a></p>}
+            {venue.line_url && <p className="small"><a href={venue.line_url} target="_blank" rel="noreferrer">LINE 聯絡主辦</a></p>}
+          </section>
+        )}
+
+        {c.description && (
+          <section className="card">
+            <h3 className="card-title">活動介紹</h3>
+            <p className="pre">{c.description}</p>
+          </section>
+        )}
+
+        <section className="card">
+          <h3 className="card-title">報名須知</h3>
+          <ul className="notes">
+            <li>{c.booking_deadline_min ? `開始前 ${hours(c.booking_deadline_min)}截止報名。` : '開始前都可以報名。'}</li>
+            <li>{c.cancel_deadline_min ? `開始前 ${hours(c.cancel_deadline_min)}內無法自行取消，請聯絡主辦。` : '開始前都可以自行取消。'}</li>
+            <li>額滿時可加入候補，有名額釋出會依順序自動遞補{c.cost > 0 ? '並扣卡' : ''}、通知您{c.fee > 0 ? '，遞補後再付款' : ''}。</li>
+            {c.fee > 0 && <li>已付款後取消，請聯絡主辦辦理退費。</li>}
+            {noshowRule(venue) && <li>{noshowRule(venue)}</li>}
+          </ul>
+        </section>
+
+        {user && ['book', 'waitlist'].includes(c.state) && c.cost > 0 && c.cards.length > 1 && (
+          <section className="card">
+            <h3 className="card-title">使用課卡</h3>
+            {c.cards.map((card) => (
+              <label key={card.id} className={`select-card ${cardId === card.id ? 'active' : ''}`}>
+                <input type="radio" name="card" checked={cardId === card.id} onChange={() => setCardId(card.id)} />
+                <div className="flex1">
+                  <b>{card.name}</b>
+                  <p className="muted small">{cardRemain(card)} · 到期 {card.expires_on}{card.value > 0 && ` · 這堂約 NT$ ${card.value}`}</p>
+                </div>
+              </label>
+            ))}
+          </section>
+        )}
+
+      </main>
+
+      <div className="action-bar">
+        {statusLine ? (
+          <div className="status-bar">
+            <b className={c.state === 'waiting' ? 'text-warn' : 'text-success'}>{statusLine}</b>
+            {(c.can_cancel || !c.has_event) && (
+              <button type="button" className="link-btn" onClick={askCancel}>{c.state === 'waiting' ? '取消候補' : '取消報名'}</button>
+            )}
+          </div>
+        ) : (
+          <>
+            <button
+              className={`btn btn-block btn-lg ${c.state === 'waitlist' ? 'btn-warn' : ''}`}
+              disabled={busy || c.state === 'disabled' || blocked}
+              onClick={onPrimary}
+            >
+              {busy ? '處理中…' : blocked ? `暫停報名中（${blockUntil(ns)}）` : primaryLabel}
+            </button>
+            {needsPay && <button type="button" className="link-btn center-link" onClick={askCancel}>取消報名</button>}
+          </>
+        )}
+      </div>
+
+      {dialog === 'booked' && (
+        <Modal onClose={() => setDialog(null)}>
+          <div className={`dialog-icon ${c.fee > 0 ? 'warn' : 'success'}`}>{c.fee > 0 ? '!' : '✓'}</div>
+          <h3 className="dialog-title">{c.fee > 0 ? '名額已保留，還差一步' : '報名成功'}</h3>
+          <p className="dialog-text">{showDate(c.date)} {c.start_time}<br />{c.name}</p>
+          {c.fee > 0 && <p className="alert warn small">請匯款報名費 NT$ {c.fee.toLocaleString()}，匯完回到這頁填「匯款帳號後五碼」，<b>送出後才算報名成功</b>。逾時沒回填，名額會讓給下一位。</p>}
+          <button className="btn btn-block" onClick={() => { setDialog(null); if (c.fee > 0) setTimeout(() => document.querySelector('.pay-card')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50) }}>
+            {c.fee > 0 ? '去付款' : '好'}
+          </button>
+          {!standalone && <button className="btn btn-block btn-light" onClick={() => navigate('/me')}>查看我的報名</button>}
+        </Modal>
+      )}
+      {dialog === 'waitlisted' && (
+        <Modal onClose={() => setDialog(null)}>
+          <div className="dialog-icon warn">⏳</div>
+          <h3 className="dialog-title">已加入候補</h3>
+          <p className="dialog-text">您目前是候補第 {c.waitlist_position} 位，<br />釋出名額會自動遞補並通知您。</p>
+          <button className="btn btn-block" onClick={() => setDialog(null)}>好</button>
+        </Modal>
+      )}
+      {dialog === 'cancel' && (
+        <Confirm title={c.state === 'waiting' ? '取消候補' : '取消報名'} danger okText="確定取消"
+          text={c.state === 'waiting' ? '確定要取消候補嗎？'
+            : c.fee > 0 ? (mine?.paid ? '已付的報名費需聯絡主辦退還，確定要取消嗎？' : '確定要取消報名嗎？')
+              : c.cost > 0 ? '取消後課卡會退還，確定要取消嗎？' : '確定要取消報名嗎？'}
+          onClose={() => setDialog(null)} onOk={cancel} />
+      )}
+      {dialog === 'dupr' && (
+        <Confirm title="不符合 DUPR 報名條件" text={c.dupr_problem} okText={user?.dupr_id ? '查看我的 DUPR' : '前往綁定'}
+          onClose={() => setDialog(null)} onOk={() => navigate('/me?tab=dupr')} />
+      )}
+      {dialog === 'nocard' && (
+        <Confirm title="這堂需要課卡" text="您目前沒有可用的課卡。購買後主辦確認收款就會開通，開通後再回來報名。" okText="看課卡方案"
+          onClose={() => setDialog(null)} onOk={() => navigate('/plans')} />
+      )}
+    </>
+  )
+}
+
+const FORMAT_TEXT = {
+  rotating: '輪換搭檔：每組 4～7 人一面場，每局換搭檔，和同組每個人盡量都搭檔一次',
+  fixed: '固定搭檔：兩人一隊，同組隊伍互打一輪',
+  singles: '單打循環賽：同組每人互打一場',
+}
+
+function EventSection({ c }) {
+  const { user, handleError, showToast } = useApp()
+  const [event, setEvent] = useState(undefined)
+  const [scoring, setScoring] = useState(null)
+  const load = useCallback(() => api(`courses/${c.id}/event?code=${c.share_code}`).then((d) => setEvent(d.event)).catch(handleError), [c.id, c.share_code, handleError])
+  useEffect(() => { load() }, [load])
+  if (event === undefined) return null
+  const booked = ['booked', 'attended', 'absent'].includes(c.my_reservation?.status)
+
+  const report = async (a, b) => {
+    try {
+      await api(`event-games/${scoring.id}/report`, { method: 'POST', body: { score_a: a, score_b: b } })
+      setScoring(null)
+      showToast('已送出，等待對手確認')
+      load()
+    } catch (e) { handleError(e) }
+  }
+  const confirm = async (g) => {
+    try {
+      await api(`event-games/${g.id}/confirm`, { method: 'POST', body: { score_a: g.score_a, score_b: g.score_b } })
+      showToast('比分已確認')
+      load()
+    } catch (e) { handleError(e) }
+  }
+
+  return (
+    <>
+      <section className="card">
+        <div className="row between">
+          <h3 className="card-title nomargin">賽事</h3>
+          {event && <span className="muted small">已確認 {event.progress.confirmed} / {event.progress.total} 局</span>}
+        </div>
+        <p className="small">{FORMAT_TEXT[c.match_format]}。每局打到 {c.games_to} 分、領先 2 分獲勝。</p>
+        {!event && <p className="muted small">人到齊後，主辦會依 DUPR 分數分組並排好賽程，排好會通知您。</p>}
+        {event?.is_player && <p className="muted small">打完由任一方回報比分，對手確認才算數；對手一直沒確認就請主辦裁定。</p>}
+        {!event && c.match_format === 'fixed' && booked && user && <PartnerBox courseId={c.id} />}
+      </section>
+      {event && <EventBoard event={event} me={user?.id} onScore={setScoring} onConfirm={confirm} />}
+      {event?.is_player && <SupportContact topic="match" />}
+      {scoring && <ScoreModal game={scoring} gamesTo={event.games_to} onClose={() => setScoring(null)} onSave={report} />}
+    </>
+  )
+}
+
+function PartnerBox({ courseId }) {
+  const { handleError, showToast } = useApp()
+  const [info, setInfo] = useState(null)
+  const [contact, setContact] = useState('')
+  const load = useCallback(() => api(`courses/${courseId}/partner`).then(setInfo).catch(handleError), [courseId, handleError])
+  useEffect(() => { load() }, [load])
+  if (!info) return null
+  const save = async (value) => {
+    try {
+      const r = await api(`courses/${courseId}/partner`, { method: 'PUT', body: { contact: value } })
+      showToast(r.partner ? `已指定隊友：${r.partner.name}` : '已取消指定隊友')
+      setContact('')
+      load()
+    } catch (e) { handleError(e) }
+  }
+  return (
+    <div className="partner-box">
+      {info.partner ? (
+        <div className="row between">
+          <span className="small">我的隊友：<b>{info.partner.name}</b></span>
+          <button className="btn btn-small btn-light" onClick={() => save('')}>取消指定</button>
+        </div>
+      ) : (
+        <form className="row gap" onSubmit={(e) => { e.preventDefault(); save(contact) }}>
+          <Field label="指定隊友（選填）" hint="輸入對方註冊的手機或信箱，對方也要報名這場；沒指定的由團主依分數配對">
+            <input className="input" value={contact} onChange={(e) => setContact(e.target.value)} placeholder="手機或信箱" />
+          </Field>
+          <button className="btn btn-small" disabled={!contact.trim()}>指定</button>
+        </form>
+      )}
+      {info.chosen_by.length > 0 && <p className="small text-brand">{info.chosen_by.map((u) => u.name).join('、')} 指定您為隊友</p>}
+    </div>
+  )
+}
+
+// 一頁式活動頁的頂列：主辦名稱＋登入狀態（沒有返回與場館導覽）
+function StandaloneBar() {
+  const { venue, user } = useApp()
+  const navigate = useNavigate()
+  const location = useLocation()
+  return (
+    <header className="vhead">
+      <div className="vbar">
+        <Link to="/" className="vbar-home" aria-label={`${venue?.name || '場館'}首頁`}>
+          <VenueAvatar venue={venue} />
+          <div className="vbar-text">
+            <p className="vbar-name">{venue?.name || ''}</p>
+            <p className="vbar-sub">活動報名 · 看更多活動 ›</p>
+          </div>
+        </Link>
+        {user
+          ? (
+            <button type="button" className="standalone-user" aria-label="會員中心" onClick={() => navigate('/me')}>
+              <span className="player-avatar"><AvatarImg src={user.avatar_url} name={user.name} /></span>{user.name}
+              {user.unread > 0 && <i className="dot" />}
+            </button>
+          )
+          : <button className="btn btn-small btn-outline" onClick={() => navigate('/login', { state: { from: location.pathname } })}>登入</button>}
+      </div>
+    </header>
+  )
+}
+
+// 單次報名費：付款說明、回報匯款資訊、收款狀態
+function PaymentBox({ c, onSaved }) {
+  const { venue, handleError, showToast } = useApp()
+  const r = c.my_reservation
+  const [note, setNote] = useState((r.pay_note || '').replace(/\D/g, '').slice(-5))
+  const save = async (e) => {
+    e.preventDefault()
+    try {
+      await api(`courses/${c.id}/payment`, { method: 'PUT', body: { note } })
+      showToast(r.pay_note ? '已更新後五碼' : '報名成功！主辦對帳後會通知您')
+      onSaved()
+    } catch (err) { handleError(err) }
+  }
+  return (
+    <section className={`card pay-card ${r.paid ? 'paid' : ''}`}>
+      <div className="row between">
+        <h3 className="card-title nomargin">報名費 NT$ {r.fee.toLocaleString()}</h3>
+        {r.paid ? <Badge tone="success">已付款</Badge> : r.pay_note ? <Badge tone="success">報名成功</Badge> : <Badge tone="warn">尚未完成報名</Badge>}
+      </div>
+      {r.paid ? (
+        <p className="small text-success">場館已確認收款，當天直接到場即可。</p>
+      ) : (
+        <>
+          {!r.pay_note && <ol className="pay-steps"><li>依下面的資訊匯款</li><li>回填匯款帳號後五碼，<b>送出就完成報名</b></li><li>主辦對帳後通知您</li></ol>}
+          <p className="pre small pay-info">{venue?.payment_ready ? venue.payment_info : '付款方式請直接詢問主辦。'}</p>
+          {r.pay_due && !r.pay_note && <p className="small text-warn">請在 {r.pay_due.slice(5, 16).replace('-', '/').replace('T', ' ')} 前回填後五碼，逾時名額會讓給下一位。</p>}
+          <form className="row gap" onSubmit={save}>
+            <Field label="匯款帳號後五碼" hint="匯款完成後填寫，主辦用來對帳">
+              <input className="input" value={note} onChange={(e) => setNote(e.target.value.replace(/\D/g, '').slice(0, 5))} inputMode="numeric"
+                pattern="\d{5}" title="請填 5 位數字" placeholder="12345" />
+            </Field>
+            <button className="btn btn-small" disabled={note.length !== 5 || note === (r.pay_note || '')}>{r.pay_note ? '更新' : '送出，完成報名'}</button>
+          </form>
+          {r.pay_note && <p className="small text-success">已收到後五碼 {r.pay_note}，報名成功。主辦對帳後會通知您；填錯可以直接改。</p>}
+        </>
+      )}
+    </section>
+  )
+}

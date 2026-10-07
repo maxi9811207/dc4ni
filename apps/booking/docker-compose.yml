@@ -1,0 +1,11 @@
+services:
+  booking:
+    build: .
+    container_name: booking
+    restart: unless-stopped
+    # 只綁本機，由主機上的 nginx 對外
+    ports:
+      - "127.0.0.1:8100:8100"
+    volumes:
+      - ./data:/data
+    env_file: .env

@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>開通中｜Digital Court</title>
+<meta name="robots" content="noindex">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="/"><img src="/favicon.svg" alt="">Digital Court</a><a class="link" href="/account">我的帳號</a></div></header>
+<main class="narrow">
+  <section class="card" id="wait">
+    <h1>付款完成，正在開你的場館…</h1>
+    <p class="lead">通常幾秒內就好，這個頁面會自動更新。</p>
+  </section>
+  <section class="card" id="ok" hidden>
+    <h1>🎉 你的場館開好了</h1>
+    <p class="lead" id="ok-text"></p>
+    <button class="btn block" id="enter">進入後台，開始設定</button>
+    <p class="hint">也寄了一封歡迎信到你的信箱。之後從 <a href="/account">digital-court.cc/account</a> 登入就能管理場館與訂閱。</p>
+  </section>
+  <section class="card" id="slow" hidden>
+    <h2>還在等付款確認</h2>
+    <p class="lead">有時候付款確認會晚幾分鐘。你可以稍後到 <a href="/account">我的帳號</a> 查看；超過 10 分鐘還沒開通，請來信 <b>dc@dc-studio.cc</b>，我們會馬上處理。</p>
+  </section>
+  <p class="msg" id="msg" hidden></p>
+</main>
+<script src="/platform.js"></script>
+<script>
+(function () {
+  var q = new URLSearchParams(location.search)
+  var slug = q.get('t') || (function () { try { return sessionStorage.getItem('dc-signup-slug') } catch (e) { return '' } })()
+  if (!DC.token()) { location.href = '/account?next=' + encodeURIComponent(location.pathname + location.search); return }
+  var tries = 0
+  function poll() {
+    DC.api('tenants/' + encodeURIComponent(slug) + '/status').then(function (t) {
+      if (t.status === 'active') {
+        DC.$('#wait').hidden = true; DC.$('#slow').hidden = true; DC.$('#ok').hidden = false
+        DC.$('#ok-text').innerHTML = DC.esc(t.name) + '（' + DC.esc(t.plan_name) + '方案）<br>場館網址：<a href="' + DC.esc(t.url) + '">' + DC.esc(t.url.replace(/^https?:\/\//, '')) + '</a>'
+        return
+      }
+      tries++
+      if (tries === 30) DC.$('#slow').hidden = false
+      setTimeout(poll, tries < 30 ? 2000 : 10000)
+    }).catch(function (e) { DC.msg(DC.$('#msg'), e.message) })
+  }
+  poll()
+  DC.$('#enter').addEventListener('click', function () {
+    DC.api('tenants/' + encodeURIComponent(slug) + '/enter', { method: 'POST' }).then(function (d) { location.href = d.url })
+      .catch(function (e) { DC.msg(DC.$('#msg'), e.message) })
+  })
+})()
+</script>
+</body>
+</html>

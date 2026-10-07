@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>平台管理｜Digital Court</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/site.css">
+</head>
+<body>
+<header class="top"><div class="in"><a class="brand" href="/"><img src="/favicon.svg" alt="">Digital Court 平台管理</a><a class="link" href="/account">我的帳號</a></div></header>
+<main>
+  <p class="msg" id="msg" hidden></p>
+  <div class="stats" id="stats"></div>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>場館</h2><input id="q" placeholder="搜尋代碼、名稱、Email" style="max-width:260px"></div>
+    <div class="scroll"><table><thead><tr><th>場館</th><th>場主</th><th>方案</th><th>狀態</th><th>到期</th><th>網域</th><th></th></tr></thead><tbody id="tenants"></tbody></table></div>
+  </section>
+
+  <section class="card">
+    <h2>手動開一個場館（合作、贈送，不需付款）</h2>
+    <form id="create" class="row" novalidate>
+      <input class="grow" name="slug" placeholder="網址代碼" required>
+      <input class="grow" name="name" placeholder="場館名稱" required>
+      <input class="grow" name="email" type="email" placeholder="場主 Email" required>
+      <select name="plan" style="max-width:140px"><option value="advanced">進階</option><option value="enterprise">企業</option><option value="pro">專業</option><option value="standard">標準</option><option value="lite">輕量</option></select>
+      <button class="btn small">開通</button>
+    </form>
+    <p class="hint">場主用這個 Email 到 digital-court.cc/account「忘記密碼」設定密碼後，就能登入進後台。</p>
+  </section>
+
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>DUPR 分數自動更新</h2><button class="btn small" id="hookBtn" type="button">註冊並訂閱</button></div>
+    <p class="hint">向 DUPR 註冊接收網址，並把所有已用 DUPR 登入綁定的球友訂閱起來，之後分數變動 DUPR 會主動通知我們。重跑一次會重新訂閱全部的人（每人會立刻收到一次現況）。</p>
+    <p class="hint" id="hookMsg"></p>
+  </section>
+  <section class="card">
+    <div class="row" style="justify-content:space-between"><h2>DUPR 推廣同意名單</h2><span><button class="btn ghost small" id="optLoad" type="button">載入</button> <button class="btn small" id="optCsv" type="button" disabled>下載 CSV</button></span></div>
+    <p class="hint">合約規定每季把同意接收 DUPR 推廣資訊的球友 Email 寄給 DUPR。跨場館彙整，同一個 Email 只列一次，不含示範場館。</p>
+    <div class="scroll"><table><thead><tr><th>同意時間</th><th>姓名</th><th>Email</th><th>DUPR ID</th><th>場館</th></tr></thead><tbody id="optins"><tr><td colspan="5" class="hint">按「載入」</td></tr></tbody></table></div>
+  </section>
+  <section class="card"><h2>詢問</h2><div class="scroll"><table><thead><tr><th>時間</th><th>稱呼</th><th>聯絡方式</th><th>場館</th><th>規模／功能</th><th>內容</th></tr></thead><tbody id="leads"></tbody></table></div></section>
+  <section class="card"><h2>檢舉</h2><div class="scroll"><table><thead><tr><th>時間</th><th>網址</th><th>原因</th><th>聯絡</th></tr></thead><tbody id="reports"></tbody></table></div></section>
+  <section class="card"><h2>最近的付款事件</h2><div class="scroll"><table><thead><tr><th>時間</th><th>事件</th><th>場館</th><th>內容</th></tr></thead><tbody id="events"></tbody></table></div></section>
+</main>
+<script src="/platform.js"></script>
+<script>
+(function () {
+  var msg = DC.$('#msg'), data = null, e = DC.esc
+  var PLAN = { lite: '輕量', standard: '標準', pro: '專業', advanced: '進階', enterprise: '企業' }
+  function row(t) {
+    var st = '<span class="badge ' + t.status + '">' + (DC.STATUS[t.status] || t.status) + '</span>' + (t.comp ? ' <span class="badge">免費</span>' : '') + (t.cancel_at_period_end ? ' <span class="badge pending">將停止</span>' : '') + (t.trial_expired ? ' <span class="badge">試用結束</span>' : '')
+    var dom = t.custom_domain ? e(t.custom_domain) + '<br><span class="hint">' + e(t.domain_status) + '</span>' + (['pending', 'failed'].indexOf(t.domain_status) >= 0 ? ' <button class="btn ghost small" data-act="domain" data-slug="' + t.slug + '">重新開通</button>' : '') : ''
+    var acts = '<button class="btn ghost small" data-act="enter" data-slug="' + t.slug + '">進後台</button> ' +
+      (t.status === 'trial' || t.trial_expired ? '<button class="btn ghost small" data-act="trial" data-slug="' + t.slug + '">試用 +7 天</button> ' : '') +
+      (t.status === 'suspended' ? '<button class="btn ghost small" data-act="resume" data-slug="' + t.slug + '">恢復</button>' : t.status !== 'pending' ? '<button class="btn danger small" data-act="suspend" data-slug="' + t.slug + '">暫停</button>' : '') +
+      ' <select data-act="plan" data-slug="' + t.slug + '" style="width:auto;padding:6px">' + ['lite', 'standard', 'pro', 'advanced', 'enterprise'].map(function (p) { return '<option value="' + p + '"' + (p === t.plan ? ' selected' : '') + '>' + PLAN[p] + '</option>' }).join('') + '</select>'
+    return '<tr><td><b>' + e(t.name) + '</b><br><a href="' + e(t.url) + '" target="_blank">' + e(t.slug) + '</a></td><td>' + e(t.owner_name) + '<br><span class="hint">' + e(t.owner_email) + '</span></td>' +
+      '<td>' + PLAN[t.plan] + '<br><span class="hint">' + (t.billing_cycle === 'year' ? '年繳' : '月繳') + '</span></td><td>' + st + '</td><td>' + (t.status === 'trial' || t.trial_expired ? '試用到 ' + DC.day(t.trial_end) : DC.day(t.period_end)) + '</td><td>' + dom + '</td><td style="white-space:nowrap">' + acts + '</td></tr>'
+  }
+  function draw() {
+    var q = DC.$('#q').value.trim().toLowerCase()
+    var ts = data.tenants.filter(function (t) { return !q || (t.slug + t.name + t.owner_email).toLowerCase().indexOf(q) >= 0 })
+    var count = function (s) { return data.tenants.filter(function (t) { return t.status === s }).length }
+    DC.$('#stats').innerHTML = '<div class="stat"><span>每月經常性營收</span><b>' + DC.money(data.mrr) + '</b></div>' +
+      '<div class="stat"><span>使用中</span><b>' + count('active') + '</b></div><div class="stat"><span>扣款失敗／暫停</span><b>' + (count('past_due') + count('suspended')) + '</b></div>' +
+      '<div class="stat"><span>試用中</span><b>' + count('trial') + '</b></div><div class="stat"><span>待付款</span><b>' + count('pending') + '</b></div>'
+    DC.$('#tenants').innerHTML = ts.map(row).join('') || '<tr><td colspan="7" class="hint">沒有場館</td></tr>'
+    DC.$('#leads').innerHTML = data.leads.map(function (l) { return '<tr><td>' + DC.day(l.created_at) + '</td><td>' + e(l.name) + '</td><td>' + e(l.contact) + '</td><td>' + e(l.org) + '</td><td>' + e(l.size) + '<br><span class="hint">' + e(l.needs) + '</span></td><td>' + e(l.message) + '</td></tr>' }).join('') || '<tr><td colspan="6" class="hint">還沒有詢問</td></tr>'
+    DC.$('#reports').innerHTML = data.reports.map(function (r) { return '<tr><td>' + DC.day(r.created_at) + '</td><td><a href="' + e(r.url) + '" target="_blank">' + e(r.url) + '</a></td><td>' + e(r.reason) + '</td><td>' + e(r.contact) + '</td></tr>' }).join('') || '<tr><td colspan="4" class="hint">沒有檢舉</td></tr>'
+    DC.$('#events').innerHTML = data.events.map(function (v) { return '<tr><td>' + e(v.created_at.replace('T', ' ')) + '</td><td>' + e(v.type) + '</td><td>' + e(v.tenant_slug) + '</td><td class="hint">' + e(v.detail) + '</td></tr>' }).join('') || '<tr><td colspan="4" class="hint">沒有事件</td></tr>'
+  }
+  function load() { DC.api('admin/overview').then(function (d) { data = d; draw() }).catch(function (x) { if (x.status === 401 || x.status === 403) location.href = '/account?next=/console'; else DC.msg(msg, x.message) }) }
+  var upd = function (slug, body, ok) { return DC.api('admin/tenants/' + slug, { method: 'PUT', body: body }).then(function () { DC.msg(msg, ok, 'ok'); load() }).catch(function (x) { DC.msg(msg, x.message) }) }
+  DC.$('#tenants').addEventListener('click', function (ev) {
+    var b = ev.target.closest('button[data-act]'); if (!b) return
+    var slug = b.dataset.slug
+    if (b.dataset.act === 'enter') DC.api('admin/tenants/' + slug + '/enter', { method: 'POST' }).then(function (d) { window.open(d.url, '_blank') }).catch(function (x) { DC.msg(msg, x.message) })
+    if (b.dataset.act === 'suspend') upd(slug, { status: 'suspended' }, '已暫停 ' + slug)
+    if (b.dataset.act === 'resume') upd(slug, { status: 'active' }, '已恢復 ' + slug)
+    if (b.dataset.act === 'trial') upd(slug, { trial_days: 7 }, slug + ' 的試用延長到 7 天後')
+    if (b.dataset.act === 'domain') upd(slug, { domain_status: 'approved' }, '已排入開通：DNS 指過來後主機會在一分鐘內申請 HTTPS 憑證')
+  })
+  DC.$('#tenants').addEventListener('change', function (ev) {
+    var s = ev.target.closest('select[data-act=plan]'); if (s) upd(s.dataset.slug, { plan: s.value }, '已改成' + PLAN[s.value] + '方案')
+  })
+  DC.$('#q').addEventListener('input', draw)
+  DC.$('#hookBtn').addEventListener('click', function () {
+    var el = DC.$('#hookMsg'); el.textContent = '處理中…'
+    DC.api('admin/dupr/webhook', { method: 'POST', body: {} }).then(function (d) {
+      el.textContent = (d.registered ? '已註冊 ' + d.url + '，訂閱 ' + d.subscribed + ' 位球友' : '未註冊')
+        + (d.errors && d.errors.length ? '；' + d.errors.join('；') : '')
+    }).catch(function (x) { el.textContent = x.message })
+  })
+  var optins = []
+  DC.$('#optLoad').addEventListener('click', function () {
+    DC.api('admin/dupr-optins').then(function (d) {
+      optins = d.people
+      DC.$('#optins').innerHTML = optins.map(function (p) { return '<tr><td>' + e(p.consented_at.replace('T', ' ').slice(0, 16)) + '</td><td>' + e(p.name) + '</td><td>' + e(p.email) + '</td><td>' + e(p.dupr_id) + '</td><td>' + e(p.venues.join('、')) + '</td></tr>' }).join('') || '<tr><td colspan="5" class="hint">目前沒有人同意</td></tr>'
+      DC.$('#optCsv').disabled = !optins.length
+    }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  DC.$('#optCsv').addEventListener('click', function () {
+    var q = function (v) { return '"' + String(v == null ? '' : v).replace(/"/g, '""') + '"' }
+    var lines = [['email', 'name', 'dupr_id', 'consented_at', 'venues'].join(',')].concat(optins.map(function (p) { return [p.email, p.name, p.dupr_id, p.consented_at, p.venues.join(' ')].map(q).join(',') }))
+    var a = document.createElement('a')
+    a.href = URL.createObjectURL(new Blob(['\ufeff' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8' }))
+    a.download = 'digital-court-dupr-optin-' + new Date().toISOString().slice(0, 10) + '.csv'
+    a.click(); setTimeout(function () { URL.revokeObjectURL(a.href) }, 1000)
+  })
+  DC.$('#create').addEventListener('submit', function (ev) {
+    ev.preventDefault()
+    var f = ev.target
+    DC.api('admin/tenants', { method: 'POST', body: { slug: f.slug.value, name: f.name.value, email: f.email.value, plan: f.plan.value } })
+      .then(function () { DC.msg(msg, '已開通 ' + f.slug.value, 'ok'); f.reset(); load() }).catch(function (x) { DC.msg(msg, x.message) })
+  })
+  if (!DC.token()) location.href = '/account?next=/console'; else load()
+})()
+</script>
+</body>
+</html>
